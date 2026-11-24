@@ -13,6 +13,10 @@ import (
 
 const (
 	schemaPGCatalog = "pg_catalog"
+	// pgTypeInt2 and pgTypeInt8 appear in both the decode and parameter-encode
+	// switches; keep those literals single-sourced.
+	pgTypeInt2 = "int2"
+	pgTypeInt8 = "int8"
 )
 
 var (
@@ -36,7 +40,7 @@ func textValue(schema, name string, data []byte) (driver.Value, bool) {
 	switch name {
 	case "bool":
 		return parseBool(string(data)), true
-	case "int2", "int4", "int8", "oid", "xid", "cid":
+	case pgTypeInt2, "int4", pgTypeInt8, "oid", "xid", "cid":
 		if value, err := strconv.ParseInt(string(data), 10, 64); err == nil {
 			return value, true
 		}
@@ -64,14 +68,44 @@ func textValue(schema, name string, data []byte) (driver.Value, bool) {
 }
 
 // scanType reports the Go type a decoded value has, for Rows.ScanType.
-func scanType(schema, name string) reflect.Type {
+// opaqueScanType is the scan type of a value returned without a codec: text
+// stays a string and binary stays bytes, matching the decoded value.
+func opaqueScanType(format int16) reflect.Type {
+	if format == 1 {
+		return reflect.TypeOf([]byte(nil))
+	}
+	return reflect.TypeOf("")
+}
+
+// scanType reports the Go type the decoder produces for a verified type and
+// wire format. Unsupported binary layouts stay opaque bytes, never the text
+// scan type.
+func scanType(schema, name string, format int16) reflect.Type {
 	if schema != schemaPGCatalog {
-		return reflect.TypeOf("")
+		return opaqueScanType(format)
+	}
+	if format == 1 {
+		switch name {
+		case "bool":
+			return reflect.TypeOf(true)
+		case pgTypeInt2, "int4", pgTypeInt8, "oid", "xid", "cid":
+			return reflect.TypeOf(int64(0))
+		case "float4", "float8":
+			return reflect.TypeOf(float64(0))
+		case "text", "varchar", "bpchar", "char", "name", "unknown", "json", "jsonb", "uuid":
+			return reflect.TypeOf("")
+		case "bytea":
+			return reflect.TypeOf([]byte(nil))
+		case "date", "timestamp", "timestamptz":
+			return reflect.TypeOf(time.Time{})
+		default:
+			return opaqueScanType(format)
+		}
 	}
 	switch name {
 	case "bool":
 		return reflect.TypeOf(true)
-	case "int2", "int4", "int8", "oid", "xid", "cid":
+	case pgTypeInt2, "int4", pgTypeInt8, "oid", "xid", "cid":
 		return reflect.TypeOf(int64(0))
 	case "float4", "float8":
 		return reflect.TypeOf(float64(0))

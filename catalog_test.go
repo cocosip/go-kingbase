@@ -563,8 +563,8 @@ func assertOpaqueBytes(t *testing.T, r *rows) {
 	if !ok || len(got) != 4 {
 		t.Errorf("binary value = %T(%v), want opaque bytes", dest[0], dest[0])
 	}
-	if r.ColumnTypeScanType(0) != reflect.TypeOf("") {
-		t.Errorf("binary ScanType = %v, want string for an opaque fallback type", r.ColumnTypeScanType(0))
+	if r.ColumnTypeScanType(0) != reflect.TypeOf([]byte(nil)) {
+		t.Errorf("binary ScanType = %v, want bytes for an opaque fallback type", r.ColumnTypeScanType(0))
 	}
 	if err := r.Close(); err != nil {
 		t.Fatalf("close binary result: %v", err)

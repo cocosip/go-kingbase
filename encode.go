@@ -98,7 +98,7 @@ func (c *conn) binaryParameter(oid uint32, value driver.Value) ([]byte, bool, er
 			return []byte{1}, true, nil
 		}
 		return []byte{0}, true, nil
-	case "int2", "int4", "int8", "oid", "xid", "cid":
+	case pgTypeInt2, "int4", pgTypeInt8, "oid", "xid", "cid":
 		number, ok := value.(int64)
 		if !ok {
 			return nil, false, nil

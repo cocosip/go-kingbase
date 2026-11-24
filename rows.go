@@ -68,11 +68,11 @@ func (r *rows) resetColumns(columns []wire.ColumnDescription) {
 		if !verified {
 			// Opaque types still decode: text stays string and binary stays
 			// bytes, and no decoder or scan type is selected for them.
-			r.scanTypes[i] = reflect.TypeOf("")
+			r.scanTypes[i] = opaqueScanType(column.Format)
 			r.decoders[i] = unknownTypeDecoder(column.Format)
 			continue
 		}
-		r.scanTypes[i] = scanType(schema, name)
+		r.scanTypes[i] = scanType(schema, name, column.Format)
 		r.decoders[i] = typeDecoder(schema, name, column.Format)
 	}
 }

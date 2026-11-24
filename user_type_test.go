@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cocosip/go-kingbase/internal/testpeer"
 	"github.com/cocosip/go-kingbase/internal/wire"
@@ -120,9 +121,13 @@ func TestUserTypesNeverUseBuiltinCodecs(t *testing.T) {
 		t.Errorf("app.int4 binary = %T(%v), want opaque bytes", dest[4], dest[4])
 	}
 	wantNames := []string{testTypeInt4, "bool", "bytea", "bit", testTypeInt4}
+	wantScans := []reflect.Type{
+		reflect.TypeOf(""), reflect.TypeOf(""),
+		reflect.TypeOf([]byte(nil)), reflect.TypeOf([]byte(nil)), reflect.TypeOf([]byte(nil)),
+	}
 	for i := range dest {
-		if typed.ColumnTypeScanType(i) != reflect.TypeOf("") {
-			t.Errorf("column %d ScanType = %v, want string", i, typed.ColumnTypeScanType(i))
+		if typed.ColumnTypeScanType(i) != wantScans[i] {
+			t.Errorf("column %d ScanType = %v, want %v", i, typed.ColumnTypeScanType(i), wantScans[i])
 		}
 		if name := typed.ColumnTypeDatabaseTypeName(i); !strings.EqualFold(name, wantNames[i]) {
 			t.Errorf("column %d DatabaseTypeName = %q, want the actual catalog name %q", i, name, wantNames[i])
@@ -190,5 +195,58 @@ func TestBuiltinIdentityRequiresQualifiedBaseShape(t *testing.T) {
 	}
 	if _, ok := typed.ColumnTypeLength(2); ok {
 		t.Error("composite pg_catalog.int4 reports a length")
+	}
+}
+
+func TestOpaqueScanTypesFollowWireFormat(t *testing.T) {
+	extra := [][][]byte{
+		userCatalogRow(70010, "app", testTypeInt4, 'b', 4, 0),
+	}
+	columns := []wire.ColumnDescription{
+		{Name: "unknown_text", TypeOID: 999998, TypeLen: -1, TypeMod: -1, Format: 0},
+		{Name: "unknown_binary", TypeOID: 999999, TypeLen: -1, TypeMod: -1, Format: 1},
+		{Name: "numeric_binary", TypeOID: 1700, TypeLen: -1, TypeMod: -1, Format: 1},
+		{Name: "date_binary", TypeOID: 1082, TypeLen: 4, TypeMod: -1, Format: 1},
+		{Name: "user_binary", TypeOID: 70010, TypeLen: 4, TypeMod: -1, Format: 1},
+	}
+	row := [][]byte{
+		[]byte("raw"), {1, 2}, {0, 0, 0, 0}, {0, 0, 0, 1}, {0, 0, 0, 5},
+	}
+	srv := testpeer.Start(t, func(peer *testpeer.Conn) {
+		serveUserTypeCatalog(peer, extra, columns, row)
+	})
+	physical, err := connectPeer(t, srv, "")
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	defer func() { _ = physical.Close() }()
+	typed, dest := queryScriptedColumns(t, physical, "SELECT opaque", 5)
+	if got, ok := dest[0].(string); !ok || got != "raw" {
+		t.Errorf("unknown text = %T(%v), want string", dest[0], dest[0])
+	}
+	if got, ok := dest[1].([]byte); !ok || len(got) != 2 {
+		t.Errorf("unknown binary = %T(%v), want bytes", dest[1], dest[1])
+	}
+	if got, ok := dest[2].([]byte); !ok || len(got) != 4 {
+		t.Errorf("numeric binary = %T(%v), want opaque bytes", dest[2], dest[2])
+	}
+	if _, ok := dest[3].(time.Time); !ok {
+		t.Errorf("date binary = %T(%v), want time.Time", dest[3], dest[3])
+	}
+	if got, ok := dest[4].([]byte); !ok || len(got) != 4 {
+		t.Errorf("app.int4 binary = %T(%v), want opaque bytes", dest[4], dest[4])
+	}
+	wantScan := []reflect.Type{
+		reflect.TypeOf(""), reflect.TypeOf([]byte(nil)), reflect.TypeOf([]byte(nil)),
+		reflect.TypeOf(time.Time{}), reflect.TypeOf([]byte(nil)),
+	}
+	wantNames := []string{"", "", "numeric", "date", testTypeInt4}
+	for i := range dest {
+		if got := typed.ColumnTypeScanType(i); got != wantScan[i] {
+			t.Errorf("column %d ScanType = %v, want %v", i, got, wantScan[i])
+		}
+		if got := typed.ColumnTypeDatabaseTypeName(i); !strings.EqualFold(got, wantNames[i]) {
+			t.Errorf("column %d DatabaseTypeName = %q, want %q", i, got, wantNames[i])
+		}
 	}
 }
