@@ -81,8 +81,14 @@ func (c *Connector) Connect(ctx context.Context) (driver.Conn, error) {
 	if err := physical.handshake(); err != nil {
 		return nil, connectFailure(deadlineCtx, err)
 	}
+	if err := physical.loadCatalog(deadlineCtx); err != nil {
+		return nil, connectFailure(deadlineCtx, err)
+	}
 	if !stopWatch() || deadlineCtx.Err() != nil {
 		return nil, connectFailure(deadlineCtx, fmt.Errorf("kingbase: connection setup was interrupted"))
+	}
+	if physical.netConn == nil {
+		return nil, fmt.Errorf("kingbase: connect: connection was retired during setup")
 	}
 	// The handshake deadline is temporary; command deadlines are set per
 	// operation from its context.

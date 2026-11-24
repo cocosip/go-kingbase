@@ -26,6 +26,7 @@ type conn struct {
 	backendPID    uint32
 	backendSecret uint32
 	txStatus      byte
+	catalog       *typeCatalog
 	// stopWatch cancels the per-command context watcher that interrupts a
 	// stalled socket after cancellation.
 	stopWatch func() bool

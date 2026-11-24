@@ -51,9 +51,9 @@ DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup excha
 
 | ID | Capability | Priority | Verification | Notes | Impl | Offline | Live |
 |---|---|---|---|---|---|---|---|
-| F-212 | Unknown type/OID handling | P0 | offline | a type the driver has no codec for decodes as `string`/`[]byte`; absent OID has empty DatabaseTypeName; ScanType follows actual text string/binary bytes; malformed frames still error | todo | pending | n/a |
+| F-212 | Unknown type/OID handling | P0 | offline | a type the driver has no codec for decodes as `string`/`[]byte`; absent OID has empty DatabaseTypeName; ScanType follows actual text string/binary bytes; malformed frames still error | done | done | n/a |
 | F-214 | Qualified registry and fixture provenance | P0 | both | Synthetic/SDK fixtures distinct from actual server captures; live captures include namespace/shape/query/product provenance | todo | pending | pending |
-| F-215 | Required connect-time qualified catalog | P0 | both | Namespace names, typtype, element/base/length/delimiter/row links before user SQL; bounded capture; no fixed row-count promise | todo | pending | pending |
+| F-215 | Required connect-time qualified catalog | P0 | both | Namespace names, typtype, element/base/length/delimiter/row links before user SQL; bounded capture; no fixed row-count promise | done | done | pending |
 | F-216 | Ambiguous names and user types | P0 | offline | OID plus qualified identity/shape; app.int/year/bit never acquire built-in codecs or select mode | todo | pending | n/a |
 | F-217 | Verified alternate catalog queries | P0 | both | PG full-shape then accepted sys equivalent for missing-object cases; two-column fallback cannot enable required codecs | todo | pending | pending |
 | F-220 | Qualified profile/catalog validation | P0 | both | Only live-verified required shape rules; year/int markers do not determine mode or create arbitrary conflicts | todo | pending | pending |
@@ -64,7 +64,7 @@ DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup excha
 
 | ID | Capability | Priority | Verification | Notes | Impl | Offline | Live |
 |---|---|---|---|---|---|---|---|
-| F-301 | Core scalar types | P0 | both | bool/int/float/numeric/text/bytea/date/time/timestamp/interval/uuid/json/xml/inet; standard driver values; text/binary parity for implemented formats; unknown binary remains bytes | todo | pending | pending |
+| F-301 | Core scalar types | P0 | both | bool/int/float/numeric/text/bytea/date/time/timestamp/interval/uuid/json/xml/inet; standard driver values; text/binary parity for implemented formats; unknown binary remains bytes | wip | pending | pending |
 | F-302 | Mode-specific codecs | P0 | both | tinyint/smallint/int/bigint/real/float/bit/datetime/year/money/binary/varbinary/nchar/nvarchar/longtext family/blob/uint4/uint8; verified qualified identity/range; standard values per Architecture 7.1 | todo | pending | pending |
 | F-303 | Mode semantics at standard value boundary | P0 | both | tinyint range checked then int64; boolean BIT bool/nil; date time.Time, time text, datetime time.Time | todo | pending | pending |
 | F-304 | Array/domain/composite contracts | P1 | both | Validated links; opaque default text; explicit Array Scanner/Valuer for rectangular 1-D/multi-D, empty/NULL arrays and NULL elements; dimensions/lower bounds preserved; bounded recursion | todo | pending | pending |

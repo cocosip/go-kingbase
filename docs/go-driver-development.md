@@ -18,14 +18,14 @@ Update task Evidence, feature status, live profile records, counts and log toget
 
 | Milestone | Tasks | done | wip | todo | blocked | deferred |
 |---|---|---|---|---|---|---|
-| M0 skeleton | 19 | 9 | 0 | 10 | 0 | 0 |
+| M0 skeleton | 19 | 10 | 1 | 8 | 0 | 0 |
 | M1 catalog layer | 8 | 0 | 0 | 8 | 0 | 0 |
 | M2 mode behaviour | 19 | 0 | 0 | 19 | 0 | 0 |
 | M4 release quality | 10 | 0 | 0 | 10 | 0 | 0 |
 | M5 MySQL transport (conditional) | 9 | 0 | 0 | 9 | 0 | 0 |
-| **Total** | **65** | **9** | **0** | **56** | **0** | **0** |
+| **Total** | **65** | **10** | **1** | **54** | **0** | **0** |
 
-Verification V1–V19: 0 accepted, 19 pending. Decisions O1–O7: 3 resolved (O1, O2, O7), 4 open/evidence-pending (O3, O4, O5, O6). Features: 94 total; 19 are Impl=done and Offline=done (F-101–F-103, F-108–F-112, F-114, F-117, F-801–F-805, F-901, F-1102, F-1106, F-1107), 1 is Impl=done with Offline=pending (F-104), 1 is Impl=wip (F-401 statement reuse), and 73 remain Impl=todo/Offline=pending; 69 Live=pending and 25 structurally offline-only Live=n/a (recount when requirements change). No accepted live-profile overrides exist. M3 is a verification gate, not an omitted implementation-task group.
+Verification V1–V19: 0 accepted, 19 pending. Decisions O1–O7: 3 resolved (O1, O2, O7), 4 open/evidence-pending (O3, O4, O5, O6). Features: 94 total; 21 are Impl=done and Offline=done (F-101–F-103, F-108–F-112, F-114, F-117, F-212, F-215, F-801–F-805, F-901, F-1102, F-1106, F-1107), 1 is Impl=done with Offline=pending (F-104), 2 are Impl=wip (F-301 binary parity, F-401 statement reuse), and 70 remain Impl=todo/Offline=pending; 69 Live=pending and 25 structurally offline-only Live=n/a (recount when requirements change). No accepted live-profile overrides exist. M3 is a verification gate, not an omitted implementation-task group.
 
 ## 3. Milestones
 
@@ -44,7 +44,7 @@ The specification is ready to serve as a development baseline. The confirmed Go 
 
 After T-001, start T-002 (DSN/configuration) and T-012 (testpeer); then follow the declared dependencies through T-004/T-005 and the query/core-value tasks. Each protocol/parser implementation must choose and document concrete message/allocation/recursion/crypto-work limits with boundary tests before that task is done. Move a task to wip when implementation starts and record named offline proof before done; leave unrelated backlog and live acceptance pending.
 
-Current progress follows that order: T-001/T-002/T-004–T-008/T-012/T-015 are done, `internal/wire`/`internal/auth`/`internal/sm3` carry the bounded protocol and authentication work, and `internal/testpeer` injects auth, async, trailing-error and fragmentation faults offline. Next: T-009/T-010 codecs and catalog work, then T-011 error classification.
+Current progress follows that order: T-001/T-002/T-004–T-009/T-012/T-015 are done, T-020 is wip for verified alternate catalog queries, and text codecs resolve types by server identity rather than a built-in OID table. Next: T-010 binary codecs/parameter formats, then T-011 error classification and T-013/T-014 recovery work.
 
 Arrange the requested V9 profiles and ordinary-role catalog/mode captures early alongside offline work, recording O3/O5 evidence when available. Missing live infrastructure does not prevent the offline skeleton, but continues to block the applicable M3 support claims. Configure local credentials through ignored environment/config files or local secret/certificate directories; commit only redacted templates and intentional fixtures.
 
@@ -64,7 +64,7 @@ Every capability ID is owned by at least one canonical task below. Ranges expand
 | T-006 | Bounded SCRAM handshake/signature/nonce/iteration negative vectors | F-802 | T-005 | done | `internal/auth` SCRAM-SHA-256 client passes the RFC 7677 test vector; negative vectors cover nonce mismatch, iteration bounds, malformed/duplicate attributes, mandatory extension, salt/base64 errors, oversized messages and server-signature mismatch; `TestConnectSCRAM`, `TestConnectSCRAMWrongPassword`, `TestConnectSCRAMRejectsBadServerSignature`, `TestConnectSCRAMRejectsUnsupportedMechanism` |
 | T-007 | Evidenced SM3 authentication and unsupported variants | F-803 | T-005 | done | `internal/sm3` passes both GB/T 32905-2016 vectors; the double-HMAC-SM3 composition is source-evidenced (vendor conn.go auth case 13) and replayed by `TestConnectSM3`; wrong password keeps SQLSTATE 28P01 through `TestConnectSM3WrongPassword`; missing password and unknown auth codes fail closed |
 | T-008 | Simple/extended query, send-stage and protocol state tracking | F-401 | T-005 | done | `TestQuerySimpleRows`, `TestQueryExtendedBinding`, `TestExecExtended`, `TestQueryServerErrorKeepsConnection`, `TestQueryEarlyCloseDrains`, `TestQueryMultipleResultSetsRejected`, `TestQueryContextDeadlineRetires`, `TestQueryNoRows`; send/read failures retire the connection and never replay |
-| T-009 | Core text codecs normalized to supported driver values | F-301 | T-008 | todo | — |
+| T-009 | Core text codecs normalized to supported driver values | F-301 | T-008 | done | `codec.go` decodes bool/int/float/numeric/text/bytea/date/time/timestamp/timestamptz/interval/uuid/json/jsonb/xml/inet by catalog identity; `TestRowsCoreTextCodecs` pins values, type names and scan types; unknown OIDs keep string/[]byte per F-212 (`TestRowsUnknownOIDFallback`); binary parity remains T-010 |
 | T-010 | Verified binary codecs/parameters and text-result option parity | F-305 | T-009 | todo | — |
 | T-011 | Server fields/redaction, execution uncertainty and no unsafe ErrBadConn replay | F-901, F-902, F-903 | T-008 | todo | — |
 | T-012 | testpeer auth/query/result/COPY plus frame/EOF/trailing-error/async/failure injection | F-1102 | T-001 | done | bounded PG-wire framing and boundary tests; scripted peer serves cleartext/MD5/SCRAM/SM3 auth, simple/extended results, async notice/parameter/notification injection, error/trailing-error injection and chunked-write fragmentation. COPY frames and reset/cancel races land with T-043/T-014 |
@@ -80,7 +80,7 @@ Every capability ID is owned by at least one canonical task below. Ranges expand
 
 | ID | Deliverable | Capabilities | Depends on | Status | Evidence |
 |---|---|---|---|---|---|
-| T-020 | Required qualified catalog SQL and classified alternate-query failures | F-215, F-217 | T-008 | todo | — |
+| T-020 | Required qualified catalog SQL and classified alternate-query failures | F-215, F-217 | T-008 | wip | done: qualified `pg_catalog.pg_type`/`pg_namespace` query loads OID, schema, name, typtype, typlen, typbasetype, typelem, typrelid and typdelim before user SQL, bounded to 100000 entries, with domain resolution (`TestCatalogQueryIsQualified`, `TestCatalogDomainResolution`) and classified failure preserving SQLSTATE (`TestCatalogFailureIsClassified`). Remaining: verified sys-schema alternate query and array/composite links (F-217) |
 | T-021 | OID/namespace/shape registry; same-name ambiguity and malicious user types | F-214, F-216 | T-020 | todo | — |
 | T-022 | Separate SDK constants, synthetic fixtures and genuine captured catalog provenance | F-214 | T-021 | todo | — |
 | T-023 | Startup/query Auto discovery, explicit fallback/conflicts and labelled mode source | F-201, F-202, F-207 | T-005 | todo | — |
@@ -219,3 +219,4 @@ Initial PG release excludes V8 (O4/V11/V13), native MySQL (O6/M5), binary COPY/i
 | 2026-11-24 | Connection core landed: bounded PG-wire framing, scripted testpeer, Connector/Driver with whole-connect budget and TLS trust policy, startup with cleartext/MD5 auth and server error mapping. T-005/T-015 done, T-004/T-012 wip; no live acceptance |
 | 2026-11-24 | T-004/T-008 done: TLS trust matrix and POSIX key permissions tested, cancellation and budget classification verified, unix-socket dial tested; simple/extended query plus Exec/Rows with drain and retire semantics landed; T-012 remains wip for SCRAM/SM3/COPY/async injection |
 | 2026-11-24 | T-006/T-007 done: SCRAM-SHA-256 (RFC 7677 vector plus bounded negative vectors) and evidenced SM3 password authentication land in internal/auth/internal/sm3, replayed against a scripted SCRAM/SM3 peer; T-012 completes with async/trailing-error/failure injection and the query layer now interrupts cancel-only contexts and preserves server errors across failed drains |
+| 2026-11-24 | T-009 done and T-020 wip: connect-time qualified catalog capture with bounded entries and domain resolution, classified catalog failures, and text codecs for core scalar/date-time/uuid/json types proven end to end; binary parity and sys-schema alternate queries remain |

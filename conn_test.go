@@ -123,6 +123,7 @@ func TestConnectMD5Auth(t *testing.T) {
 		if err := peer.StartupOK(nil); err != nil {
 			peer.Errorf("StartupOK: %v", err)
 		}
+		waitTerminate(peer)
 	})
 
 	physical, err := connectPeer(t, srv, "password=secret")
@@ -151,6 +152,7 @@ func TestConnectStartupParameters(t *testing.T) {
 		if err := peer.StartupOK(nil); err != nil {
 			peer.Errorf("StartupOK: %v", err)
 		}
+		waitTerminate(peer)
 	})
 
 	physical, err := connectPeer(t, srv, "application_name=svc options='-c search_path=x' search_path=public")

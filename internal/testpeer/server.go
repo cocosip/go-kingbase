@@ -116,10 +116,13 @@ type Conn struct {
 	reader *wire.Reader
 	writer *wire.Writer
 	chunk  int
+	// autoCatalog answers the driver's qualified catalog query without handing
+	// it to the handler, so scripts can keep asserting user statements.
+	autoCatalog bool
 }
 
 func newConn(t testing.TB, conn net.Conn) *Conn {
-	c := &Conn{t: t, conn: conn}
+	c := &Conn{t: t, conn: conn, autoCatalog: true}
 	c.reader = wire.NewReader(conn, 0)
 	c.writer = wire.NewWriter(connWriter{c: c})
 	return c
@@ -222,8 +225,23 @@ func (c *Conn) ReadStartup() ([][2]string, error) {
 }
 
 // ReadMessage reads one frontend message.
+// ReadMessage returns the next frontend message. When auto-catalog is enabled
+// (the default) the driver's qualified catalog query is answered here and never
+// reaches the handler.
 func (c *Conn) ReadMessage() (wire.MsgType, []byte, error) {
-	return c.reader.ReadMessage()
+	for {
+		typ, payload, err := c.reader.ReadMessage()
+		if err != nil {
+			return typ, nil, err
+		}
+		if c.autoCatalog && typ == wire.MsgQuery && isCatalogQuery(payload) {
+			if err := c.serveCatalog(); err != nil {
+				return typ, nil, err
+			}
+			continue
+		}
+		return typ, payload, nil
+	}
 }
 
 // WriteMessage writes one backend message.

@@ -4,6 +4,7 @@ import (
 	"database/sql/driver"
 	"fmt"
 	"io"
+	"reflect"
 
 	"github.com/cocosip/go-kingbase/internal/wire"
 )
@@ -11,27 +12,85 @@ import (
 // rows streams one result set. Callers must Close it; Close drains the
 // remaining response so the physical connection is reusable.
 type rows struct {
-	conn     *conn
-	columns  []wire.ColumnDescription
-	names    []string
-	finished bool
-	ready    bool
-	closed   bool
+	conn      *conn
+	columns   []wire.ColumnDescription
+	names     []string
+	typeNames []string
+	decoders  []func([]byte) driver.Value
+	scanTypes []reflect.Type
+	finished  bool
+	ready     bool
+	closed    bool
 }
 
-var _ driver.Rows = (*rows)(nil)
+var (
+	_ driver.Rows                           = (*rows)(nil)
+	_ driver.RowsColumnTypeDatabaseTypeName = (*rows)(nil)
+	_ driver.RowsColumnTypeScanType         = (*rows)(nil)
+)
 
 func newRows(c *conn, columns []wire.ColumnDescription, ready bool) *rows {
-	names := make([]string, len(columns))
-	for i, column := range columns {
-		names[i] = column.Name
+	r := &rows{
+		conn:      c,
+		columns:   columns,
+		names:     make([]string, len(columns)),
+		typeNames: make([]string, len(columns)),
+		decoders:  make([]func([]byte) driver.Value, len(columns)),
+		scanTypes: make([]reflect.Type, len(columns)),
+		finished:  ready,
+		ready:     ready,
 	}
-	return &rows{conn: c, columns: columns, names: names, finished: ready, ready: ready}
+	for i, column := range columns {
+		r.names[i] = column.Name
+		schema, name, known := c.codecName(column.TypeOID)
+		if !known {
+			// Unknown OIDs still decode: text values stay strings and binary
+			// values stay bytes, with an empty type name as F-212 requires.
+			r.scanTypes[i] = reflect.TypeOf("")
+			r.decoders[i] = unknownTypeDecoder(column.Format)
+			continue
+		}
+		r.typeNames[i] = name
+		r.scanTypes[i] = scanType(schema, name)
+		r.decoders[i] = typeDecoder(schema, name, column.Format)
+	}
+	return r
+}
+
+func unknownTypeDecoder(format int16) func([]byte) driver.Value {
+	return func(data []byte) driver.Value {
+		return decodeValue(format, data)
+	}
+}
+
+func typeDecoder(schema, name string, format int16) func([]byte) driver.Value {
+	if format != 0 {
+		// Binary formats are implemented by the binary-codec task (T-010);
+		// until then a known type keeps its raw bytes rather than misparsing.
+		return unknownTypeDecoder(format)
+	}
+	return func(data []byte) driver.Value {
+		if value, ok := textValue(schema, name, data); ok {
+			return value
+		}
+		return string(data)
+	}
 }
 
 // Columns returns the result column names.
 func (r *rows) Columns() []string {
 	return r.names
+}
+
+// ColumnTypeDatabaseTypeName returns the catalog type name, or empty for a
+// type the server did not identify.
+func (r *rows) ColumnTypeDatabaseTypeName(index int) string {
+	return r.typeNames[index]
+}
+
+// ColumnTypeScanType returns the Go type produced by Next.
+func (r *rows) ColumnTypeScanType(index int) reflect.Type {
+	return r.scanTypes[index]
 }
 
 // Next fills dest with the next row and returns io.EOF at the end of the set.
@@ -68,7 +127,7 @@ func (r *rows) Next(dest []driver.Value) error {
 					dest[i] = nil
 					continue
 				}
-				dest[i] = decodeValue(r.columns[i].Format, column.Data)
+				dest[i] = r.decoders[i](column.Data)
 			}
 			return nil
 		case wire.MsgCommandComplete, wire.MsgEmptyQueryResponse:

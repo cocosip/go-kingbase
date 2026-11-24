@@ -149,13 +149,13 @@ func TestQuerySimpleRows(t *testing.T) {
 	if err := result.Next(dest); err != nil {
 		t.Fatalf("Next: %v", err)
 	}
-	if dest[0] != "1" || dest[1] != "alice" {
+	if dest[0] != int64(1) || dest[1] != "alice" {
 		t.Errorf("row 1 = %v, want [1 alice]", dest)
 	}
 	if err := result.Next(dest); err != nil {
 		t.Fatalf("Next: %v", err)
 	}
-	if dest[0] != "2" || dest[1] != nil {
+	if dest[0] != int64(2) || dest[1] != nil {
 		t.Errorf("row 2 = %v, want [2 <nil>]", dest)
 	}
 	if err := result.Next(dest); !errors.Is(err, io.EOF) {
@@ -197,7 +197,7 @@ func TestQueryExtendedBinding(t *testing.T) {
 			return
 		}
 		_, _, _, params, _, err := wire.DecodeBind(payload)
-		if err != nil || len(params) != 2 || string(params[0]) != "42" || string(params[1]) != "hello" {
+		if err != nil || len(params) != 2 || string(params[0]) != "42" || string(params[1]) != testHello {
 			peer.Errorf("bind params = %q err %v", params, err)
 			return
 		}
@@ -245,7 +245,7 @@ func TestQueryExtendedBinding(t *testing.T) {
 	}
 	result, err := physical.QueryContext(context.Background(), "SELECT $1, $2", []driver.NamedValue{
 		{Ordinal: 1, Value: int64(42)},
-		{Ordinal: 2, Value: "hello"},
+		{Ordinal: 2, Value: testHello},
 	})
 	if err != nil {
 		t.Fatalf("QueryContext: %v", err)
@@ -602,10 +602,10 @@ func TestQuerySimpleAsyncMessages(t *testing.T) {
 		t.Fatalf("QueryContext: %v", err)
 	}
 	dest := make([]driver.Value, 2)
-	if err := result.Next(dest); err != nil || dest[0] != "1" {
+	if err := result.Next(dest); err != nil || dest[0] != int64(1) {
 		t.Fatalf("first row = %v, err %v", dest, err)
 	}
-	if err := result.Next(dest); err != nil || dest[0] != "2" {
+	if err := result.Next(dest); err != nil || dest[0] != int64(2) {
 		t.Fatalf("second row = %v, err %v", dest, err)
 	}
 	if err := result.Next(dest); !errors.Is(err, io.EOF) {

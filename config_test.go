@@ -17,6 +17,7 @@ const (
 	testSeverityFatal = "FATAL"
 	testSQLStateAuth  = "28P01"
 	testAuthFailed    = "password authentication failed"
+	testHello         = "hello"
 )
 
 func mustParse(t *testing.T, dsn string) *Config {
