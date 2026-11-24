@@ -74,10 +74,20 @@ func unknownTypeDecoder(format int16) func([]byte) driver.Value {
 	}
 }
 
+// typeDecoder builds the per-column decoder for a verified catalog type.
 func typeDecoder(schema, name string, format int16) func([]byte) driver.Value {
+	if format == 1 {
+		return func(data []byte) driver.Value {
+			if value, ok := binaryValue(schema, name, data); ok {
+				return value
+			}
+			// Unverified binary layouts (numeric, interval, inet, ...) stay raw
+			// bytes; ponytail: add codecs when their wire layout is proven, and
+			// never guess a layout from the type name alone.
+			return append([]byte(nil), data...)
+		}
+	}
 	if format != 0 {
-		// Binary formats are implemented by the binary-codec task (T-010);
-		// until then a known type keeps its raw bytes rather than misparsing.
 		return unknownTypeDecoder(format)
 	}
 	return func(data []byte) driver.Value {

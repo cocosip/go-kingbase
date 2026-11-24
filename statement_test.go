@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql/driver"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -59,12 +60,12 @@ func describePrepared(peer *testpeer.Conn, wantSQL string, paramOIDs []uint32, c
 }
 
 // readBind asserts the Bind/Describe/Execute/Sync batch for a statement.
-func readBind(peer *testpeer.Conn, statementName string, wantParams []string, describe bool) bool {
+func readBind(peer *testpeer.Conn, statementName string, wantParams []string, describe bool, wantResultFormats []int16) bool {
 	payload, ok := expectMessage(peer, wire.MsgBind)
 	if !ok {
 		return false
 	}
-	portal, statement, _, params, _, err := wire.DecodeBind(payload)
+	portal, statement, _, params, resultFormats, err := wire.DecodeBind(payload)
 	if err != nil || statement != statementName {
 		peer.Errorf("Bind = %q/%q, err %v, want statement %q", portal, statement, err, statementName)
 		return false
@@ -78,6 +79,10 @@ func readBind(peer *testpeer.Conn, statementName string, wantParams []string, de
 			peer.Errorf("Bind parameter %d = %q, want %q", i, params[i], want)
 			return false
 		}
+	}
+	if !slices.Equal(resultFormats, wantResultFormats) {
+		peer.Errorf("Bind result formats = %v, want %v", resultFormats, wantResultFormats)
+		return false
 	}
 	if describe {
 		describePayload, ok := expectMessage(peer, wire.MsgDescribe)
@@ -163,18 +168,18 @@ func TestPreparedStatementRoundTrip(t *testing.T) {
 			return
 		}
 
-		if !readBind(peer, name, []string{"7"}, true) {
+		if !readBind(peer, name, []string{"7"}, true, []int16{1}) {
 			return
 		}
 		if err := peer.WriteMessage(wire.MsgBindComplete, nil); err != nil {
 			peer.Errorf("BindComplete: %v", err)
 			return
 		}
-		if err := peer.RowDescription(selectColumns()); err != nil {
+		if err := peer.RowDescription(binarySelectColumns()); err != nil {
 			peer.Errorf("RowDescription: %v", err)
 			return
 		}
-		if err := peer.DataRow([][]byte{[]byte("7"), []byte("alice")}); err != nil {
+		if err := peer.DataRow([][]byte{{0, 0, 0, 7}, []byte("alice")}); err != nil {
 			peer.Errorf("DataRow: %v", err)
 			return
 		}
@@ -246,7 +251,7 @@ func TestPreparedStatementExec(t *testing.T) {
 		_ = peer.WriteMessage(wire.MsgNoData, nil)
 		_ = peer.ReadyForQuery(wire.StatusIdle)
 
-		if !readBind(peer, name, []string{testBob, "7"}, false) {
+		if !readBind(peer, name, []string{testBob, "7"}, false, nil) {
 			return
 		}
 		_ = peer.WriteMessage(wire.MsgBindComplete, nil)

@@ -137,7 +137,7 @@ func TestRowsCoreTextCodecs(t *testing.T) {
 		scanType reflect.Type
 	}
 	cases := []codecCase{
-		{16, "t", true, "bool", reflect.TypeOf(true)},
+		{16, "t", true, testTypeBool, reflect.TypeOf(true)},
 		{20, "42", int64(42), "int8", reflect.TypeOf(int64(0))},
 		{701, "1.5", float64(1.5), "float8", reflect.TypeOf(float64(0))},
 		{1700, "1.25", "1.25", "numeric", reflect.TypeOf("")},
@@ -147,7 +147,7 @@ func TestRowsCoreTextCodecs(t *testing.T) {
 		{1114, "2024-01-02 03:04:05.123456", time.Date(2024, 1, 2, 3, 4, 5, 123456000, time.UTC), "timestamp", reflect.TypeOf(time.Time{})},
 		{1184, "2024-01-02 03:04:05.123456+08", time.Date(2024, 1, 2, 3, 4, 5, 123456000, time.FixedZone("", 8*3600)), "timestamptz", reflect.TypeOf(time.Time{})},
 		{2950, "550e8400-e29b-41d4-a716-446655440000", "550e8400-e29b-41d4-a716-446655440000", "uuid", reflect.TypeOf("")},
-		{3802, `{"a":1}`, `{"a":1}`, "jsonb", reflect.TypeOf("")},
+		{3802, testJSONBody, testJSONBody, "jsonb", reflect.TypeOf("")},
 		{1186, "1 day 02:03:04", "1 day 02:03:04", "interval", reflect.TypeOf("")},
 	}
 	columns := make([]wire.ColumnDescription, len(cases))

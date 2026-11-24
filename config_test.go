@@ -22,6 +22,8 @@ const (
 	testBob             = "bob"
 	testColumnName      = "name"
 	testSQLStateNoTable = "42P01"
+	testTypeBool        = "bool"
+	testJSONBody        = "{\"a\":1}"
 )
 
 func mustParse(t *testing.T, dsn string) *Config {

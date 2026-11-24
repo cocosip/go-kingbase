@@ -170,7 +170,7 @@ func (s *stmt) ExecContext(ctx context.Context, args []driver.NamedValue) (drive
 		return nil, err
 	}
 	s.conn.commandSent = true
-	if err := s.conn.bindAndExecute(s.name, params, false); err != nil {
+	if err := s.conn.bindAndExecute(s.name, params, false, nil); err != nil {
 		return nil, s.conn.classifyCommandError(err)
 	}
 	return s.conn.classifyCommandResult()
@@ -186,7 +186,7 @@ func (s *stmt) QueryContext(ctx context.Context, args []driver.NamedValue) (driv
 		return nil, err
 	}
 	s.conn.commandSent = true
-	if err := s.conn.bindAndExecute(s.name, params, true); err != nil {
+	if err := s.conn.bindAndExecute(s.name, params, true, s.conn.resultFormats()); err != nil {
 		return nil, s.conn.classifyCommandError(err)
 	}
 	columns, ready, err := s.conn.awaitExtendedDescription()
@@ -209,9 +209,9 @@ func (s *stmt) encodeArguments(args []driver.NamedValue) ([][]byte, error) {
 }
 
 // bindAndExecute sends Bind[/Describe]/Execute/Sync for a prepared statement.
-func (c *conn) bindAndExecute(statement string, params [][]byte, describe bool) error {
+func (c *conn) bindAndExecute(statement string, params [][]byte, describe bool, resultFormats []int16) error {
 	steps := []wireStep{
-		{typ: wire.MsgBind, payload: wire.EncodeBind("", statement, nil, params, nil)},
+		{typ: wire.MsgBind, payload: wire.EncodeBind("", statement, nil, params, resultFormats)},
 	}
 	if describe {
 		steps = append(steps, wireStep{typ: wire.MsgDescribe, payload: wire.EncodeDescribe('P', "")})
@@ -238,4 +238,14 @@ func legacyNamedValues(args []driver.Value) []driver.NamedValue {
 		values[i] = driver.NamedValue{Ordinal: i + 1, Value: arg}
 	}
 	return values
+}
+
+// resultFormats selects the Bind result format for prepared statements.
+// Binary results are the default, matching the
+// disable_prepared_binary_result option that turns them off.
+func (c *conn) resultFormats() []int16 {
+	if c.cfg != nil && c.cfg.DisablePreparedBinaryResult {
+		return nil
+	}
+	return []int16{1}
 }
