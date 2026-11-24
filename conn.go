@@ -19,10 +19,13 @@ import (
 // conn is one physical connection. Its configuration, mode and catalog are
 // immutable after Connect; concurrent use is serialized by database/sql.
 type conn struct {
-	cfg     *Config
-	netConn net.Conn
-	reader  *wire.Reader
-	writer  *wire.Writer
+	cfg *Config
+	// netEndpoint is the endpoint this connection actually reached; cancel
+	// requests must return to the same host rather than the first configured one.
+	netEndpoint endpoint
+	netConn     net.Conn
+	reader      *wire.Reader
+	writer      *wire.Writer
 
 	params        map[string]string
 	backendPID    uint32

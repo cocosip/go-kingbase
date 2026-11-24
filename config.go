@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net"
 	"net/url"
 	"runtime"
 	"strconv"
@@ -143,9 +144,15 @@ func parseSSLMode(value string) (SSLMode, error) {
 type Config struct {
 	// Network is "tcp" or "unix".
 	Network string
-	Host    string
-	Port    int
-	User    string
+	// Host and Port are the first configured endpoint.
+	Host string
+	Port int
+	// Hosts and Ports hold the expanded opt-in endpoint list; both are empty
+	// for a single endpoint. A shorter list repeats its last entry.
+	Hosts []string
+	Ports []int
+
+	User string
 	// Password is kept verbatim and must never appear in diagnostics.
 	Password string
 	Database string
@@ -165,12 +172,53 @@ type Config struct {
 	FallbackApplicationName string
 	ClientEncoding          string
 
+	// TargetSessionAttrs selects the session kind a host must offer. Any means
+	// no target check is performed.
+	TargetSessionAttrs TargetSessionAttrs
+
 	BinaryParameters            bool
 	DisablePreparedBinaryResult bool
 	GetLastInsertID             bool
 
 	Options    string
 	SearchPath string
+}
+
+// TargetSessionAttrs is the opt-in target-selection policy for a host list.
+type TargetSessionAttrs int
+
+// Supported target-selection policies.
+const (
+	TargetSessionAny TargetSessionAttrs = iota
+	TargetSessionReadWrite
+	TargetSessionReadOnly
+)
+
+// String returns the normalized policy name.
+func (t TargetSessionAttrs) String() string {
+	switch t {
+	case TargetSessionReadWrite:
+		return "read-write"
+	case TargetSessionReadOnly:
+		return "read-only"
+	default:
+		return "any"
+	}
+}
+
+func parseTargetSessionAttrs(value string) (TargetSessionAttrs, error) {
+	switch normalizeParamName(value) {
+	case "any":
+		return TargetSessionAny, nil
+	case "read-write", "readwrite":
+		return TargetSessionReadWrite, nil
+	case "read-only", "readonly":
+		return TargetSessionReadOnly, nil
+	case "primary", "standby", "prefer-standby", "preferstandby":
+		return TargetSessionAny, fmt.Errorf("kingbase: target_session_attrs %q is not supported yet (it needs live cluster evidence)", value)
+	default:
+		return TargetSessionAny, fmt.Errorf("kingbase: unknown target_session_attrs %q (want any, read-write or read-only)", value)
+	}
 }
 
 // ParseConfig parses a DSN in URL or libpq key=value form. It applies the
@@ -353,11 +401,14 @@ func (c *Config) apply(kind paramKind, value string) error {
 	case paramHost:
 		c.Host = value
 	case paramPort:
-		port, err := strconv.Atoi(value)
-		if err != nil || port < 1 || port > 65535 {
-			return fmt.Errorf("kingbase: invalid port %q", value)
+		ports, err := parsePortList(value)
+		if err != nil {
+			return err
 		}
-		c.Port = port
+		c.Port = ports[0]
+		if len(ports) > 1 {
+			c.Ports = ports
+		}
 	case paramUser:
 		c.User = value
 	case paramPassword:
@@ -411,7 +462,11 @@ func (c *Config) apply(kind paramKind, value string) error {
 	case paramKeepalivesInterval, paramKeepalivesCount:
 		return fmt.Errorf("kingbase: configuration parameter %q is not supported by this driver", paramName(kind))
 	case paramTargetSessionAttrs:
-		return fmt.Errorf("kingbase: configuration parameter %q is not supported yet", paramName(kind))
+		attrs, err := parseTargetSessionAttrs(value)
+		if err != nil {
+			return err
+		}
+		c.TargetSessionAttrs = attrs
 	default:
 		return fmt.Errorf("kingbase: unknown configuration parameter %q", paramName(kind))
 	}
@@ -494,6 +549,28 @@ func parseBoolParameter(name, value string) (bool, error) {
 }
 
 func (c *Config) validate(explicit map[paramKind]bool) error {
+	if c.Host != "" {
+		hosts := strings.Split(c.Host, ",")
+		for _, host := range hosts {
+			if host == "" || strings.ContainsAny(host, " \t\r\n") {
+				return fmt.Errorf("kingbase: invalid host %q", host)
+			}
+			if strings.HasPrefix(host, "/") && len(hosts) > 1 {
+				return fmt.Errorf("kingbase: a unix socket host cannot be combined with other hosts")
+			}
+		}
+		if len(hosts) > 1 {
+			c.Hosts = hosts
+			c.Host = hosts[0]
+		}
+	}
+	hostCount := len(c.Hosts)
+	if hostCount == 0 {
+		hostCount = 1
+	}
+	if len(c.Ports) > hostCount {
+		return fmt.Errorf("kingbase: %d ports cannot be matched to %d hosts", len(c.Ports), hostCount)
+	}
 	if strings.HasPrefix(c.Host, "/") {
 		if runtime.GOOS == "windows" {
 			return fmt.Errorf("kingbase: unix sockets are not supported on windows")
@@ -507,9 +584,6 @@ func (c *Config) validate(explicit map[paramKind]bool) error {
 		}
 		c.SSLMode = SSLDisable
 	} else {
-		if strings.ContainsAny(c.Host, ", ") {
-			return fmt.Errorf("kingbase: multiple hosts are not supported yet")
-		}
 		if c.Host == "" {
 			// An explicit empty host uses the local default, matching libpq's
 			// local behavior without implicitly selecting a socket.
@@ -673,4 +747,54 @@ func (c *Config) applyKeepAlivesIdle(value string) error {
 	}
 	c.KeepAlivesIdle = time.Duration(seconds) * time.Second
 	return nil
+}
+
+// parsePortList parses one port or a comma-separated port list.
+func parsePortList(value string) ([]int, error) {
+	fields := strings.Split(value, ",")
+	ports := make([]int, 0, len(fields))
+	for _, field := range fields {
+		port, err := strconv.Atoi(field)
+		if err != nil || port < 1 || port > 65535 {
+			return nil, fmt.Errorf("kingbase: invalid port %q", value)
+		}
+		ports = append(ports, port)
+	}
+	return ports, nil
+}
+
+// endpoint is one candidate physical endpoint in configuration order.
+type endpoint struct {
+	network string
+	address string
+	host    string
+}
+
+// endpoints expands the configured host and port lists into ordered candidates.
+// A shorter list repeats its last entry; validation rejects empty host entries.
+func (c *Config) endpoints() []endpoint {
+	hosts, ports := c.Hosts, c.Ports
+	if len(hosts) == 0 {
+		hosts = []string{c.Host}
+	}
+	if len(ports) == 0 {
+		ports = []int{c.Port}
+	}
+	count := len(hosts)
+	endpoints := make([]endpoint, count)
+	for i := range endpoints {
+		host := hosts[min(i, len(hosts)-1)]
+		port := ports[min(i, len(ports)-1)]
+		endpoints[i] = c.endpoint(host, port)
+	}
+	return endpoints
+}
+
+// endpoint resolves one host and port to a dial address. A host starting with
+// "/" is a unix socket directory and is only accepted for a single endpoint.
+func (c *Config) endpoint(host string, port int) endpoint {
+	if c.Network == networkUnix {
+		return endpoint{network: networkUnix, address: host + "/.s.PGSQL." + strconv.Itoa(port), host: host}
+	}
+	return endpoint{network: networkTCP, address: net.JoinHostPort(host, strconv.Itoa(port)), host: host}
 }

@@ -44,9 +44,8 @@ func (c *conn) startCancel(socket net.Conn, deadline time.Time) {
 // it after processing the request; the deadline prevents a stuck peer from
 // pinning this goroutine.
 func (c *conn) sendCancelRequest() error {
-	network, address := c.cfg.addr()
 	dialer := net.Dialer{Timeout: cancelDialTimeout}
-	conn, err := dialer.Dial(network, address)
+	conn, err := dialer.Dial(c.netEndpoint.network, c.netEndpoint.address)
 	if err != nil {
 		return err
 	}

@@ -15,13 +15,13 @@ import (
 // negotiateTLS performs the SSLRequest exchange and TLS handshake according to
 // the configured trust policy. A requested TLS policy never falls back to
 // plaintext.
-func (c *conn) negotiateTLS(ctx context.Context) error {
+func (c *conn) negotiateTLS(ctx context.Context, host string) error {
 	if c.cfg.SSLMode == SSLDisable {
 		return nil
 	}
 	// Validate configured material before contacting the server, so missing or
 	// unreadable files fail the same way regardless of the server reply.
-	config, err := tlsConfig(c.cfg)
+	config, err := tlsConfigForHost(c.cfg, host)
 	if err != nil {
 		return err
 	}
@@ -50,12 +50,18 @@ func (c *conn) negotiateTLS(ctx context.Context) error {
 	return nil
 }
 
-// tlsConfig builds the TLS client configuration for the configured sslmode.
+// tlsConfig builds the TLS client configuration for the configured sslmode
+// against the first configured host.
+func tlsConfig(cfg *Config) (*tls.Config, error) {
+	return tlsConfigForHost(cfg, cfg.Host)
+}
+
+// tlsConfigForHost builds the TLS client configuration for one target host.
 // require verifies the chain only when an explicit sslrootcert is configured;
 // verify-ca verifies the chain; verify-full also verifies the host name.
-func tlsConfig(cfg *Config) (*tls.Config, error) {
+func tlsConfigForHost(cfg *Config, host string) (*tls.Config, error) {
 	// ServerName supplies SNI and, for verify-full, the host-name check.
-	tlsConfig := &tls.Config{ServerName: cfg.Host}
+	tlsConfig := &tls.Config{ServerName: host}
 	if cfg.SSLCert != "" || cfg.SSLKey != "" {
 		if cfg.SSLCert == "" || cfg.SSLKey == "" {
 			return nil, fmt.Errorf("kingbase: sslcert and sslkey must be configured together")

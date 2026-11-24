@@ -1,6 +1,7 @@
 package gokb
 
 import (
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -109,7 +110,7 @@ func TestParseConfigEquivalentURLs(t *testing.T) {
 	}
 	for _, dsn := range equivalent {
 		got := mustParse(t, dsn)
-		if *got != *want {
+		if !reflect.DeepEqual(*got, *want) {
 			t.Errorf("ParseConfig(%q) = %+v, want %+v", dsn, *got, *want)
 		}
 	}
@@ -298,8 +299,13 @@ func TestParseConfigErrors(t *testing.T) {
 		{"mysql transport", "wireProtocol=mysql", errNotSupported},
 		{"bad transport", "wireProtocol=bogus", "unknown wireProtocol"},
 		{"bad encoding", "client_encoding=latin1", "unsupported client_encoding"},
-		{"target session attrs", "target_session_attrs=any", errNotSupported},
-		{"multiple hosts", "host=a,b", "multiple hosts"},
+		{"target session attrs primary", "target_session_attrs=primary", "not supported yet"},
+		{"bad target session attrs", "target_session_attrs=maybe", "unknown target_session_attrs"},
+		{"empty host entry", "host=a,,b", "invalid host"},
+		{"host with spaces", "host='a b'", "invalid host"},
+		{"unix host in list", "host=/tmp/kb,b", "unix socket host cannot be combined"},
+		{"port list longer than hosts", "host=a port=1111,2222", "cannot be matched"},
+		{"bad port list", "port=1,x", errInvalidPort},
 		{"bad scheme", "mysql://h/db", "unsupported DSN scheme"},
 		{"missing equals", "host", "invalid key=value DSN"},
 		{"unterminated quote", "host='abc", "unterminated quoted DSN value"},
