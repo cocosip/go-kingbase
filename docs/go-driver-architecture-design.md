@@ -196,7 +196,7 @@ An equivalent sys_type/sys_namespace query is a profile candidate, not a univers
 
 - OID maps to namespaceOID/name, typname, typtype, typelem, typbasetype, typlen, typdelim and typrelid; (namespaceName,typname) maps to candidate OIDs. Resolve namespace names on this server, never hardcode their OIDs.
 - Codecs require a verified built-in namespace, name and compatible shape. User-created app.int/app.year/app.bit cannot select a built-in codec or set/conflict with mode. Never choose the first ambiguous name or search_path winner as a built-in identity.
-- Two-column oid/typname data is diagnostic only. It cannot satisfy required namespace/domain/array shape or silently enable codecs. Fail initialization if required metadata cannot be established, naming the actual object/cause; do not fabricate missing fields.
+- Two-column oid/typname data is diagnostic only. It cannot satisfy required namespace/domain/array shape or enable codecs. A names-only fallback may complete initialization only as a labelled partial catalog (`CatalogStatus`/`CatalogCause`) in which every codec, scan type, length/precision and qualified label stays disabled; otherwise fail initialization naming the actual object/cause and never fabricate missing fields. V2 acceptance still requires the full shape.
 - Snapshot size varies; roughly 800 entries in an SDK is not a server row-count guarantee. Implementation/tests must define bounded frame, capture-byte and row budgets and fail safely on exhaustion.
 - Domains and arrays follow validated base/element links. Bound recursion, detect cycles and reject inconsistent shapes. Composite decoding requires separately captured shape; otherwise preserve opaque text.
 

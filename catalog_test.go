@@ -350,3 +350,232 @@ func TestCatalogDomainResolution(t *testing.T) {
 	_ = result.Close()
 	_ = physical.Close()
 }
+
+// serveCatalogProbe reads one catalog candidate query, checks its SQL contains
+// want, and replies with a classified missing-object error.
+func serveCatalogProbe(peer *testpeer.Conn, want, code string) bool {
+	payload, ok := expectMessage(peer, wire.MsgQuery)
+	if !ok {
+		return false
+	}
+	if sql, err := wire.DecodeQuery(payload); err != nil || !strings.Contains(sql, want) {
+		peer.Errorf("catalog probe sql = %q err %v, want %q", sql, err, want)
+		return false
+	}
+	_ = peer.ErrorResponse(
+		wire.ErrorField{Code: wire.ErrorSeverity, Value: testSeverityFatal},
+		wire.ErrorField{Code: wire.ErrorCode, Value: code},
+		wire.ErrorField{Code: wire.ErrorMessage, Value: "catalog object missing"},
+	)
+	return peer.ReadyForQuery(wire.StatusIdle) == nil
+}
+
+// serveCatalogSuccess reads one candidate query, checks its SQL contains want,
+// and answers with the scripted full-shape rows.
+func serveCatalogSuccess(peer *testpeer.Conn, want string) bool {
+	payload, ok := expectMessage(peer, wire.MsgQuery)
+	if !ok {
+		return false
+	}
+	if sql, err := wire.DecodeQuery(payload); err != nil || !strings.Contains(sql, want) {
+		peer.Errorf("catalog sql = %q err %v, want %q", sql, err, want)
+		return false
+	}
+	_ = peer.RowDescription(testpeer.CatalogColumns())
+	for _, row := range testpeer.CatalogRows() {
+		_ = peer.DataRow(row)
+	}
+	_ = peer.CommandComplete(fmt.Sprintf("SELECT %d", len(testpeer.CatalogRows())))
+	return peer.ReadyForQuery(wire.StatusIdle) == nil
+}
+
+// serveUserSelect reads one simple query, checks it equals want, and answers a
+// single typed column.
+func serveUserSelect(peer *testpeer.Conn, want string, column wire.ColumnDescription, value []byte) bool {
+	payload, ok := expectMessage(peer, wire.MsgQuery)
+	if !ok {
+		return false
+	}
+	if sql, err := wire.DecodeQuery(payload); err != nil || sql != want {
+		peer.Errorf("user sql = %q err %v, want %q", sql, err, want)
+		return false
+	}
+	_ = peer.RowDescription([]wire.ColumnDescription{column})
+	_ = peer.DataRow([][]byte{value})
+	_ = peer.CommandComplete("SELECT 1")
+	return peer.ReadyForQuery(wire.StatusIdle) == nil
+}
+
+func serveSysFallbackScript(peer *testpeer.Conn) {
+	peer.DisableAutoCatalog()
+	if _, err := peer.ReadStartup(); err != nil {
+		return
+	}
+	if err := peer.StartupOK(nil); err != nil {
+		return
+	}
+	if !serveCatalogProbe(peer, "pg_catalog.pg_type", "42P01") {
+		return
+	}
+	if !serveCatalogSuccess(peer, "sys_catalog.sys_type") {
+		return
+	}
+	waitTerminate(peer)
+}
+
+func serveNamesOnlyScript(peer *testpeer.Conn) {
+	peer.DisableAutoCatalog()
+	if _, err := peer.ReadStartup(); err != nil {
+		return
+	}
+	if err := peer.StartupOK(nil); err != nil {
+		return
+	}
+	if !serveCatalogProbe(peer, "pg_catalog.pg_type", "42703") {
+		return
+	}
+	if !serveCatalogProbe(peer, "sys_catalog.sys_type", "42P01") {
+		return
+	}
+	payload, ok := expectMessage(peer, wire.MsgQuery)
+	if !ok {
+		return
+	}
+	if sql, err := wire.DecodeQuery(payload); err != nil ||
+		!strings.Contains(sql, "pg_catalog.pg_type") || !strings.Contains(sql, "typname") {
+		peer.Errorf("names catalog sql = %q err %v", sql, err)
+		return
+	}
+	_ = peer.RowDescription([]wire.ColumnDescription{
+		{Name: "oid", TypeOID: 26, TypeLen: 4, TypeMod: -1, Format: 0},
+		{Name: "typname", TypeOID: 25, TypeLen: -1, TypeMod: -1, Format: 0},
+	})
+	_ = peer.DataRow([][]byte{[]byte("23"), []byte("int4")})
+	_ = peer.CommandComplete("SELECT 1")
+	_ = peer.ReadyForQuery(wire.StatusIdle)
+	if !serveUserSelect(peer, "SELECT 7",
+		wire.ColumnDescription{Name: "n", TypeOID: 23, TypeLen: 4, TypeMod: -1, Format: 0}, []byte("7")) {
+		return
+	}
+	if !serveUserSelect(peer, "SELECT 8",
+		wire.ColumnDescription{Name: "n", TypeOID: 23, TypeLen: 4, TypeMod: -1, Format: 1}, []byte{0, 0, 0, 8}) {
+		return
+	}
+	waitTerminate(peer)
+}
+
+func serveAllMissingScript(peer *testpeer.Conn) {
+	peer.DisableAutoCatalog()
+	if _, err := peer.ReadStartup(); err != nil {
+		return
+	}
+	if err := peer.StartupOK(nil); err != nil {
+		return
+	}
+	if !serveCatalogProbe(peer, "pg_catalog.pg_type", "42P01") ||
+		!serveCatalogProbe(peer, "sys_catalog.sys_type", "42P01") {
+		return
+	}
+	if _, _, err := peer.ReadMessage(); err == nil {
+		peer.Errorf("connection stayed open after exhausting catalog candidates")
+	}
+}
+
+func TestCatalogFallbackToSysRelation(t *testing.T) {
+	srv := testpeer.Start(t, serveSysFallbackScript)
+	physical, err := connectPeer(t, srv, "")
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	defer func() { _ = physical.Close() }()
+	if labels := physical.typeLabels(); labels[23] != "pg_catalog.int4" {
+		t.Errorf("catalog[23] = %q, want the sys fallback to load full shape", labels[23])
+	}
+	if physical.catalogStatus != CatalogFull {
+		t.Errorf("catalogStatus = %d, want full", physical.catalogStatus)
+	}
+}
+
+func TestCatalogNamesOnlyFallbackNeverEnablesCodecs(t *testing.T) {
+	srv := testpeer.Start(t, serveNamesOnlyScript)
+	physical, err := connectPeer(t, srv, "")
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	defer func() { _ = physical.Close() }()
+	if physical.catalogStatus != CatalogPartial || physical.catalogCause == "" {
+		t.Fatalf("catalogStatus = %d cause %q, want a labelled partial catalog",
+			physical.catalogStatus, physical.catalogCause)
+	}
+	if name, ok := physical.partialTypeName(23); !ok || name != "int4" {
+		t.Fatalf("partial name = %q %v, want int4", name, ok)
+	}
+	if _, ok := physical.typeMetadata(23); ok {
+		t.Fatal("names-only catalog exposed full metadata")
+	}
+	textRows := mustQueryRows(t, physical, "SELECT 7")
+	assertOpaqueString(t, textRows, "7")
+	binaryRows := mustQueryRows(t, physical, "SELECT 8")
+	assertOpaqueBytes(t, binaryRows)
+}
+
+func mustQueryRows(t *testing.T, c *conn, query string) *rows {
+	t.Helper()
+	result, err := c.QueryContext(context.Background(), query, nil)
+	if err != nil {
+		t.Fatalf("QueryContext(%q): %v", query, err)
+	}
+	typed, ok := result.(*rows)
+	if !ok {
+		t.Fatalf("QueryContext returned %T, want *rows", result)
+	}
+	t.Cleanup(func() { _ = typed.Close() })
+	return typed
+}
+
+func assertOpaqueString(t *testing.T, r *rows, want string) {
+	t.Helper()
+	dest := make([]driver.Value, 1)
+	if err := r.Next(dest); err != nil {
+		t.Fatalf("Next: %v", err)
+	}
+	if got, ok := dest[0].(string); !ok || got != want {
+		t.Errorf("value = %T(%v), want the opaque string %q", dest[0], dest[0], want)
+	}
+	if r.ColumnTypeScanType(0) != reflect.TypeOf("") {
+		t.Errorf("ScanType = %v, want string for an opaque fallback type", r.ColumnTypeScanType(0))
+	}
+	if r.ColumnTypeDatabaseTypeName(0) != "int4" {
+		t.Errorf("DatabaseTypeName = %q, want the fallback name", r.ColumnTypeDatabaseTypeName(0))
+	}
+	if err := r.Close(); err != nil {
+		t.Fatalf("close result: %v", err)
+	}
+}
+
+func assertOpaqueBytes(t *testing.T, r *rows) {
+	t.Helper()
+	dest := make([]driver.Value, 1)
+	if err := r.Next(dest); err != nil {
+		t.Fatalf("binary Next: %v", err)
+	}
+	got, ok := dest[0].([]byte)
+	if !ok || len(got) != 4 {
+		t.Errorf("binary value = %T(%v), want opaque bytes", dest[0], dest[0])
+	}
+	if r.ColumnTypeScanType(0) != reflect.TypeOf("") {
+		t.Errorf("binary ScanType = %v, want string for an opaque fallback type", r.ColumnTypeScanType(0))
+	}
+	if err := r.Close(); err != nil {
+		t.Fatalf("close binary result: %v", err)
+	}
+}
+
+func TestCatalogFallbackAggregatesMissingEvidence(t *testing.T) {
+	srv := testpeer.Start(t, serveAllMissingScript)
+	_, err := connectPeer(t, srv, "")
+	if err == nil || !strings.Contains(err.Error(), "pg_catalog.pg_type: SQLSTATE 42P01") ||
+		!strings.Contains(err.Error(), "sys_catalog.sys_type: SQLSTATE 42P01") {
+		t.Fatalf("Connect = %v, want per-candidate missing-object evidence", err)
+	}
+}

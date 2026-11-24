@@ -42,6 +42,8 @@ type conn struct {
 	backendSecret    uint32
 	txStatus         byte
 	catalog          *typeCatalog
+	catalogStatus    CatalogStatus
+	catalogCause     string
 	nextStmtID       int
 	// commandSent records that a request was written, so a later failure is
 	// execution-uncertain rather than safely retryable.

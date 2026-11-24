@@ -60,7 +60,11 @@ func (r *rows) resetColumns(columns []wire.ColumnDescription) {
 		schema, name, known := r.conn.codecName(column.TypeOID)
 		if !known {
 			// Unknown OIDs still decode: text values stay strings and binary
-			// values stay bytes, with an empty type name as F-212 requires.
+			// values stay bytes, with an empty type name as F-212 requires. A
+			// names-only fallback may name the type but never selects a codec.
+			if name, ok := r.conn.partialTypeName(column.TypeOID); ok {
+				r.typeNames[i] = name
+			}
 			r.scanTypes[i] = reflect.TypeOf("")
 			r.decoders[i] = unknownTypeDecoder(column.Format)
 			continue

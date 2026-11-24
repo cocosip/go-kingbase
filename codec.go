@@ -207,7 +207,15 @@ func (c *conn) codecName(oid uint32) (schema, name string, ok bool) {
 	return c.catalog.lookup(oid)
 }
 
-// typeLabels is the catalog view used by tests and diagnostics.
+// partialTypeName returns an unqualified name from a names-only catalog. The
+// value is honest for diagnostics but cannot select a decoder or builtin codec.
+func (c *conn) partialTypeName(oid uint32) (string, bool) {
+	if c.catalog == nil {
+		return "", false
+	}
+	return c.catalog.nameOnly(oid)
+}
+
 // typeMetadata returns the resolved catalog entry for a result type, or false
 // when the server did not identify it.
 func (c *conn) typeMetadata(oid uint32) (typeInfo, bool) {

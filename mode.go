@@ -145,7 +145,7 @@ func (c *conn) probeMode(ctx context.Context) (CompatibilityMode, ModeSource, st
 	var evidence []string
 	rows, err := c.querySimple(ctx, settingsQuery)
 	if err != nil {
-		if !missingModeMetadata(err) {
+		if !missingProbeObject(err) {
 			return ModeAuto, 0, "", fmt.Errorf("kingbase: mode discovery: %w", err)
 		}
 		evidence = append(evidence, "pg_settings: "+sqlstate(err))
@@ -165,7 +165,7 @@ func (c *conn) probeMode(ctx context.Context) (CompatibilityMode, ModeSource, st
 	}
 	rows, err = c.querySimple(ctx, "SHOW database_mode")
 	if err != nil {
-		if missingModeMetadata(err) {
+		if missingProbeObject(err) {
 			evidence = append(evidence, "SHOW database_mode: "+sqlstate(err))
 			return ModeAuto, ModeSourceUnavailable, strings.Join(evidence, "; "), nil
 		}
@@ -239,9 +239,9 @@ func readSettingsMode(rows driver.Rows) (CompatibilityMode, bool, error) {
 	}
 }
 
-// missingModeMetadata reports an unsupported discovery candidate: a missing
+// missingProbeObject reports an unsupported discovery candidate: a missing
 // relation, column or object. Permission, timeout and other causes stay errors.
-func missingModeMetadata(err error) bool {
+func missingProbeObject(err error) bool {
 	var serverErr *Error
 	if !errors.As(err, &serverErr) {
 		return false

@@ -56,6 +56,10 @@ type ServerMetadata struct {
 	ServerVersion string
 	// ServerVersionNum is the raw startup server_version_num, when reported.
 	ServerVersionNum string
+	// CatalogStatus reports the shape of the loaded type catalog.
+	CatalogStatus CatalogStatus
+	// CatalogCause records why a partial catalog was used, when it was.
+	CatalogCause string
 	// Release is the raw, bounded SELECT version() report.
 	Release string
 	// ReleaseTruncated reports that Release was cut to the retention bound.
@@ -137,6 +141,8 @@ func (c *conn) serverMetadata() ServerMetadata {
 		ServerVersionNum: c.params["server_version_num"],
 		Release:          c.release,
 		ReleaseTruncated: c.releaseTruncated,
+		CatalogStatus:    c.catalogStatus,
+		CatalogCause:     c.catalogCause,
 	}
 }
 
