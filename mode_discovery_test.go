@@ -60,7 +60,7 @@ func TestModeDiscoveryFromStartup(t *testing.T) {
 		t.Fatalf("Connect: %v", err)
 	}
 	defer func() { _ = connection.Close() }()
-	if connection.mode != ModeMySQL || connection.modeSource != modeSourceStartup || !connection.modeVerified {
+	if connection.mode != ModeMySQL || connection.modeSource != ModeSourceStartup || !connection.modeVerified {
 		t.Fatalf("mode = %s source %s verified %v, want startup mysql",
 			connection.mode, connection.modeSource, connection.modeVerified)
 	}
@@ -145,7 +145,7 @@ func TestModeDiscoveryFromQueryChain(t *testing.T) {
 		t.Fatalf("Connect: %v", err)
 	}
 	defer func() { _ = connection.Close() }()
-	if connection.mode != ModeOracle || connection.modeSource != modeSourceQuery || !connection.modeVerified {
+	if connection.mode != ModeOracle || connection.modeSource != ModeSourceQuery || !connection.modeVerified {
 		t.Fatalf("mode = %s source %s verified %v, want query oracle",
 			connection.mode, connection.modeSource, connection.modeVerified)
 	}
@@ -212,9 +212,14 @@ func TestModeDiscoveryExplicitModeIsUnverifiedFallback(t *testing.T) {
 	}
 	connection := physical.(*conn)
 	defer func() { _ = connection.Close() }()
-	if connection.mode != ModeMySQL || connection.modeSource != modeSourceExplicit || connection.modeVerified {
+	if connection.mode != ModeMySQL || connection.modeSource != ModeSourceExplicit || connection.modeVerified {
 		t.Fatalf("mode = %s source %s verified %v, want an unverified explicit mysql",
 			connection.mode, connection.modeSource, connection.modeVerified)
+	}
+	meta := connection.serverMetadata()
+	if meta.ConfiguredMode != ModeMySQL || meta.ModeSource != ModeSourceExplicit || meta.ModeVerified ||
+		meta.IdentityStatus != IdentityCaptured || meta.Profile != "" {
+		t.Fatalf("metadata = %+v, want an unverified explicit mysql with a captured identity", meta)
 	}
 }
 
@@ -250,6 +255,9 @@ func TestModeDiscoveryMalformedStartupReportFails(t *testing.T) {
 			return
 		}
 		_ = peer.StartupOK([][2]string{{testDatabaseMode, "weird"}})
+		// The identity query still runs before mode resolution; the auto
+		// responder answers it while this script waits for the close.
+		waitTerminate(peer)
 	})
 	_, err := connectPeer(t, srv, "")
 	if err == nil || !strings.Contains(err.Error(), "unknown database_mode") {
@@ -275,7 +283,7 @@ func TestModeDiscoveryVersionOnlyFallsThrough(t *testing.T) {
 		}); err != nil {
 			return
 		}
-		_ = peer.DataRow([][]byte{[]byte("server_version"), []byte("12.1")})
+		_ = peer.DataRow([][]byte{[]byte("server_version"), []byte(testServerVersionText)})
 		_ = peer.DataRow([][]byte{[]byte("server_version_num"), []byte("120100")})
 		_ = peer.CommandComplete("SELECT 2")
 		_ = peer.ReadyForQuery(wire.StatusIdle)
@@ -295,7 +303,7 @@ func TestModeDiscoveryVersionOnlyFallsThrough(t *testing.T) {
 		t.Fatalf("Connect: %v", err)
 	}
 	defer func() { _ = connection.Close() }()
-	if connection.mode != ModeMySQL || connection.modeSource != modeSourceQuery {
+	if connection.mode != ModeMySQL || connection.modeSource != ModeSourceQuery {
 		t.Fatalf("mode = %s source %s, want the SHOW fallback report", connection.mode, connection.modeSource)
 	}
 }

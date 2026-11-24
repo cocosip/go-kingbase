@@ -73,7 +73,7 @@ func TestConnectCleartextAuth(t *testing.T) {
 		}
 		if err := peer.StartupOK([][2]string{
 			{"client_encoding", "UTF8"},
-			{"server_version", "12.1"},
+			{"server_version", testServerVersionText},
 			{testDatabaseMode, "oracle"},
 		}); err != nil {
 			peer.Errorf("StartupOK: %v", err)
@@ -96,7 +96,7 @@ func TestConnectCleartextAuth(t *testing.T) {
 	if physical.cfg.User != testUser || physical.cfg.Database != testDatabase {
 		t.Errorf("connected as %s/%s", physical.cfg.User, physical.cfg.Database)
 	}
-	if physical.params["server_version"] != "12.1" || physical.params[testDatabaseMode] != "oracle" {
+	if physical.params["server_version"] != testServerVersionText || physical.params[testDatabaseMode] != "oracle" {
 		t.Errorf("startup parameters = %v, want server_version and database_mode", physical.params)
 	}
 	if physical.backendPID != 4242 || physical.backendSecret != 9876 {

@@ -160,6 +160,9 @@ func (r *rows) Next(dest []driver.Value) error {
 	if r.closed || r.finished {
 		return io.EOF
 	}
+	if len(dest) != len(r.columns) {
+		return fmt.Errorf("kingbase: result row has %d columns, caller provided %d values", len(r.columns), len(dest))
+	}
 	for {
 		typ, payload, err := r.conn.reader.ReadMessage()
 		if err != nil {

@@ -31,14 +31,18 @@ type conn struct {
 	params map[string]string
 	// mode is the effective compatibility mode after discovery: the validated
 	// server report, or an explicit declaration labelled as unverified.
-	mode          CompatibilityMode
-	modeSource    modeSource
-	modeVerified  bool
-	backendPID    uint32
-	backendSecret uint32
-	txStatus      byte
-	catalog       *typeCatalog
-	nextStmtID    int
+	mode             CompatibilityMode
+	modeSource       ModeSource
+	modeVerified     bool
+	release          string
+	releaseTruncated bool
+	identityStatus   IdentityStatus
+	identityCause    string
+	backendPID       uint32
+	backendSecret    uint32
+	txStatus         byte
+	catalog          *typeCatalog
+	nextStmtID       int
 	// commandSent records that a request was written, so a later failure is
 	// execution-uncertain rather than safely retryable.
 	commandSent bool

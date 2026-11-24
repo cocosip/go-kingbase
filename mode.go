@@ -14,6 +14,8 @@ import (
 // connection context; only behaviour with offline-verified evidence is
 // represented here, so an unverified mode never fabricates semantics.
 type modeProfile struct {
+	// name is the verified profile name reported in diagnostics.
+	name string
 	// identifierQuotes holds the bytes that open a quoted identifier. The bytes
 	// already reserved by the literal scanner (', -, /, E, e, $) are not
 	// accepted here.
@@ -26,7 +28,7 @@ const pgIdentifierQuotes = `"`
 // pgModeProfile carries the verified PG quoting rules; positional placeholders
 // stay the driver's own documented rules ($n native, ? convenience) whenever a
 // profile is present.
-var pgModeProfile = modeProfile{identifierQuotes: pgIdentifierQuotes}
+var pgModeProfile = modeProfile{name: "pg", identifierQuotes: pgIdentifierQuotes}
 
 // profile returns the profile in force for the configured mode. ModeAuto is a
 // bootstrap baseline: the transport is configured as PG and no authoritative
@@ -48,28 +50,28 @@ func (p modeProfile) quotesIdentifier(char byte) bool {
 	return strings.IndexByte(p.identifierQuotes, char) >= 0
 }
 
-// modeSource labels where an effective mode came from.
-type modeSource uint8
+// ModeSource labels where an effective mode came from.
+type ModeSource uint8
 
 const (
-	// modeSourceExplicit is a declaration with no server report (unverified).
-	modeSourceExplicit modeSource = iota
-	// modeSourceStartup is a validated startup database_mode report.
-	modeSourceStartup
-	// modeSourceQuery is a validated mode-discovery query result.
-	modeSourceQuery
-	// modeSourceUnavailable is a probe chain that produced no report.
-	modeSourceUnavailable
+	// ModeSourceExplicit is a declaration with no server report (unverified).
+	ModeSourceExplicit ModeSource = iota
+	// ModeSourceStartup is a validated startup database_mode report.
+	ModeSourceStartup
+	// ModeSourceQuery is a validated mode-discovery query result.
+	ModeSourceQuery
+	// ModeSourceUnavailable is a probe chain that produced no report.
+	ModeSourceUnavailable
 )
 
 // String renders the provenance label used in diagnostics.
-func (s modeSource) String() string {
+func (s ModeSource) String() string {
 	switch s {
-	case modeSourceStartup:
+	case ModeSourceStartup:
 		return "startup"
-	case modeSourceQuery:
+	case ModeSourceQuery:
 		return "query"
-	case modeSourceUnavailable:
+	case ModeSourceUnavailable:
 		return "unavailable"
 	default:
 		return "explicit"
@@ -103,17 +105,17 @@ func (c *conn) resolveMode(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("kingbase: startup report has %w", err)
 		}
-		return c.adoptMode(actual, modeSourceStartup, declared)
+		return c.adoptMode(actual, ModeSourceStartup, declared)
 	}
 	if declared != ModeAuto {
-		c.mode, c.modeSource, c.modeVerified = declared, modeSourceExplicit, false
+		c.mode, c.modeSource, c.modeVerified = declared, ModeSourceExplicit, false
 		return nil
 	}
 	actual, source, evidence, err := c.probeMode(ctx)
 	if err != nil {
 		return err
 	}
-	if source == modeSourceUnavailable {
+	if source == ModeSourceUnavailable {
 		if evidence != "" {
 			return fmt.Errorf("kingbase: server did not report database_mode (%s); set compatibilityMode explicitly", evidence)
 		}
@@ -124,7 +126,7 @@ func (c *conn) resolveMode(ctx context.Context) error {
 
 // adoptMode records the effective mode after the declaration check, so a
 // conflicting explicit mode fails with expected and actual values.
-func (c *conn) adoptMode(actual CompatibilityMode, source modeSource, declared CompatibilityMode) error {
+func (c *conn) adoptMode(actual CompatibilityMode, source ModeSource, declared CompatibilityMode) error {
 	if declared != ModeAuto && declared != actual {
 		return fmt.Errorf("kingbase: compatibilityMode %s conflicts with server database_mode %s reported by %s", declared, actual, source)
 	}
@@ -137,7 +139,7 @@ func (c *conn) adoptMode(actual CompatibilityMode, source modeSource, declared C
 // unsupported" and continues the chain; permission, timeout and malformed causes
 // are retained so absence is never reported for them. The returned evidence
 // names each candidate's outcome when no report exists.
-func (c *conn) probeMode(ctx context.Context) (CompatibilityMode, modeSource, string, error) {
+func (c *conn) probeMode(ctx context.Context) (CompatibilityMode, ModeSource, string, error) {
 	const settingsQuery = `SELECT name, setting FROM pg_catalog.pg_settings
  WHERE name IN ('database_mode','server_version','server_version_num')`
 	var evidence []string
@@ -157,7 +159,7 @@ func (c *conn) probeMode(ctx context.Context) (CompatibilityMode, modeSource, st
 			return ModeAuto, 0, "", fmt.Errorf("kingbase: mode discovery: %w", closeErr)
 		}
 		if found {
-			return mode, modeSourceQuery, "", nil
+			return mode, ModeSourceQuery, "", nil
 		}
 		evidence = append(evidence, "pg_settings: no database_mode row")
 	}
@@ -165,7 +167,7 @@ func (c *conn) probeMode(ctx context.Context) (CompatibilityMode, modeSource, st
 	if err != nil {
 		if missingModeMetadata(err) {
 			evidence = append(evidence, "SHOW database_mode: "+sqlstate(err))
-			return ModeAuto, modeSourceUnavailable, strings.Join(evidence, "; "), nil
+			return ModeAuto, ModeSourceUnavailable, strings.Join(evidence, "; "), nil
 		}
 		return ModeAuto, 0, "", fmt.Errorf("kingbase: mode discovery: %w", err)
 	}
@@ -174,7 +176,7 @@ func (c *conn) probeMode(ctx context.Context) (CompatibilityMode, modeSource, st
 		_ = rows.Close()
 		if errors.Is(err, io.EOF) {
 			evidence = append(evidence, "SHOW database_mode: no rows")
-			return ModeAuto, modeSourceUnavailable, strings.Join(evidence, "; "), nil
+			return ModeAuto, ModeSourceUnavailable, strings.Join(evidence, "; "), nil
 		}
 		return ModeAuto, 0, "", fmt.Errorf("kingbase: read database_mode: %w", err)
 	}
@@ -190,7 +192,7 @@ func (c *conn) probeMode(ctx context.Context) (CompatibilityMode, modeSource, st
 	if err != nil {
 		return ModeAuto, 0, "", fmt.Errorf("kingbase: query report has %w", err)
 	}
-	return mode, modeSourceQuery, "", nil
+	return mode, ModeSourceQuery, "", nil
 }
 
 // sqlstate renders the SQLSTATE of a server error for probe evidence.

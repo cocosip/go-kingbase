@@ -106,6 +106,9 @@ func (c *Connector) connectEndpoint(ctx context.Context, ep endpoint) (driver.Co
 	if err := physical.handshake(); err != nil {
 		return nil, fmt.Errorf("kingbase: %s handshake failed: %w", c.cfg.Network, err)
 	}
+	if err := physical.captureIdentity(ctx); err != nil {
+		return nil, err
+	}
 	if err := physical.checkTargetSession(ctx); err != nil {
 		return nil, err
 	}

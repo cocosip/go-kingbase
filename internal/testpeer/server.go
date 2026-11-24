@@ -194,10 +194,13 @@ type Conn struct {
 	// modeReport is the database_mode the mode-discovery auto responder reports;
 	// an empty value disables it so a script can answer or fail discovery itself.
 	modeReport string
+	// versionReport is the raw identity string the auto responder returns; an
+	// empty value disables it so a script can answer or fail SELECT version().
+	versionReport string
 }
 
 func newConn(t testing.TB, conn net.Conn) *Conn {
-	c := &Conn{t: t, conn: conn, autoCatalog: true, modeReport: "pg"}
+	c := &Conn{t: t, conn: conn, autoCatalog: true, modeReport: "pg", versionReport: defaultVersionReport}
 	c.reader = wire.NewReader(conn, 0)
 	c.writer = wire.NewWriter(connWriter{c: c})
 	return c
@@ -313,6 +316,11 @@ func (c *Conn) ReadMessage() (wire.MsgType, []byte, error) {
 			if err := c.serveCatalog(); err != nil {
 				return typ, nil, err
 			}
+			continue
+		}
+		if handled, err := c.answerIdentityQuery(typ, payload); err != nil {
+			return typ, nil, err
+		} else if handled {
 			continue
 		}
 		if handled, err := c.answerModeQuery(typ, payload); err != nil {
