@@ -198,13 +198,24 @@ func formatUUID(data []byte) string {
 	return fmt.Sprintf("%x-%x-%x-%x-%x", data[0:4], data[4:6], data[6:8], data[8:10], data[10:])
 }
 
-// codecName returns the qualified catalog name for a type OID, or empty when
-// the type is not in the catalog.
-func (c *conn) codecName(oid uint32) (schema, name string, ok bool) {
+// catalogIdentity returns the resolved catalog identity for a known OID,
+// following validated domain links. The name is honest for diagnostics.
+func (c *conn) catalogIdentity(oid uint32) (typeInfo, bool) {
 	if c.catalog == nil {
+		return typeInfo{}, false
+	}
+	return c.catalog.resolve(oid)
+}
+
+// codecName returns the qualified builtin identity that may select a codec:
+// the pg_catalog namespace plus a base shape. Same-named user types and
+// non-base entries stay opaque even when their bare names match a builtin.
+func (c *conn) codecName(oid uint32) (schema, name string, ok bool) {
+	info, found := c.catalogIdentity(oid)
+	if !found || info.kind != 'b' || info.schema != schemaPGCatalog || info.name == "" {
 		return "", "", false
 	}
-	return c.catalog.lookup(oid)
+	return info.schema, info.name, true
 }
 
 // partialTypeName returns an unqualified name from a names-only catalog. The

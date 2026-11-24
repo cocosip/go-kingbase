@@ -57,19 +57,21 @@ func (r *rows) resetColumns(columns []wire.ColumnDescription) {
 	r.scanTypes = make([]reflect.Type, len(columns))
 	for i, column := range columns {
 		r.names[i] = column.Name
-		schema, name, known := r.conn.codecName(column.TypeOID)
-		if !known {
-			// Unknown OIDs still decode: text values stay strings and binary
-			// values stay bytes, with an empty type name as F-212 requires. A
-			// names-only fallback may name the type but never selects a codec.
-			if name, ok := r.conn.partialTypeName(column.TypeOID); ok {
-				r.typeNames[i] = name
-			}
+		// Any known identity names the type honestly; a names-only fallback is
+		// honest too but only at the diagnostic level.
+		if info, known := r.conn.catalogIdentity(column.TypeOID); known {
+			r.typeNames[i] = info.name
+		} else if name, ok := r.conn.partialTypeName(column.TypeOID); ok {
+			r.typeNames[i] = name
+		}
+		schema, name, verified := r.conn.codecName(column.TypeOID)
+		if !verified {
+			// Opaque types still decode: text stays string and binary stays
+			// bytes, and no decoder or scan type is selected for them.
 			r.scanTypes[i] = reflect.TypeOf("")
 			r.decoders[i] = unknownTypeDecoder(column.Format)
 			continue
 		}
-		r.typeNames[i] = name
 		r.scanTypes[i] = scanType(schema, name)
 		r.decoders[i] = typeDecoder(schema, name, column.Format)
 	}
@@ -132,7 +134,7 @@ func (r *rows) ColumnTypeNullable(_ int) (bool, bool) {
 func (r *rows) ColumnTypeLength(index int) (int64, bool) {
 	column := r.columns[index]
 	info, known := r.conn.typeMetadata(column.TypeOID)
-	if !known || info.schema != schemaPGCatalog {
+	if !known || info.kind != 'b' || info.schema != schemaPGCatalog {
 		return 0, false
 	}
 	switch info.name {
@@ -152,7 +154,7 @@ func (r *rows) ColumnTypeLength(index int) (int64, bool) {
 func (r *rows) ColumnTypePrecisionScale(index int) (int64, int64, bool) {
 	column := r.columns[index]
 	info, known := r.conn.typeMetadata(column.TypeOID)
-	if !known || info.schema != schemaPGCatalog || info.name != "numeric" || column.TypeMod < 4 {
+	if !known || info.kind != 'b' || info.schema != schemaPGCatalog || info.name != "numeric" || column.TypeMod < 4 {
 		return 0, 0, false
 	}
 	typmod := column.TypeMod - 4

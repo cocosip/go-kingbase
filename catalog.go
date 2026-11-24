@@ -70,13 +70,6 @@ type typeCatalog struct {
 	names map[uint32]string
 }
 
-// lookup resolves a type OID to its catalog identity, following domains to
-// their base type.
-func (c *typeCatalog) lookup(oid uint32) (schema, name string, ok bool) {
-	info, ok := c.resolve(oid)
-	return info.schema, info.name, ok
-}
-
 // nameOnly returns an unqualified name from a two-column fallback catalog.
 func (c *typeCatalog) nameOnly(oid uint32) (string, bool) {
 	name, ok := c.names[oid]

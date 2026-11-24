@@ -43,7 +43,7 @@ func TestBinaryValueCodecs(t *testing.T) {
 		{typ: testTypeBool, data: []byte{1}, want: true, exists: true},
 		{typ: testTypeBool, data: []byte{0}, want: false, exists: true},
 		{typ: "int2", data: []byte{0xff, 0xfe}, want: int64(-2), exists: true},
-		{typ: "int4", data: encodeInt4(7), want: int64(7), exists: true},
+		{typ: testTypeInt4, data: encodeInt4(7), want: int64(7), exists: true},
 		{typ: "int8", data: encodeInt8(1 << 40), want: int64(1 << 40), exists: true},
 		{typ: "float4", data: encodeInt4(int32(math.Float32bits(1.5))), want: 1.5, exists: true},
 		{typ: "float8", data: encodeInt8(int64(math.Float64bits(2.5))), want: 2.5, exists: true},

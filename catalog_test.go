@@ -340,7 +340,7 @@ func TestCatalogDomainResolution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("QueryContext: %v", err)
 	}
-	if name := result.(driver.RowsColumnTypeDatabaseTypeName).ColumnTypeDatabaseTypeName(0); name != "int4" {
+	if name := result.(driver.RowsColumnTypeDatabaseTypeName).ColumnTypeDatabaseTypeName(0); name != testTypeInt4 {
 		t.Errorf("domain type name = %q, want base int4", name)
 	}
 	dest := make([]driver.Value, 1)
@@ -450,7 +450,7 @@ func serveNamesOnlyScript(peer *testpeer.Conn) {
 		{Name: "oid", TypeOID: 26, TypeLen: 4, TypeMod: -1, Format: 0},
 		{Name: "typname", TypeOID: 25, TypeLen: -1, TypeMod: -1, Format: 0},
 	})
-	_ = peer.DataRow([][]byte{[]byte("23"), []byte("int4")})
+	_ = peer.DataRow([][]byte{[]byte("23"), []byte(testTypeInt4)})
 	_ = peer.CommandComplete("SELECT 1")
 	_ = peer.ReadyForQuery(wire.StatusIdle)
 	if !serveUserSelect(peer, "SELECT 7",
@@ -507,7 +507,7 @@ func TestCatalogNamesOnlyFallbackNeverEnablesCodecs(t *testing.T) {
 		t.Fatalf("catalogStatus = %d cause %q, want a labelled partial catalog",
 			physical.catalogStatus, physical.catalogCause)
 	}
-	if name, ok := physical.partialTypeName(23); !ok || name != "int4" {
+	if name, ok := physical.partialTypeName(23); !ok || name != testTypeInt4 {
 		t.Fatalf("partial name = %q %v, want int4", name, ok)
 	}
 	if _, ok := physical.typeMetadata(23); ok {
@@ -545,7 +545,7 @@ func assertOpaqueString(t *testing.T, r *rows, want string) {
 	if r.ColumnTypeScanType(0) != reflect.TypeOf("") {
 		t.Errorf("ScanType = %v, want string for an opaque fallback type", r.ColumnTypeScanType(0))
 	}
-	if r.ColumnTypeDatabaseTypeName(0) != "int4" {
+	if r.ColumnTypeDatabaseTypeName(0) != testTypeInt4 {
 		t.Errorf("DatabaseTypeName = %q, want the fallback name", r.ColumnTypeDatabaseTypeName(0))
 	}
 	if err := r.Close(); err != nil {
