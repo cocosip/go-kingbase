@@ -80,7 +80,7 @@ DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup excha
 | ID | Capability | Priority | Verification | Notes | Impl | Offline | Live |
 |---|---|---|---|---|---|---|---|
 | F-401 | Simple query and extended protocol | P0 | both | prepared-statement reuse; one-shot extended and server-side prepare with reuse | done | done | pending |
-| F-402 | Placeholder lexer and binding plan | P0 | offline | One style; quotes/backticks/brackets/dollar/comments/operators/settings; repeated/reversed names/indexes expand correctly | todo | pending | n/a |
+| F-402 | Placeholder lexer and binding plan | P0 | offline | One style; quotes/backticks/brackets/dollar/comments/operators/settings; repeated/reversed names/indexes expand correctly | wip | pending | n/a |
 | F-403 | Logical NumInput and call validation | P0 | both | Unique names/max contiguous dollar index; SQLServer -1 still validates bindings | todo | pending | pending |
 | F-404 | NamedValue/Valuer/NULL conversion | P1 | both | Preserve wrapper target metadata; nil/Null validity, full uint64 range, Valuer once per logical argument | wip | pending | pending |
 | F-405 | Qualified target OID inference | P0 | both | Explicit verified target or inference; byte/bool/bytes wrappers cannot hardcode same-named user targets | todo | pending | pending |

@@ -25,6 +25,13 @@ func (c *conn) QueryContext(ctx context.Context, query string, args []driver.Nam
 	if err != nil {
 		return nil, err
 	}
+	query, expected, err := c.rewritePlaceholders(query)
+	if err != nil {
+		return nil, err
+	}
+	if expected >= 0 && expected != len(values) {
+		return nil, fmt.Errorf("kingbase: statement expects %d arguments, got %d", expected, len(values))
+	}
 	var rows driver.Rows
 	if len(values) == 0 {
 		rows, err = c.querySimple(ctx, query)
@@ -42,6 +49,13 @@ func (c *conn) ExecContext(ctx context.Context, query string, args []driver.Name
 	values, err := namedValuesToValues(args)
 	if err != nil {
 		return nil, err
+	}
+	query, expected, err := c.rewritePlaceholders(query)
+	if err != nil {
+		return nil, err
+	}
+	if expected >= 0 && expected != len(values) {
+		return nil, fmt.Errorf("kingbase: statement expects %d arguments, got %d", expected, len(values))
 	}
 	var result driver.Result
 	if len(values) == 0 {

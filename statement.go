@@ -39,6 +39,13 @@ func (c *conn) PrepareContext(ctx context.Context, query string) (driver.Stmt, e
 	if isCopyStatement(query) {
 		return c.prepareCopyIn(ctx, query)
 	}
+	// Prepared statements accept ? placeholders too; the server's ParameterDescription
+	// then reports the argument count database/sql enforces.
+	planned, _, err := c.rewritePlaceholders(query)
+	if err != nil {
+		return nil, err
+	}
+	query = planned
 	name := "kb_stmt_" + strconv.Itoa(c.nextStmtID)
 	c.nextStmtID++
 	if err := c.beginCommand(ctx); err != nil {
