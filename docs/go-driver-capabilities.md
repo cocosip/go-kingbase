@@ -1,6 +1,6 @@
 # KingbaseES Go Driver — Capability Matrix
 
-> Status: corrected requirements; T-001 scaffold done, no driver behaviour or acceptance yet
+> Status: corrected requirements; M0 core in progress, no live acceptance yet
 > Date: 2026-11-24
 > Companion documents: [Architecture Design](go-driver-architecture-design.md) · [Development Plan and Progress](go-driver-development.md)
 
@@ -13,7 +13,7 @@
 - offline = unit/replay; live = actual server; both = both required. Impl/offline/live statuses below are independent: todo/pending/pending initially. n/a live means the requirement is offline-only, not that a missing server passed.
 - Aggregate live accepted requires all applicable profiles in the release manifest. A blocked/unavailable profile stays pending and cannot be advertised. Tests/provenance live in the progress tracker, with per-profile records in section 17.
 
-A product scaffold exists (T-001: module, Apache-2.0 license, CI/lint contract). No driver behaviour or reachable-server acceptance exists yet; documentation correction does not change implementation status.
+DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup exchange with cleartext/MD5 authentication, TLS trust-policy negotiation, and simple/extended query-or-exec with drain and retire semantics are implemented and tested offline. No live acceptance exists yet; documentation correction does not change implementation status.
 
 ## 1. Connection and Configuration
 
@@ -21,8 +21,8 @@ A product scaffold exists (T-001: module, Apache-2.0 license, CI/lint contract).
 |---|---|---|---|---|---|---|---|
 | F-101 | DSN parsing: URL and libpq forms | P0 | offline | spaces/quotes/backslashes/empty values | done | done | n/a |
 | F-102 | Driver/runtime allowlist and validation | P0 | offline | Unknown driver keys fail; only listed runtime settings forwarded safely; explicit unsupported P2 options fail | done | done | n/a |
-| F-103 | Whole physical Connect timeout | P0 | both | Context/timeout covers DNS through identity, mode, catalog and idle validation; close partial sessions | todo | pending | pending |
-| F-104 | `application_name` / `fallback_application_name` | P1 | live | verified application-name visibility per backend, not assumed PG SQL on MySQL | todo | pending | pending |
+| F-103 | Whole physical Connect timeout | P0 | both | Context/timeout covers DNS through identity, mode, catalog and idle validation; close partial sessions | done | done | pending |
+| F-104 | `application_name` / `fallback_application_name` | P1 | live | verified application-name visibility per backend, not assumed PG SQL on MySQL | done | pending | pending |
 | F-105 | TCP keepalive | P2 | offline | OS-specific settings; explicit unsupported error until implemented | todo | pending | n/a |
 | F-106 | Multiple hosts and target_session_attrs | P2 | live | Separate opt-in target-selection policy; no protocol or port fallback | todo | pending | pending |
 | F-107 | Environment-variable fallback (`KINGBASE_*`) | P2 | offline | explicit parameters win; names are case-insensitive | todo | pending | n/a |
@@ -35,7 +35,7 @@ A product scaffold exists (T-001: module, Apache-2.0 license, CI/lint contract).
 | F-114 | Missing `dbname` defaults to the user name | P1 | offline | libpq convention | done | done | n/a |
 | F-115 | Safe session reset before reuse | P0 | both | SessionResetter checkout timing; pinned Conn state; bounded reset, dirty/poisoned retirement, prepared-handle invalidation | todo | pending | pending |
 | F-116 | `Pinger` and `Validator` (connection liveness) | P0 | both | used by `db.Ping` and pool health checks | todo | pending | pending |
-| F-117 | Client encoding | P0 | both | Initially UTF8/UTF-8 only; reject unimplemented encodings; never silently corrupt | todo | pending | pending |
+| F-117 | Client encoding | P0 | both | Initially UTF8/UTF-8 only; reject unimplemented encodings; never silently corrupt | done | done | pending |
 
 ## 2. Mode Selection
 
@@ -79,7 +79,7 @@ A product scaffold exists (T-001: module, Apache-2.0 license, CI/lint contract).
 
 | ID | Capability | Priority | Verification | Notes | Impl | Offline | Live |
 |---|---|---|---|---|---|---|---|
-| F-401 | Simple query and extended protocol | P0 | both | prepared-statement reuse | todo | pending | pending |
+| F-401 | Simple query and extended protocol | P0 | both | prepared-statement reuse; one-shot extended done, reuse pending | wip | pending | pending |
 | F-402 | Placeholder lexer and binding plan | P0 | offline | One style; quotes/backticks/brackets/dollar/comments/operators/settings; repeated/reversed names/indexes expand correctly | todo | pending | n/a |
 | F-403 | Logical NumInput and call validation | P0 | both | Unique names/max contiguous dollar index; SQLServer -1 still validates bindings | todo | pending | pending |
 | F-404 | NamedValue/Valuer/NULL conversion | P1 | both | Preserve wrapper target metadata; nil/Null validity, full uint64 range, Valuer once per logical argument | todo | pending | pending |
@@ -125,18 +125,18 @@ A product scaffold exists (T-001: module, Apache-2.0 license, CI/lint contract).
 
 | ID | Capability | Priority | Verification | Notes | Impl | Offline | Live |
 |---|---|---|---|---|---|---|---|
-| F-801 | Cleartext and MD5 auth | P0 | both | Only accepted server request forms; offline transcripts plus per-profile live proof | todo | pending | pending |
-| F-802 | SCRAM-SHA-256 auth | P0 | both | Signature/nonce/iterations/salt/attribute limits and negative vectors | todo | pending | pending |
-| F-803 | SM3 password auth | P0 | both | Exact evidenced method; does not imply cryptographic TLS or arbitrary variants | todo | pending | pending |
-| F-804 | Explicit TLS trust policy | P0 | both | require plus configured existing root verifies CA; verify-ca/full; no downgrade; explicit missing files fail | todo | pending | pending |
-| F-805 | Private-key/certificate handling | P1 | both | Strict POSIX private-key permissions only; readable public certs accepted; Windows cases separate | todo | pending | pending |
+| F-801 | Cleartext and MD5 auth | P0 | both | Only accepted server request forms; offline transcripts plus per-profile live proof | done | done | pending |
+| F-802 | SCRAM-SHA-256 auth | P0 | both | Signature/nonce/iterations/salt/attribute limits and negative vectors | done | done | pending |
+| F-803 | SM3 password auth | P0 | both | Exact evidenced method; does not imply cryptographic TLS or arbitrary variants | done | done | pending |
+| F-804 | Explicit TLS trust policy | P0 | both | require plus configured existing root verifies CA; verify-ca/full; no downgrade; explicit missing files fail | done | done | pending |
+| F-805 | Private-key/certificate handling | P1 | both | Strict POSIX private-key permissions only; readable public certs accepted; Windows cases separate | done | done | pending |
 | F-806 | Additional auth/security extensions | P2 | both | GSS/SSPI/SCRAM-PLUS etc deferred; unsupported form fails; no downgrade | todo | pending | pending |
 
 ## 10. Errors and Diagnostics
 
 | ID | Capability | Priority | Verification | Notes | Impl | Offline | Live |
 |---|---|---|---|---|---|---|---|
-| F-901 | Full mapping of server error fields | P0 | both | `errors.As` | todo | pending | pending |
+| F-901 | Full mapping of server error fields | P0 | both | `errors.As` | done | done | pending |
 | F-902 | Error/operation classification | P1 | offline | Execution uncertainty separate from retry safety; redacted config/protocol/catalog/cancel errors | todo | pending | n/a |
 | F-903 | Safe retirement without duplicate execution | P0 | both | After possible execution mark invalid without ErrBadConn matching; only retry-safe boundaries may signal ErrBadConn | todo | pending | pending |
 | F-1001 | Verified connection diagnostics | P1 | both | Configured/observed mode/protocol, source/verification, raw kernel/product release and capability profile; documented accessor | todo | pending | pending |
@@ -147,7 +147,7 @@ A product scaffold exists (T-001: module, Apache-2.0 license, CI/lint contract).
 | ID | Capability | Priority | Verification | Notes | Impl | Offline | Live |
 |---|---|---|---|---|---|---|---|
 | F-1101 | Unit/contract suite | P0 | offline | Coverage target at least 70 percent plus named risk tests; percentage alone is not acceptance | todo | pending | n/a |
-| F-1102 | Fake-server/failure suite | P0 | offline | Fragmentation, sizes/counts/EOF, auth faults, async rows, trailing errors, reset/cancel/retry races | todo | pending | n/a |
+| F-1102 | Fake-server/failure suite | P0 | offline | Fragmentation, sizes/counts/EOF, auth faults, async rows, trailing errors, reset/cancel/retry races | done | done | n/a |
 | F-1103 | Scoped real-server profile matrix | P0 | live | V9 profiles first; exact accepted edition/release/mode/wire; unavailable profile pending, V8 later | todo | pending | pending |
 | F-1104 | Concurrency tests | P0 | both | multiple modes interleaved + `-race` | todo | pending | pending |
 | F-1105 | Performance baseline | P2 | live | Actual single-row/COPY workloads; explicitly deferrable outside release blockers | todo | pending | pending |

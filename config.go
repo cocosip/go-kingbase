@@ -215,6 +215,11 @@ func ParseConfig(dsn string) (*Config, error) {
 		if last[kind] != i {
 			continue
 		}
+		// Startup parameters are NUL-terminated on the wire: a NUL would
+		// truncate the packet and could inject extra parameters.
+		if strings.IndexByte(params[i].value, 0) >= 0 {
+			return nil, fmt.Errorf("kingbase: configuration parameter %q contains a NUL byte", params[i].key)
+		}
 		if err := cfg.apply(kind, params[i].value); err != nil {
 			return nil, err
 		}
@@ -490,6 +495,10 @@ func (c *Config) validate(explicit map[paramKind]bool) error {
 			// An explicit empty host uses the local default, matching libpq's
 			// local behavior without implicitly selecting a socket.
 			c.Host = "localhost"
+		}
+		if c.SSLMode == SSLDisable && (c.SSLCert != "" || c.SSLKey != "" || c.SSLRootCert != "") {
+			// Explicit TLS material must not be silently ignored.
+			return fmt.Errorf("kingbase: TLS material requires sslmode require, verify-ca or verify-full")
 		}
 	}
 	if c.Database == "" {

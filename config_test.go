@@ -8,8 +8,15 @@ import (
 )
 
 const (
-	testUser     = "alice"
-	testDatabase = "tenant"
+	testUser          = "alice"
+	testDatabase      = "tenant"
+	testHostName      = "localhost"
+	testWindows       = "windows"
+	testSearchPath    = "public"
+	testSeverity      = "ERROR"
+	testSeverityFatal = "FATAL"
+	testSQLStateAuth  = "28P01"
+	testAuthFailed    = "password authentication failed"
 )
 
 func mustParse(t *testing.T, dsn string) *Config {
@@ -78,7 +85,7 @@ func TestParseConfigURL(t *testing.T) {
 	if cfg.Options != "-c search_path=x" {
 		t.Errorf("Options = %q, want -c search_path=x", cfg.Options)
 	}
-	if cfg.SearchPath != "public" {
+	if cfg.SearchPath != testSearchPath {
 		t.Errorf("SearchPath = %q, want public", cfg.SearchPath)
 	}
 }
@@ -194,7 +201,7 @@ func TestParseConfigPercentDecoding(t *testing.T) {
 
 func TestParseConfigDefaults(t *testing.T) {
 	cfg := mustParse(t, "")
-	if cfg.Network != networkTCP || cfg.Host != "localhost" || cfg.Port != defaultPort {
+	if cfg.Network != networkTCP || cfg.Host != testHostName || cfg.Port != defaultPort {
 		t.Errorf("endpoint = %q %q:%d, want tcp localhost:%d", cfg.Network, cfg.Host, cfg.Port, defaultPort)
 	}
 	if cfg.CompatibilityMode != ModeAuto || cfg.WireProtocol != WirePG {
@@ -239,7 +246,7 @@ func TestParseConfigEmptyPasswordPreserved(t *testing.T) {
 
 func TestParseConfigUnixSocket(t *testing.T) {
 	_, err := ParseConfig("host=/var/run/kingbase dbname=d")
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == testWindows {
 		if err == nil || !strings.Contains(err.Error(), "unix") {
 			t.Fatalf("ParseConfig(unix socket) on windows error = %v, want unix unsupported", err)
 		}
@@ -355,7 +362,7 @@ func TestParseConfigExplicitEmptyHostAndDatabase(t *testing.T) {
 	if cfg.Database != "u" {
 		t.Errorf("Database = %q, want user fallback for empty database", cfg.Database)
 	}
-	if cfg.Host != "localhost" {
+	if cfg.Host != testHostName {
 		t.Errorf("Host = %q, want localhost for empty host", cfg.Host)
 	}
 	if cfg.Password != "" {
@@ -380,12 +387,25 @@ func TestParseConfigErrorsDoNotLeakPassword(t *testing.T) {
 }
 
 func TestParseConfigUnixSocketWithoutTLS(t *testing.T) {
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == testWindows {
 		t.Skip("unix sockets are rejected on windows")
 	}
 	cfg := mustParse(t, "host=/tmp/kb sslmode=disable user=u dbname=d")
 	if cfg.Network != "unix" || cfg.SSLMode != SSLDisable {
 		t.Errorf("network/sslmode = %q/%v, want unix/disable", cfg.Network, cfg.SSLMode)
+	}
+}
+
+func TestParseConfigRejectsNULBytes(t *testing.T) {
+	dsns := []string{
+		"kingbase://u:pa%00ss@h/db",
+		"user=u application_name=bad\x00value",
+	}
+	for _, dsn := range dsns {
+		_, err := ParseConfig(dsn)
+		if err == nil || !strings.Contains(err.Error(), "NUL") {
+			t.Errorf("ParseConfig(%q) error = %v, want NUL rejection", dsn, err)
+		}
 	}
 }
 

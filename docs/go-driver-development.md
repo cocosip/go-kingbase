@@ -1,6 +1,6 @@
 # KingbaseES Go Driver — Development Plan and Progress
 
-> Status: implementation in progress (T-001 scaffold done); no live acceptance
+> Status: implementation in progress (M0 core in flight); no live acceptance
 > Date: 2026-11-24
 > Companions: [Architecture](go-driver-architecture-design.md) · [Capability Matrix](go-driver-capabilities.md)
 
@@ -18,14 +18,14 @@ Update task Evidence, feature status, live profile records, counts and log toget
 
 | Milestone | Tasks | done | wip | todo | blocked | deferred |
 |---|---|---|---|---|---|---|
-| M0 skeleton | 19 | 2 | 0 | 17 | 0 | 0 |
+| M0 skeleton | 19 | 9 | 0 | 10 | 0 | 0 |
 | M1 catalog layer | 8 | 0 | 0 | 8 | 0 | 0 |
 | M2 mode behaviour | 19 | 0 | 0 | 19 | 0 | 0 |
 | M4 release quality | 10 | 0 | 0 | 10 | 0 | 0 |
 | M5 MySQL transport (conditional) | 9 | 0 | 0 | 9 | 0 | 0 |
-| **Total** | **65** | **2** | **0** | **63** | **0** | **0** |
+| **Total** | **65** | **9** | **0** | **56** | **0** | **0** |
 
-Verification V1–V19: 0 accepted, 19 pending. Decisions O1–O7: 3 resolved (O1, O2, O7), 4 open/evidence-pending (O3, O4, O5, O6). Features: 94 total; F-1106/F-1107 F-101/F-102/F-108/F-109/F-110/F-111/F-112/F-114 are Impl=done and Offline=done (10 of 94), the rest Impl=todo/Offline=pending; 69 Live=pending and 25 structurally offline-only Live=n/a (recount when requirements change). No accepted live-profile overrides exist. M3 is a verification gate, not an omitted implementation-task group.
+Verification V1–V19: 0 accepted, 19 pending. Decisions O1–O7: 3 resolved (O1, O2, O7), 4 open/evidence-pending (O3, O4, O5, O6). Features: 94 total; 19 are Impl=done and Offline=done (F-101–F-103, F-108–F-112, F-114, F-117, F-801–F-805, F-901, F-1102, F-1106, F-1107), 1 is Impl=done with Offline=pending (F-104), 1 is Impl=wip (F-401 statement reuse), and 73 remain Impl=todo/Offline=pending; 69 Live=pending and 25 structurally offline-only Live=n/a (recount when requirements change). No accepted live-profile overrides exist. M3 is a verification gate, not an omitted implementation-task group.
 
 ## 3. Milestones
 
@@ -44,6 +44,8 @@ The specification is ready to serve as a development baseline. The confirmed Go 
 
 After T-001, start T-002 (DSN/configuration) and T-012 (testpeer); then follow the declared dependencies through T-004/T-005 and the query/core-value tasks. Each protocol/parser implementation must choose and document concrete message/allocation/recursion/crypto-work limits with boundary tests before that task is done. Move a task to wip when implementation starts and record named offline proof before done; leave unrelated backlog and live acceptance pending.
 
+Current progress follows that order: T-001/T-002/T-004–T-008/T-012/T-015 are done, `internal/wire`/`internal/auth`/`internal/sm3` carry the bounded protocol and authentication work, and `internal/testpeer` injects auth, async, trailing-error and fragmentation faults offline. Next: T-009/T-010 codecs and catalog work, then T-011 error classification.
+
 Arrange the requested V9 profiles and ordinary-role catalog/mode captures early alongside offline work, recording O3/O5 evidence when available. Missing live infrastructure does not prevent the offline skeleton, but continues to block the applicable M3 support claims. Configure local credentials through ignored environment/config files or local secret/certificate directories; commit only redacted templates and intentional fixtures.
 
 ## 4. Backlog and Requirement Owners
@@ -57,18 +59,18 @@ Every capability ID is owned by at least one canonical task below. Ranges expand
 | T-001 | Scaffold github.com/cocosip/go-kingbase with Go 1.26.0; complete platform/license/dependency/CI contract | F-1106, F-1107 | O1 (resolved), O7 (resolved) | done | `go build ./...`, `go vet ./...`, `go test ./...`, `golangci-lint run ./...` (0 issues) on 2026-11-24; go.mod, LICENSE/NOTICE (Apache-2.0), README contract, `.github/workflows/ci.yml`, `.golangci.yml` unchanged; no product behaviour yet |
 | T-002 | DSN parsing, allowlists, normalization, aliases, explicit empties | F-101, F-102, F-108–F-112, F-114 | T-001 | done | `go test ./...` `TestParseConfigURL`, `TestParseConfigEquivalentURLs`, `TestParseConfigKeyValue`, `TestParseConfigAliasesAndDuplicates`, `TestParseConfigDefaults`, `TestParseConfigMissingDatabaseDefaultsToUser`, `TestParseConfigErrors`, `TestParseConfigErrorsDoNotLeakPassword`; `golangci-lint run ./...` (0 issues) on 2026-11-24 |
 | T-003 | Deterministic environment fallback/conflicts (P2) | F-107 | T-002 | todo | — |
-| T-004 | Connector/Dialer, full initialization budget, sockets and TLS policy | F-103, F-104, F-804, F-805 | T-002 | todo | — |
-| T-005 | PG startup, cleartext/MD5, startup parameters and synchronization | F-801 | T-004, T-012 | todo | — |
-| T-006 | Bounded SCRAM handshake/signature/nonce/iteration negative vectors | F-802 | T-005 | todo | — |
-| T-007 | Evidenced SM3 authentication and unsupported variants | F-803 | T-005 | todo | — |
-| T-008 | Simple/extended query, send-stage and protocol state tracking | F-401 | T-005 | todo | — |
+| T-004 | Connector/Dialer, full initialization budget, sockets and TLS policy | F-103, F-104, F-804, F-805 | T-002 | done | `TestConnectCancelInterruptsHandshake`, `TestConnectTimeoutBudget`, `TestConnectEarlierContextDeadlineWins`, `TestConnectClearsHandshakeDeadline`, `TestConnectClosesSocketOnFailedHandshake`, `TestConnectUnixSocket`, `TestTLSModes` (require/verify-ca/verify-full success, wrong root, missing root, untrusted), `TestTLSVerifyFullRejectsWrongHostname`, `TestTLSClientCertificatePairing`, `TestPrivateKeyPermissions`; `go test -race ./...` and `golangci-lint run ./...` (0 issues) on 2026-11-24. Live TLS/material provenance remains M3 |
+| T-005 | PG startup, cleartext/MD5, startup parameters and synchronization | F-801 | T-004, T-012 | done | `TestConnectCleartextAuth`, `TestConnectMD5Auth`, `TestConnectStartupParameters`, `TestConnectErrorResponse`, `TestConnectCancelledContext`; `golangci-lint run ./...` (0 issues) on 2026-11-24 |
+| T-006 | Bounded SCRAM handshake/signature/nonce/iteration negative vectors | F-802 | T-005 | done | `internal/auth` SCRAM-SHA-256 client passes the RFC 7677 test vector; negative vectors cover nonce mismatch, iteration bounds, malformed/duplicate attributes, mandatory extension, salt/base64 errors, oversized messages and server-signature mismatch; `TestConnectSCRAM`, `TestConnectSCRAMWrongPassword`, `TestConnectSCRAMRejectsBadServerSignature`, `TestConnectSCRAMRejectsUnsupportedMechanism` |
+| T-007 | Evidenced SM3 authentication and unsupported variants | F-803 | T-005 | done | `internal/sm3` passes both GB/T 32905-2016 vectors; the double-HMAC-SM3 composition is source-evidenced (vendor conn.go auth case 13) and replayed by `TestConnectSM3`; wrong password keeps SQLSTATE 28P01 through `TestConnectSM3WrongPassword`; missing password and unknown auth codes fail closed |
+| T-008 | Simple/extended query, send-stage and protocol state tracking | F-401 | T-005 | done | `TestQuerySimpleRows`, `TestQueryExtendedBinding`, `TestExecExtended`, `TestQueryServerErrorKeepsConnection`, `TestQueryEarlyCloseDrains`, `TestQueryMultipleResultSetsRejected`, `TestQueryContextDeadlineRetires`, `TestQueryNoRows`; send/read failures retire the connection and never replay |
 | T-009 | Core text codecs normalized to supported driver values | F-301 | T-008 | todo | — |
 | T-010 | Verified binary codecs/parameters and text-result option parity | F-305 | T-009 | todo | — |
 | T-011 | Server fields/redaction, execution uncertainty and no unsafe ErrBadConn replay | F-901, F-902, F-903 | T-008 | todo | — |
-| T-012 | testpeer auth/query/result/COPY plus frame/EOF/trailing-error/async/failure injection | F-1102 | T-001 | todo | — |
+| T-012 | testpeer auth/query/result/COPY plus frame/EOF/trailing-error/async/failure injection | F-1102 | T-001 | done | bounded PG-wire framing and boundary tests; scripted peer serves cleartext/MD5/SCRAM/SM3 auth, simple/extended results, async notice/parameter/notification injection, error/trailing-error injection and chunked-write fragmentation. COPY frames and reset/cancel races land with T-043/T-014 |
 | T-013 | Pinger/Validator, poisoned-connection retirement without retry | F-116, F-903 | T-008, T-011 | todo | — |
 | T-014 | Checkout reset, pinned-session preservation, budgets/handle invalidation | F-115 | T-008, T-013 | todo | — |
-| T-015 | UTF-8 startup/status and explicit unsupported encoding | F-117 | T-005 | todo | — |
+| T-015 | UTF-8 startup/status and explicit unsupported encoding | F-117 | T-005 | done | Requests `client_encoding=UTF8`, validates the reported ParameterStatus and fails on others: `TestConnectRejectsNonUTF8Encoding` on 2026-11-24 |
 | T-016 | OS-specific TCP keepalive and unsupported-platform cases (P2) | F-105 | T-004 | todo | — |
 | T-017 | Opt-in multiple hosts/target attributes, no protocol fallback (P2) | F-106 | T-004 | todo | — |
 | T-018 | Allowlisted runtime/application/lexical settings and safe context changes | F-113, F-104, F-408 | T-008, T-015 | todo | — |
@@ -214,3 +216,6 @@ Initial PG release excludes V8 (O4/V11/V13), native MySQL (O6/M5), binary COPY/i
 | 2026-11-24 | Confirmed Go 1.26.0 and module github.com/cocosip/go-kingbase from Git origin; resolved O1 and the Go-version part of O7; implementation tasks remain todo |
 | 2026-11-24 | T-001 done: scaffold committed; resolved O7 (Apache-2.0, linux/windows/darwin amd64+arm64, stdlib-only core, pinned CI/linter); build/vet/test/lint pass offline; no driver behaviour implemented yet |
 | 2026-11-24 | T-002 done: URL/libpq DSN parsing with normalization, aliases, last-wins duplicates, percent decoding, explicit empties, unknown/P2 parameter rejection and error redaction; table tests and lint pass |
+| 2026-11-24 | Connection core landed: bounded PG-wire framing, scripted testpeer, Connector/Driver with whole-connect budget and TLS trust policy, startup with cleartext/MD5 auth and server error mapping. T-005/T-015 done, T-004/T-012 wip; no live acceptance |
+| 2026-11-24 | T-004/T-008 done: TLS trust matrix and POSIX key permissions tested, cancellation and budget classification verified, unix-socket dial tested; simple/extended query plus Exec/Rows with drain and retire semantics landed; T-012 remains wip for SCRAM/SM3/COPY/async injection |
+| 2026-11-24 | T-006/T-007 done: SCRAM-SHA-256 (RFC 7677 vector plus bounded negative vectors) and evidenced SM3 password authentication land in internal/auth/internal/sm3, replayed against a scripted SCRAM/SM3 peer; T-012 completes with async/trailing-error/failure injection and the query layer now interrupts cancel-only contexts and preserves server errors across failed drains |

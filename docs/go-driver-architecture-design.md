@@ -413,7 +413,7 @@ go-kingbase/
   internal/mysql/                     conditional separately accepted backend
 ```
 
-T-001 created go.mod, the license/dependency/CI contract and this skeleton package; packages are added by their owning tasks as behaviour is implemented.
+T-001 created go.mod, the license/dependency/CI contract and this skeleton package; packages are added by their owning tasks as behaviour is implemented. Current files: driver.go, connector.go, config.go, conn.go, query.go, rows.go, errors.go, encode.go, decode.go, tls.go; internal/wire (bounded PG framing) and internal/testpeer (scripted offline peer).
 
 ### 13.1 Confirmed module and Go baseline
 
