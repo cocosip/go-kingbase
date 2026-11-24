@@ -5,6 +5,7 @@ import (
 	"database/sql/driver"
 	"encoding/binary"
 	"math"
+	"strings"
 	"testing"
 	"time"
 
@@ -99,7 +100,7 @@ func TestPreparedStatementBinaryResultsDisabled(t *testing.T) {
 		if !startupOK(peer) {
 			return
 		}
-		if !describePrepared(peer, query, []uint32{23}, nil) {
+		if !describePrepared(peer, query, []uint32{23}) {
 			return
 		}
 		if !readBind(peer, "kb_stmt_0", []string{"7"}, true, nil) {
@@ -135,6 +136,95 @@ func TestPreparedStatementBinaryResultsDisabled(t *testing.T) {
 	}
 	if err := rows.Close(); err != nil {
 		t.Fatalf("rows.Close: %v", err)
+	}
+	if err := statement.Close(); err != nil {
+		t.Fatalf("statement.Close: %v", err)
+	}
+	_ = physical.Close()
+}
+
+func TestBinaryParameters(t *testing.T) {
+	const query = "UPDATE t SET name = $1, id = $2, at = $3"
+	moment := time.Date(2026, 11, 24, 10, 30, 0, 0, time.UTC)
+	wantMicros := make([]byte, 8)
+	binary.BigEndian.PutUint64(wantMicros, uint64(moment.Sub(pgEpoch).Microseconds()))
+	srv := testpeer.Start(t, func(peer *testpeer.Conn) {
+		if !startupOK(peer) {
+			return
+		}
+		if !describePrepared(peer, query, []uint32{25, 23, 1184}) {
+			return
+		}
+		if !readBindRaw(peer, "kb_stmt_0",
+			[][]byte{[]byte(testBob), {0, 0, 0, 7}, wantMicros},
+			[]int16{1, 1, 1}, false, nil) {
+			return
+		}
+		_ = peer.WriteMessage(wire.MsgBindComplete, nil)
+		_ = peer.CommandComplete("UPDATE 1")
+		_ = peer.ReadyForQuery(wire.StatusIdle)
+		if !closeStatement(peer, "kb_stmt_0") {
+			return
+		}
+		waitTerminate(peer)
+	})
+
+	physical, err := connectPeer(t, srv, "binary_parameters=true")
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	prepared, err := physical.PrepareContext(context.Background(), query)
+	if err != nil {
+		t.Fatalf("PrepareContext: %v", err)
+	}
+	statement := prepared.(*stmt)
+	result, err := statement.ExecContext(context.Background(), []driver.NamedValue{
+		{Ordinal: 1, Value: testBob},
+		{Ordinal: 2, Value: int64(7)},
+		{Ordinal: 3, Value: moment},
+	})
+	if err != nil {
+		t.Fatalf("ExecContext: %v", err)
+	}
+	if affected, err := result.RowsAffected(); err != nil || affected != 1 {
+		t.Fatalf("RowsAffected = %d, %v", affected, err)
+	}
+	if err := statement.Close(); err != nil {
+		t.Fatalf("statement.Close: %v", err)
+	}
+	_ = physical.Close()
+}
+
+func TestBinaryParameterOverflow(t *testing.T) {
+	const query = "SELECT $1"
+	srv := testpeer.Start(t, func(peer *testpeer.Conn) {
+		if !startupOK(peer) {
+			return
+		}
+		if !describePrepared(peer, query, []uint32{23}) {
+			return
+		}
+		if !closeStatement(peer, "kb_stmt_0") {
+			return
+		}
+		waitTerminate(peer)
+	})
+
+	physical, err := connectPeer(t, srv, "binary_parameters=true")
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	prepared, err := physical.PrepareContext(context.Background(), query)
+	if err != nil {
+		t.Fatalf("PrepareContext: %v", err)
+	}
+	statement := prepared.(*stmt)
+	_, err = statement.ExecContext(context.Background(), []driver.NamedValue{{Ordinal: 1, Value: int64(1 << 40)}})
+	if err == nil || !strings.Contains(err.Error(), "overflows int4") {
+		t.Fatalf("error = %v, want int4 overflow error", err)
+	}
+	if physical.netConn == nil {
+		t.Error("overflow retired the connection before sending")
 	}
 	if err := statement.Close(); err != nil {
 		t.Fatalf("statement.Close: %v", err)

@@ -34,7 +34,7 @@ func textValue(schema, name string, data []byte) (driver.Value, bool) {
 		return nil, false
 	}
 	switch name {
-	case testTypeBool:
+	case "bool":
 		return parseBool(string(data)), true
 	case "int2", "int4", "int8", "oid", "xid", "cid":
 		if value, err := strconv.ParseInt(string(data), 10, 64); err == nil {
@@ -69,7 +69,7 @@ func scanType(schema, name string) reflect.Type {
 		return reflect.TypeOf("")
 	}
 	switch name {
-	case testTypeBool:
+	case "bool":
 		return reflect.TypeOf(true)
 	case "int2", "int4", "int8", "oid", "xid", "cid":
 		return reflect.TypeOf(int64(0))
@@ -140,7 +140,7 @@ func binaryValue(schema, name string, data []byte) (driver.Value, bool) {
 		return nil, false
 	}
 	switch name {
-	case testTypeBool:
+	case "bool":
 		if len(data) == 1 {
 			return data[0] != 0, true
 		}

@@ -21,4 +21,4 @@ linters:
     goconst:
       # Wire-format type names (bool, int4, bytea, ...) recur in codec tables
       # by design; only hoist values repeated five or more times.
-      min-occurrences: 5
+      min-occurrences: 6

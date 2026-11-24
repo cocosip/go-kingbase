@@ -18,12 +18,12 @@ Update task Evidence, feature status, live profile records, counts and log toget
 
 | Milestone | Tasks | done | wip | todo | blocked | deferred |
 |---|---|---|---|---|---|---|
-| M0 skeleton | 19 | 12 | 3 | 4 | 0 | 0 |
+| M0 skeleton | 19 | 13 | 2 | 4 | 0 | 0 |
 | M1 catalog layer | 8 | 0 | 0 | 8 | 0 | 0 |
 | M2 mode behaviour | 19 | 2 | 0 | 17 | 0 | 0 |
 | M4 release quality | 10 | 0 | 0 | 10 | 0 | 0 |
 | M5 MySQL transport (conditional) | 9 | 0 | 0 | 9 | 0 | 0 |
-| **Total** | **65** | **14** | **3** | **48** | **0** | **0** |
+| **Total** | **65** | **15** | **2** | **48** | **0** | **0** |
 
 Verification V1–V19: 0 accepted, 19 pending. Decisions O1–O7: 3 resolved (O1, O2, O7), 4 open/evidence-pending (O3, O4, O5, O6). Features: 94 total; 26 are Impl=done and Offline=done (F-101–F-103, F-108–F-112, F-114, F-116, F-117, F-212, F-215, F-401, F-701, F-801–F-805, F-901–F-903, F-1102, F-1106, F-1107), 1 is Impl=done with Offline=pending (F-104), 1 is Impl=wip (F-301 binary parity), and 66 remain Impl=todo/Offline=pending; 69 Live=pending and 25 structurally offline-only Live=n/a (recount when requirements change). No accepted live-profile overrides exist. M3 is a verification gate, not an omitted implementation-task group.
 
@@ -65,7 +65,7 @@ Every capability ID is owned by at least one canonical task below. Ranges expand
 | T-007 | Evidenced SM3 authentication and unsupported variants | F-803 | T-005 | done | `internal/sm3` passes both GB/T 32905-2016 vectors; the double-HMAC-SM3 composition is source-evidenced (vendor conn.go auth case 13) and replayed by `TestConnectSM3`; wrong password keeps SQLSTATE 28P01 through `TestConnectSM3WrongPassword`; missing password and unknown auth codes fail closed |
 | T-008 | Simple/extended query, send-stage and protocol state tracking | F-401 | T-005 | done | `TestQuerySimpleRows`, `TestQueryExtendedBinding`, `TestExecExtended`, `TestQueryServerErrorKeepsConnection`, `TestQueryEarlyCloseDrains`, `TestQueryMultipleResultSetsRejected`, `TestQueryContextDeadlineRetires`, `TestQueryNoRows`; send/read failures retire the connection and never replay |
 | T-009 | Core text codecs normalized to supported driver values | F-301 | T-008 | done | `codec.go` decodes bool/int/float/numeric/text/bytea/date/time/timestamp/timestamptz/interval/uuid/json/jsonb/xml/inet by catalog identity; `TestRowsCoreTextCodecs` pins values, type names and scan types; unknown OIDs keep string/[]byte per F-212 (`TestRowsUnknownOIDFallback`); binary parity remains T-010 |
-| T-010 | Verified binary codecs/parameters and text-result option parity | F-305 | T-009 | wip | done: binary result decoding for bool/int2/int4/int8/float4/float8/text/bytea/json/jsonb/date/timestamp/timestamptz/uuid with bytes fallback for unverified layouts, prepared-statement binary results by default and `disable_prepared_binary_result` text parity (`TestBinaryValueCodecs`, `TestPreparedStatementRoundTrip`, `TestPreparedStatementBinaryResultsDisabled`). Remaining: binary parameter encoding keyed by ParameterDescription OIDs |
+| T-010 | Verified binary codecs/parameters and text-result option parity | F-305 | T-009 | done | Binary result decoding covers bool/int2/int4/int8/float4/float8/text/bytea/json/jsonb/date/timestamp/timestamptz/uuid with raw-byte fallback for unverified layouts; prepared statements request binary results by default with `disable_prepared_binary_result` text parity; binary parameters are keyed by ParameterDescription OIDs with per-parameter formats and int2/int4 overflow rejection (`TestBinaryValueCodecs`, `TestPreparedStatementRoundTrip`, `TestPreparedStatementBinaryResultsDisabled`, `TestBinaryParameters`, `TestBinaryParameterOverflow`) |
 | T-011 | Server fields/redaction, execution uncertainty and no unsafe ErrBadConn replay | F-901, F-902, F-903 | T-008 | todo | — |
 | T-012 | testpeer auth/query/result/COPY plus frame/EOF/trailing-error/async/failure injection | F-1102 | T-001 | done | bounded PG-wire framing and boundary tests; scripted peer serves cleartext/MD5/SCRAM/SM3 auth, simple/extended results, async notice/parameter/notification injection, error/trailing-error injection and chunked-write fragmentation. COPY frames and reset/cancel races land with T-043/T-014 |
 | T-013 | Pinger/Validator, poisoned-connection retirement without retry | F-116, F-903 | T-008, T-011 | todo | — |
@@ -226,3 +226,4 @@ Initial PG release excludes V8 (O4/V11/V13), native MySQL (O6/M5), binary COPY/i
 | 2026-11-24 | Prepared statements landed: Parse/Describe/Sync at prepare time with server-reported NumInput, Bind/Describe/Execute/Sync reuse without re-parsing, argument count validated before send, Close drops the server statement, and prepare errors keep the connection reusable |
 | 2026-11-24 | T-040 done: multi-statement responses expose each set through RowsNextResultSet, per-set decoders reset, unread sets drain on next-set and Close, and trailing errors surface before success |
 | 2026-11-24 | T-010 wip: binary result codecs landed with raw-byte fallback for unverified layouts, prepared statements request binary results by default, and disable_prepared_binary_result restores text; binary parameter encoding remains open |
+| 2026-11-24 | T-010 done: prepared-statement binary parameters are encoded from ParameterDescription OIDs with per-parameter formats, int2/int4 overflow is rejected before sending, unverified targets stay text, and CI moved to .github/workflows/ci.yml |

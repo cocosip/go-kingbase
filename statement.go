@@ -18,10 +18,10 @@ var (
 // stmt is a server-side prepared statement. The server named it, owns its
 // parameter count and drops it with the connection, so Close is best effort.
 type stmt struct {
-	conn     *conn
-	name     string
-	numInput int
-	closed   bool
+	conn      *conn
+	name      string
+	paramOIDs []uint32
+	closed    bool
 }
 
 // Prepare prepares a statement on the connection.
@@ -51,11 +51,11 @@ func (c *conn) PrepareContext(ctx context.Context, query string) (driver.Stmt, e
 		c.retire()
 		return nil, c.classifyCommandError(err)
 	}
-	numInput, err := c.readPrepared()
+	paramOIDs, err := c.readPrepared()
 	if err != nil {
 		return nil, c.classifyCommandError(err)
 	}
-	return &stmt{conn: c, name: name, numInput: numInput}, nil
+	return &stmt{conn: c, name: name, paramOIDs: paramOIDs}, nil
 }
 
 // wireStep is one frontend message in a single-flush batch.
@@ -78,18 +78,18 @@ func (c *conn) writeSteps(steps []wireStep) error {
 }
 
 // readPrepared consumes the Parse/Describe response through ReadyForQuery.
-func (c *conn) readPrepared() (int, error) {
-	numInput := 0
+func (c *conn) readPrepared() ([]uint32, error) {
+	var paramOIDs []uint32
 	for {
 		typ, payload, err := c.reader.ReadMessage()
 		if err != nil {
 			c.retire()
-			return 0, uncertain(fmt.Errorf("kingbase: read prepare response: %w", err))
+			return nil, uncertain(fmt.Errorf("kingbase: read prepare response: %w", err))
 		}
 		if handled, err := c.handleAsync(typ, payload); handled {
 			if err != nil {
 				c.retire()
-				return 0, uncertain(err)
+				return nil, uncertain(err)
 			}
 			continue
 		}
@@ -100,29 +100,29 @@ func (c *conn) readPrepared() (int, error) {
 			oids, err := wire.DecodeParameterDescription(payload)
 			if err != nil {
 				c.retire()
-				return 0, uncertain(fmt.Errorf("kingbase: malformed ParameterDescription: %w", err))
+				return nil, uncertain(fmt.Errorf("kingbase: malformed ParameterDescription: %w", err))
 			}
-			numInput = len(oids)
+			paramOIDs = oids
 		case wire.MsgErrorResponse:
 			serverErr := serverError(payload)
-			return 0, commandError(serverErr, c.drainToReady())
+			return nil, commandError(serverErr, c.drainToReady())
 		case wire.MsgReadyForQuery:
 			if err := c.setTxStatus(payload); err != nil {
 				c.retire()
-				return 0, uncertain(err)
+				return nil, uncertain(err)
 			}
 			c.endCommand()
-			return numInput, nil
+			return paramOIDs, nil
 		default:
 			c.retire()
-			return 0, uncertain(fmt.Errorf("kingbase: unexpected message %q during prepare", typ))
+			return nil, uncertain(fmt.Errorf("kingbase: unexpected message %q during prepare", typ))
 		}
 	}
 }
 
 // NumInput returns the server-reported parameter count.
 func (s *stmt) NumInput() int {
-	return s.numInput
+	return len(s.paramOIDs)
 }
 
 // Close drops the server statement. A retired connection drops it implicitly.
@@ -162,7 +162,7 @@ func (s *stmt) Query(args []driver.Value) (driver.Rows, error) {
 
 // ExecContext runs the prepared statement with positional arguments.
 func (s *stmt) ExecContext(ctx context.Context, args []driver.NamedValue) (driver.Result, error) {
-	params, err := s.encodeArguments(args)
+	params, formats, err := s.encodeArguments(args)
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +170,7 @@ func (s *stmt) ExecContext(ctx context.Context, args []driver.NamedValue) (drive
 		return nil, err
 	}
 	s.conn.commandSent = true
-	if err := s.conn.bindAndExecute(s.name, params, false, nil); err != nil {
+	if err := s.conn.bindAndExecute(s.name, params, formats, false, nil); err != nil {
 		return nil, s.conn.classifyCommandError(err)
 	}
 	return s.conn.classifyCommandResult()
@@ -178,7 +178,7 @@ func (s *stmt) ExecContext(ctx context.Context, args []driver.NamedValue) (drive
 
 // QueryContext runs the prepared statement and returns rows.
 func (s *stmt) QueryContext(ctx context.Context, args []driver.NamedValue) (driver.Rows, error) {
-	params, err := s.encodeArguments(args)
+	params, formats, err := s.encodeArguments(args)
 	if err != nil {
 		return nil, err
 	}
@@ -186,7 +186,7 @@ func (s *stmt) QueryContext(ctx context.Context, args []driver.NamedValue) (driv
 		return nil, err
 	}
 	s.conn.commandSent = true
-	if err := s.conn.bindAndExecute(s.name, params, true, s.conn.resultFormats()); err != nil {
+	if err := s.conn.bindAndExecute(s.name, params, formats, true, s.conn.resultFormats()); err != nil {
 		return nil, s.conn.classifyCommandError(err)
 	}
 	columns, ready, err := s.conn.awaitExtendedDescription()
@@ -197,21 +197,21 @@ func (s *stmt) QueryContext(ctx context.Context, args []driver.NamedValue) (driv
 }
 
 // encodeArguments validates the count before sending anything.
-func (s *stmt) encodeArguments(args []driver.NamedValue) ([][]byte, error) {
+func (s *stmt) encodeArguments(args []driver.NamedValue) ([][]byte, []int16, error) {
 	values, err := namedValuesToValues(args)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	if len(values) != s.numInput {
-		return nil, fmt.Errorf("kingbase: statement expects %d parameters, got %d", s.numInput, len(values))
+	if len(values) != len(s.paramOIDs) {
+		return nil, nil, fmt.Errorf("kingbase: statement expects %d parameters, got %d", len(s.paramOIDs), len(values))
 	}
-	return encodeParameters(values)
+	return s.conn.encodeParametersWithTypes(values, s.paramOIDs)
 }
 
 // bindAndExecute sends Bind[/Describe]/Execute/Sync for a prepared statement.
-func (c *conn) bindAndExecute(statement string, params [][]byte, describe bool, resultFormats []int16) error {
+func (c *conn) bindAndExecute(statement string, params [][]byte, paramFormats []int16, describe bool, resultFormats []int16) error {
 	steps := []wireStep{
-		{typ: wire.MsgBind, payload: wire.EncodeBind("", statement, nil, params, resultFormats)},
+		{typ: wire.MsgBind, payload: wire.EncodeBind("", statement, paramFormats, params, resultFormats)},
 	}
 	if describe {
 		steps = append(steps, wireStep{typ: wire.MsgDescribe, payload: wire.EncodeDescribe('P', "")})

@@ -1,6 +1,7 @@
 package gokb
 
 import (
+	"bytes"
 	"context"
 	"database/sql/driver"
 	"errors"
@@ -13,7 +14,7 @@ import (
 )
 
 // describePrepared reads Parse/Describe/Sync and answers the prepare exchange.
-func describePrepared(peer *testpeer.Conn, wantSQL string, paramOIDs []uint32, columns []wire.ColumnDescription) bool {
+func describePrepared(peer *testpeer.Conn, wantSQL string, paramOIDs []uint32) bool {
 	payload, ok := expectMessage(peer, wire.MsgParse)
 	if !ok {
 		return false
@@ -43,13 +44,8 @@ func describePrepared(peer *testpeer.Conn, wantSQL string, paramOIDs []uint32, c
 		peer.Errorf("ParameterDescription: %v", err)
 		return false
 	}
-	if columns == nil {
-		if err := peer.WriteMessage(wire.MsgNoData, nil); err != nil {
-			peer.Errorf("NoData: %v", err)
-			return false
-		}
-	} else if err := peer.RowDescription(columns); err != nil {
-		peer.Errorf("RowDescription: %v", err)
+	if err := peer.WriteMessage(wire.MsgNoData, nil); err != nil {
+		peer.Errorf("NoData: %v", err)
 		return false
 	}
 	if err := peer.ReadyForQuery(wire.StatusIdle); err != nil {
@@ -59,15 +55,20 @@ func describePrepared(peer *testpeer.Conn, wantSQL string, paramOIDs []uint32, c
 	return true
 }
 
-// readBind asserts the Bind/Describe/Execute/Sync batch for a statement.
-func readBind(peer *testpeer.Conn, statementName string, wantParams []string, describe bool, wantResultFormats []int16) bool {
+// readBindRaw asserts the Bind/Describe/Execute/Sync batch with raw parameter
+// payloads and explicit per-parameter formats (used by binary parameters).
+func readBindRaw(peer *testpeer.Conn, statementName string, wantParams [][]byte, wantFormats []int16, describe bool, wantResultFormats []int16) bool {
 	payload, ok := expectMessage(peer, wire.MsgBind)
 	if !ok {
 		return false
 	}
-	portal, statement, _, params, resultFormats, err := wire.DecodeBind(payload)
+	portal, statement, paramFormats, params, resultFormats, err := wire.DecodeBind(payload)
 	if err != nil || statement != statementName {
 		peer.Errorf("Bind = %q/%q, err %v, want statement %q", portal, statement, err, statementName)
+		return false
+	}
+	if !slices.Equal(paramFormats, wantFormats) {
+		peer.Errorf("Bind parameter formats = %v, want %v", paramFormats, wantFormats)
 		return false
 	}
 	if len(params) != len(wantParams) {
@@ -75,8 +76,8 @@ func readBind(peer *testpeer.Conn, statementName string, wantParams []string, de
 		return false
 	}
 	for i, want := range wantParams {
-		if string(params[i]) != want {
-			peer.Errorf("Bind parameter %d = %q, want %q", i, params[i], want)
+		if !bytes.Equal(params[i], want) {
+			peer.Errorf("Bind parameter %d = %v, want %v", i, params[i], want)
 			return false
 		}
 	}
@@ -100,6 +101,15 @@ func readBind(peer *testpeer.Conn, statementName string, wantParams []string, de
 	}
 	_, ok = expectMessage(peer, wire.MsgSync)
 	return ok
+}
+
+// readBind asserts the Bind/Describe/Execute/Sync batch for a statement.
+func readBind(peer *testpeer.Conn, statementName string, wantParams []string, describe bool, wantResultFormats []int16) bool {
+	raw := make([][]byte, len(wantParams))
+	for i, param := range wantParams {
+		raw[i] = []byte(param)
+	}
+	return readBindRaw(peer, statementName, raw, nil, describe, wantResultFormats)
 }
 
 // closeStatement asserts the Close/Sync batch and answers it.
@@ -325,7 +335,7 @@ func TestStatementArgumentMismatchRejectedBeforeSend(t *testing.T) {
 		if !startupOK(peer) {
 			return
 		}
-		if !describePrepared(peer, "SELECT $1, $2", []uint32{25, 25}, nil) {
+		if !describePrepared(peer, "SELECT $1, $2", []uint32{25, 25}) {
 			return
 		}
 		if !closeStatement(peer, "kb_stmt_0") {
@@ -354,7 +364,7 @@ func TestStatementArgumentMismatchRejectedBeforeSend(t *testing.T) {
 }
 
 func TestStatementOnRetiredConnection(t *testing.T) {
-	statement := &stmt{conn: &conn{}, numInput: 0}
+	statement := &stmt{conn: &conn{}}
 	if _, err := statement.QueryContext(context.Background(), nil); !errors.Is(err, driver.ErrBadConn) {
 		t.Fatalf("error = %v, want driver.ErrBadConn", err)
 	}
