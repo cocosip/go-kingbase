@@ -8,18 +8,20 @@ import (
 )
 
 const (
-	testUser          = "alice"
-	testDatabase      = "tenant"
-	testHostName      = "localhost"
-	testWindows       = "windows"
-	testSearchPath    = "public"
-	testSeverity      = "ERROR"
-	testSeverityFatal = "FATAL"
-	testSQLStateAuth  = "28P01"
-	testAuthFailed    = "password authentication failed"
-	testHello         = "hello"
-	testDuplicateKey  = "duplicate key value"
-	testBob           = "bob"
+	testUser            = "alice"
+	testDatabase        = "tenant"
+	testHostName        = "localhost"
+	testWindows         = "windows"
+	testSearchPath      = "public"
+	testSeverity        = "ERROR"
+	testSeverityFatal   = "FATAL"
+	testSQLStateAuth    = "28P01"
+	testAuthFailed      = "password authentication failed"
+	testHello           = "hello"
+	testDuplicateKey    = "duplicate key value"
+	testBob             = "bob"
+	testColumnName      = "name"
+	testSQLStateNoTable = "42P01"
 )
 
 func mustParse(t *testing.T, dsn string) *Config {

@@ -9,40 +9,52 @@ import (
 	"github.com/cocosip/go-kingbase/internal/wire"
 )
 
-// rows streams one result set. Callers must Close it; Close drains the
-// remaining response so the physical connection is reusable.
+// maxResultSets bounds how many result sets one response may contain.
+const maxResultSets = 256
+
+// rows streams result sets. Callers must Close it; Close drains the remaining
+// response so the physical connection is reusable.
 type rows struct {
-	conn      *conn
-	columns   []wire.ColumnDescription
-	names     []string
-	typeNames []string
-	decoders  []func([]byte) driver.Value
-	scanTypes []reflect.Type
-	finished  bool
-	ready     bool
-	closed    bool
+	conn       *conn
+	columns    []wire.ColumnDescription
+	names      []string
+	typeNames  []string
+	decoders   []func([]byte) driver.Value
+	scanTypes  []reflect.Type
+	finished   bool
+	ready      bool
+	closed     bool
+	resultSets int
 }
 
 var (
 	_ driver.Rows                           = (*rows)(nil)
+	_ driver.RowsNextResultSet              = (*rows)(nil)
 	_ driver.RowsColumnTypeDatabaseTypeName = (*rows)(nil)
 	_ driver.RowsColumnTypeScanType         = (*rows)(nil)
 )
 
 func newRows(c *conn, columns []wire.ColumnDescription, ready bool) *rows {
 	r := &rows{
-		conn:      c,
-		columns:   columns,
-		names:     make([]string, len(columns)),
-		typeNames: make([]string, len(columns)),
-		decoders:  make([]func([]byte) driver.Value, len(columns)),
-		scanTypes: make([]reflect.Type, len(columns)),
-		finished:  ready,
-		ready:     ready,
+		conn:       c,
+		finished:   ready,
+		ready:      ready,
+		resultSets: 1,
 	}
+	r.resetColumns(columns)
+	return r
+}
+
+// resetColumns rebuilds the decode state for one result set.
+func (r *rows) resetColumns(columns []wire.ColumnDescription) {
+	r.columns = columns
+	r.names = make([]string, len(columns))
+	r.typeNames = make([]string, len(columns))
+	r.decoders = make([]func([]byte) driver.Value, len(columns))
+	r.scanTypes = make([]reflect.Type, len(columns))
 	for i, column := range columns {
 		r.names[i] = column.Name
-		schema, name, known := c.codecName(column.TypeOID)
+		schema, name, known := r.conn.codecName(column.TypeOID)
 		if !known {
 			// Unknown OIDs still decode: text values stay strings and binary
 			// values stay bytes, with an empty type name as F-212 requires.
@@ -54,7 +66,6 @@ func newRows(c *conn, columns []wire.ColumnDescription, ready bool) *rows {
 		r.scanTypes[i] = scanType(schema, name)
 		r.decoders[i] = typeDecoder(schema, name, column.Format)
 	}
-	return r
 }
 
 func unknownTypeDecoder(format int16) func([]byte) driver.Value {
@@ -154,6 +165,85 @@ func (r *rows) Next(dest []driver.Value) error {
 		default:
 			r.fail()
 			return uncertain(fmt.Errorf("kingbase: unexpected message %q while reading rows", typ))
+		}
+	}
+}
+
+// HasNextResultSet reports whether another result set may follow. The
+// response terminator is only observed by reading, so this stays optimistic
+// until ReadyForQuery arrives or the row stream ends.
+func (r *rows) HasNextResultSet() bool {
+	return !r.closed && !r.ready
+}
+
+// NextResultSet advances to the next result set of a multi-statement response.
+// It drains an unconsumed set first and returns io.EOF after ReadyForQuery.
+func (r *rows) NextResultSet() error {
+	if r.closed || r.ready {
+		return io.EOF
+	}
+	for {
+		if !r.finished {
+			reachedReady, err := r.conn.drainCurrentResult()
+			if err != nil {
+				return markUncertain(err)
+			}
+			if reachedReady {
+				r.finished = true
+				r.ready = true
+				return io.EOF
+			}
+		}
+		if r.resultSets >= maxResultSets {
+			r.fail()
+			return uncertain(fmt.Errorf("kingbase: response has more than %d result sets", maxResultSets))
+		}
+		typ, payload, err := r.conn.reader.ReadMessage()
+		if err != nil {
+			r.fail()
+			return uncertain(fmt.Errorf("kingbase: read next result set: %w", err))
+		}
+		if handled, err := r.conn.handleAsync(typ, payload); handled {
+			if err != nil {
+				r.fail()
+				return uncertain(err)
+			}
+			continue
+		}
+		switch typ {
+		case wire.MsgRowDescription:
+			columns, err := wire.DecodeRowDescription(payload)
+			if err != nil {
+				r.fail()
+				return uncertain(fmt.Errorf("kingbase: malformed RowDescription: %w", err))
+			}
+			r.resetColumns(columns)
+			r.finished = false
+			r.resultSets++
+			return nil
+		case wire.MsgCommandComplete, wire.MsgEmptyQueryResponse:
+			r.resetColumns(nil)
+			r.finished = true
+			r.resultSets++
+			return nil
+		case wire.MsgErrorResponse:
+			r.finished = true
+			return serverError(payload)
+		case wire.MsgReadyForQuery:
+			r.finished = true
+			r.ready = true
+			if err := r.conn.setTxStatus(payload); err != nil {
+				r.fail()
+				return uncertain(err)
+			}
+			r.conn.endCommand()
+			return io.EOF
+		case wire.MsgCopyInResponse, wire.MsgCopyData, wire.MsgCopyDone:
+			r.fail()
+			return uncertain(fmt.Errorf("kingbase: COPY is not implemented yet"))
+		default:
+			r.fail()
+			return uncertain(fmt.Errorf("kingbase: unexpected message %q between result sets", typ))
 		}
 	}
 }

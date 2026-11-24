@@ -51,7 +51,7 @@ func waitTerminate(peer *testpeer.Conn) {
 func selectColumns() []wire.ColumnDescription {
 	return []wire.ColumnDescription{
 		{Name: "id", TypeOID: 23, TypeLen: 4, TypeMod: -1, Format: 0},
-		{Name: "name", TypeOID: 25, TypeLen: -1, TypeMod: -1, Format: 0},
+		{Name: testColumnName, TypeOID: 25, TypeLen: -1, TypeMod: -1, Format: 0},
 	}
 }
 
@@ -331,7 +331,7 @@ func TestQueryServerErrorKeepsConnection(t *testing.T) {
 		}
 		_ = peer.ErrorResponse(
 			wire.ErrorField{Code: wire.ErrorSeverity, Value: testSeverity},
-			wire.ErrorField{Code: wire.ErrorCode, Value: "42P01"},
+			wire.ErrorField{Code: wire.ErrorCode, Value: testSQLStateNoTable},
 			wire.ErrorField{Code: wire.ErrorMessage, Value: "relation does not exist"},
 		)
 		if err := peer.ReadyForQuery(wire.StatusIdle); err != nil {
@@ -358,7 +358,7 @@ func TestQueryServerErrorKeepsConnection(t *testing.T) {
 	}
 	_, err = physical.QueryContext(context.Background(), "SELECT * FROM missing", nil)
 	var serverErr *Error
-	if !errors.As(err, &serverErr) || serverErr.Code != "42P01" {
+	if !errors.As(err, &serverErr) || serverErr.Code != testSQLStateNoTable {
 		t.Fatalf("error = %v, want SQLSTATE 42P01", err)
 	}
 	if _, err := physical.ExecContext(context.Background(), "SET x = 1", nil); err != nil {
@@ -428,7 +428,7 @@ func TestQueryEarlyCloseDrains(t *testing.T) {
 	_ = physical.Close()
 }
 
-func TestQueryMultipleResultSetsRejected(t *testing.T) {
+func TestQueryMultipleResultSets(t *testing.T) {
 	srv := testpeer.Start(t, func(peer *testpeer.Conn) {
 		if !startupOK(peer) {
 			return
@@ -439,10 +439,78 @@ func TestQueryMultipleResultSetsRejected(t *testing.T) {
 		_ = peer.RowDescription(selectColumns()[:1])
 		_ = peer.DataRow([][]byte{[]byte("1")})
 		_ = peer.CommandComplete("SELECT 1")
-		_ = peer.RowDescription(selectColumns()[:1])
-		_ = peer.DataRow([][]byte{[]byte("2")})
+		_ = peer.RowDescription(selectColumns()[1:])
+		_ = peer.DataRow([][]byte{[]byte("two")})
 		_ = peer.CommandComplete("SELECT 1")
 		_ = peer.ReadyForQuery(wire.StatusIdle)
+		if !expectSimpleQuery(peer) {
+			return
+		}
+		waitTerminate(peer)
+	})
+
+	physical, err := connectPeer(t, srv, "")
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	result, err := physical.QueryContext(context.Background(), "SELECT 1; SELECT 2", nil)
+	if err != nil {
+		t.Fatalf("QueryContext: %v", err)
+	}
+	dest := make([]driver.Value, 1)
+	if err := result.Next(dest); err != nil || dest[0] != int64(1) {
+		t.Fatalf("first set row = %v, err %v", dest, err)
+	}
+	if err := result.Next(dest); !errors.Is(err, io.EOF) {
+		t.Fatalf("second Next = %v, want EOF for the first set", err)
+	}
+	if !result.(driver.RowsNextResultSet).HasNextResultSet() {
+		t.Fatal("HasNextResultSet = false before reading ReadyForQuery")
+	}
+	if err := result.(driver.RowsNextResultSet).NextResultSet(); err != nil {
+		t.Fatalf("NextResultSet: %v", err)
+	}
+	if names := result.Columns(); len(names) != 1 || names[0] != "name" {
+		t.Fatalf("second set columns = %v, want [name]", names)
+	}
+	dest = make([]driver.Value, 1)
+	if err := result.Next(dest); err != nil || dest[0] != "two" {
+		t.Fatalf("second set row = %v, err %v", dest, err)
+	}
+	if err := result.Next(dest); !errors.Is(err, io.EOF) {
+		t.Fatalf("next = %v, want EOF", err)
+	}
+	if err := result.(driver.RowsNextResultSet).NextResultSet(); !errors.Is(err, io.EOF) {
+		t.Fatalf("NextResultSet = %v, want EOF after ReadyForQuery", err)
+	}
+	if err := result.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if _, err := physical.ExecContext(context.Background(), "UPDATE t SET x = 1", nil); err != nil {
+		t.Fatalf("Exec after multiple result sets: %v", err)
+	}
+	_ = physical.Close()
+}
+
+func TestCloseDrainsMultipleResultSets(t *testing.T) {
+	srv := testpeer.Start(t, func(peer *testpeer.Conn) {
+		if !startupOK(peer) {
+			return
+		}
+		if _, ok := expectMessage(peer, wire.MsgQuery); !ok {
+			return
+		}
+		_ = peer.RowDescription(selectColumns()[:1])
+		_ = peer.DataRow([][]byte{[]byte("1")})
+		_ = peer.CommandComplete("SELECT 1")
+		_ = peer.RowDescription(selectColumns()[1:])
+		_ = peer.DataRow([][]byte{[]byte("two")})
+		_ = peer.CommandComplete("SELECT 1")
+		_ = peer.ReadyForQuery(wire.StatusIdle)
+		if !expectSimpleQuery(peer) {
+			return
+		}
+		waitTerminate(peer)
 	})
 
 	physical, err := connectPeer(t, srv, "")
@@ -457,20 +525,64 @@ func TestQueryMultipleResultSetsRejected(t *testing.T) {
 	if err := result.Next(dest); err != nil {
 		t.Fatalf("Next: %v", err)
 	}
-	if err := result.Next(dest); !errors.Is(err, io.EOF) {
-		t.Fatalf("second Next = %v, want EOF for the first result set", err)
+	if err := result.Close(); err != nil {
+		t.Fatalf("Close during a later set: %v", err)
 	}
-	// The second result set is not consumed, so Close must report it instead of
-	// silently reusing a connection with unread results.
-	if err := result.Close(); err == nil || !strings.Contains(err.Error(), "multiple result sets") {
-		t.Fatalf("Close = %v, want multiple result sets error", err)
+	if _, err := physical.ExecContext(context.Background(), "UPDATE t SET x = 1", nil); err != nil {
+		t.Fatalf("Exec after early close: %v", err)
 	}
 	_ = physical.Close()
-	if physical.netConn != nil {
-		t.Error("connection was not retired after an unconsumed result set")
-	}
 }
 
+func TestNextResultSetTrailingError(t *testing.T) {
+	srv := testpeer.Start(t, func(peer *testpeer.Conn) {
+		if !startupOK(peer) {
+			return
+		}
+		if _, ok := expectMessage(peer, wire.MsgQuery); !ok {
+			return
+		}
+		_ = peer.RowDescription(selectColumns()[:1])
+		_ = peer.DataRow([][]byte{[]byte("1")})
+		_ = peer.CommandComplete("SELECT 1")
+		_ = peer.ErrorResponse(
+			wire.ErrorField{Code: wire.ErrorSeverity, Value: testSeverity},
+			wire.ErrorField{Code: wire.ErrorCode, Value: testSQLStateNoTable},
+			wire.ErrorField{Code: wire.ErrorMessage, Value: "relation does not exist"},
+		)
+		_ = peer.ReadyForQuery(wire.StatusIdle)
+		if !expectSimpleQuery(peer) {
+			return
+		}
+		waitTerminate(peer)
+	})
+
+	physical, err := connectPeer(t, srv, "")
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	result, err := physical.QueryContext(context.Background(), "SELECT 1; SELECT missing", nil)
+	if err != nil {
+		t.Fatalf("QueryContext: %v", err)
+	}
+	dest := make([]driver.Value, 1)
+	if err := result.Next(dest); err != nil {
+		t.Fatalf("Next: %v", err)
+	}
+	_ = result.Next(dest)
+	err = result.(driver.RowsNextResultSet).NextResultSet()
+	var serverErr *Error
+	if !errors.As(err, &serverErr) || serverErr.Code != testSQLStateNoTable {
+		t.Fatalf("NextResultSet error = %v, want SQLSTATE 42P01", err)
+	}
+	if err := result.Close(); err != nil {
+		t.Fatalf("Close after trailing error: %v", err)
+	}
+	if _, err := physical.ExecContext(context.Background(), "UPDATE t SET x = 1", nil); err != nil {
+		t.Fatalf("Exec after trailing error: %v", err)
+	}
+	_ = physical.Close()
+}
 func TestQueryContextDeadlineRetires(t *testing.T) {
 	srv := testpeer.Start(t, func(peer *testpeer.Conn) {
 		if !startupOK(peer) {

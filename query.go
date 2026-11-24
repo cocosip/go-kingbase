@@ -482,11 +482,8 @@ func (c *conn) drainToReady() error {
 			wire.MsgCloseComplete:
 			continue
 		case wire.MsgRowDescription, wire.MsgDataRow:
-			c.retire()
-			if firstErr == nil {
-				firstErr = fmt.Errorf("kingbase: multiple result sets are not implemented yet")
-			}
-			return firstErr
+			// Additional result sets are legal; drain them instead of retiring.
+			continue
 		case wire.MsgCopyInResponse, wire.MsgCopyData, wire.MsgCopyDone:
 			c.retire()
 			if firstErr == nil {

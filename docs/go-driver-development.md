@@ -20,10 +20,10 @@ Update task Evidence, feature status, live profile records, counts and log toget
 |---|---|---|---|---|---|---|
 | M0 skeleton | 19 | 12 | 2 | 5 | 0 | 0 |
 | M1 catalog layer | 8 | 0 | 0 | 8 | 0 | 0 |
-| M2 mode behaviour | 19 | 1 | 0 | 18 | 0 | 0 |
+| M2 mode behaviour | 19 | 2 | 0 | 17 | 0 | 0 |
 | M4 release quality | 10 | 0 | 0 | 10 | 0 | 0 |
 | M5 MySQL transport (conditional) | 9 | 0 | 0 | 9 | 0 | 0 |
-| **Total** | **65** | **13** | **2** | **50** | **0** | **0** |
+| **Total** | **65** | **14** | **2** | **49** | **0** | **0** |
 
 Verification V1–V19: 0 accepted, 19 pending. Decisions O1–O7: 3 resolved (O1, O2, O7), 4 open/evidence-pending (O3, O4, O5, O6). Features: 94 total; 26 are Impl=done and Offline=done (F-101–F-103, F-108–F-112, F-114, F-116, F-117, F-212, F-215, F-401, F-701, F-801–F-805, F-901–F-903, F-1102, F-1106, F-1107), 1 is Impl=done with Offline=pending (F-104), 1 is Impl=wip (F-301 binary parity), and 66 remain Impl=todo/Offline=pending; 69 Live=pending and 25 structurally offline-only Live=n/a (recount when requirements change). No accepted live-profile overrides exist. M3 is a verification gate, not an omitted implementation-task group.
 
@@ -224,3 +224,4 @@ Initial PG release excludes V8 (O4/V11/V13), native MySQL (O6/M5), binary COPY/i
 | 2026-11-24 | T-042 done: BeginTx maps default plus four standard isolation levels and READ ONLY, rejects snapshot/write-committed/linearizable before sending, and commits/rolls back through the simple protocol with an idle-state check |
 | 2026-11-24 | T-014 wip: SessionResetter rolls back open/failed transactions within the caller budget and retires instead of reusing an unclean connection; prepared-handle invalidation and pinned GUC reset remain dependent on later tasks |
 | 2026-11-24 | Prepared statements landed: Parse/Describe/Sync at prepare time with server-reported NumInput, Bind/Describe/Execute/Sync reuse without re-parsing, argument count validated before send, Close drops the server statement, and prepare errors keep the connection reusable |
+| 2026-11-24 | T-040 done: multi-statement responses expose each set through RowsNextResultSet, per-set decoders reset, unread sets drain on next-set and Close, and trailing errors surface before success |
