@@ -266,6 +266,13 @@ func (c *conn) Close() error {
 	if c.netConn == nil {
 		return nil
 	}
+	// A command abandoned without endCommand may still hold a watcher; stop it
+	// so a later context cancellation cannot dial a cancel request for a dead
+	// backend.
+	if c.stopWatch != nil {
+		c.stopWatch()
+		c.stopWatch = nil
+	}
 	// Terminate is best effort and bounded, so Close cannot block on a wedged
 	// peer; the socket is closed regardless.
 	_ = c.netConn.SetWriteDeadline(time.Now().Add(time.Second))

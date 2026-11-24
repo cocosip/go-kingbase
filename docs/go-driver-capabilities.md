@@ -13,7 +13,7 @@
 - offline = unit/replay; live = actual server; both = both required. Impl/offline/live statuses below are independent: todo/pending/pending initially. n/a live means the requirement is offline-only, not that a missing server passed.
 - Aggregate live accepted requires all applicable profiles in the release manifest. A blocked/unavailable profile stays pending and cannot be advertised. Tests/provenance live in the progress tracker, with per-profile records in section 17.
 
-DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup exchange with cleartext/MD5/SM3/SCRAM authentication, TLS trust-policy negotiation, simple/extended query-or-exec, server-side prepared statement reuse with drain/retire semantics, type-catalog codecs, transactions and liveness/reset hooks are implemented and tested offline. No live acceptance exists yet; documentation correction does not change implementation status.
+DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup exchange with cleartext/MD5/SM3/SCRAM authentication, TLS trust-policy negotiation, simple/extended query-or-exec, server-side prepared statement reuse with drain/retire semantics, type-catalog codecs, transactions, cancel-channel delivery with bounded synchronization and liveness/reset hooks are implemented and tested offline. No live acceptance exists yet; documentation correction does not change implementation status.
 
 ## 1. Connection and Configuration
 
@@ -85,7 +85,7 @@ DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup excha
 | F-404 | NamedValue/Valuer/NULL conversion | P1 | both | Preserve wrapper target metadata; nil/Null validity, full uint64 range, Valuer once per logical argument | wip | pending | pending |
 | F-405 | Qualified target OID inference | P0 | both | Explicit verified target or inference; byte/bool/bytes wrappers cannot hardcode same-named user targets | todo | pending | pending |
 | F-406 | Multiple results and terminal errors | P1 | both | NextResultSet/early Close drains all trailers; trailing errors preserved before outputs/success | done | done | pending |
-| F-407 | Cancellation and synchronization | P0 | both | PG cancel EOF plus original ReadyForQuery barriers; races/timeout retire; MySQL aborts until control path accepted | todo | pending | pending |
+| F-407 | Cancellation and synchronization | P0 | both | PG cancel EOF plus original ReadyForQuery barriers; races/timeout retire; MySQL aborts until control path accepted | done | done | pending |
 | F-408 | Session lexical settings | P0 | both | Verified quote/backslash/question/comment rules; context updates or reject/retire; no stale rewrite cache | todo | pending | pending |
 
 ## 6. Stored Procedures and OUT Parameters

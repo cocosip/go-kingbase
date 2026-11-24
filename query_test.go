@@ -1009,8 +1009,8 @@ func TestQueryCancelOnlyContextInterruptsRead(t *testing.T) {
 	if err := result.Next(make([]driver.Value, 2)); err == nil {
 		t.Fatal("Next succeeded, want cancellation error")
 	}
-	if elapsed := time.Since(started); elapsed > 3*time.Second {
-		t.Fatalf("Next took %v, want cancellation to interrupt the read", elapsed)
+	if elapsed := time.Since(started); elapsed > cancelSyncTimeout+time.Second {
+		t.Fatalf("Next took %v, want the cancel window to bound the wait", elapsed)
 	}
 	_ = result.Close()
 	if physical.netConn != nil {

@@ -9,11 +9,13 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/cocosip/go-kingbase/internal/wire"
 )
@@ -24,13 +26,14 @@ const MaxStartupPacketSize = 64 << 10
 // Server is a loopback PG-wire endpoint serving each accepted connection with
 // the supplied handler.
 type Server struct {
-	ln      net.Listener
-	handler func(*Conn)
-	wg      sync.WaitGroup
-	once    sync.Once
-	mu      sync.Mutex
-	conns   map[*Conn]struct{}
-	closed  bool
+	ln       net.Listener
+	handler  func(*Conn)
+	onCancel func(pid, secret uint32)
+	wg       sync.WaitGroup
+	once     sync.Once
+	mu       sync.Mutex
+	conns    map[*Conn]struct{}
+	closed   bool
 }
 
 // Start listens on a loopback ephemeral TCP port and serves connections with
@@ -59,6 +62,17 @@ func (s *Server) serve(t testing.TB) {
 		conn, err := s.ln.Accept()
 		if err != nil {
 			return
+		}
+		conn, pid, secret, cancel := peekCancel(conn)
+		if cancel {
+			s.mu.Lock()
+			hook := s.onCancel
+			s.mu.Unlock()
+			if hook != nil {
+				hook(pid, secret)
+			}
+			_ = conn.Close()
+			continue
 		}
 		peer := newConn(t, conn)
 		s.mu.Lock()
@@ -107,6 +121,64 @@ func (s *Server) Close() {
 	}
 	s.mu.Unlock()
 	s.wg.Wait()
+}
+
+// OnCancel installs a hook for a PG cancel request. Cancel requests open their
+// own connection; the peer closes it after the hook returns instead of passing
+// it to the scripted handler.
+func (s *Server) OnCancel(fn func(pid, secret uint32)) {
+	s.mu.Lock()
+	s.onCancel = fn
+	s.mu.Unlock()
+}
+
+// cancelPeekTimeout bounds how long the accept loop may wait for a first
+// packet, so a silent client cannot stall shutdown.
+const cancelPeekTimeout = 5 * time.Second
+
+// prefixConn replays the bytes peekCancel consumed before handing the
+// connection to the handler. A connection closed by Server.Close surfaces as
+// io.EOF, so a handler blocked on a read ends quietly instead of reporting a
+// harness error.
+type prefixConn struct {
+	net.Conn
+	prefix []byte
+}
+
+func (c *prefixConn) Read(p []byte) (int, error) {
+	if len(c.prefix) > 0 {
+		n := copy(p, c.prefix)
+		c.prefix = c.prefix[n:]
+		return n, nil
+	}
+	n, err := c.Conn.Read(p)
+	if errors.Is(err, net.ErrClosed) {
+		err = io.EOF
+	}
+	return n, err
+}
+
+// peekCancel recognizes a cancel channel by its 16-byte first packet. Any
+// other first packet (startup, SSLRequest, a TLS ClientHello) is replayed
+// unchanged.
+func peekCancel(conn net.Conn) (net.Conn, uint32, uint32, bool) {
+	_ = conn.SetReadDeadline(time.Now().Add(cancelPeekTimeout))
+	var header [8]byte
+	n, err := io.ReadFull(conn, header[:])
+	_ = conn.SetReadDeadline(time.Time{})
+	if err != nil {
+		return &prefixConn{Conn: conn, prefix: header[:n]}, 0, 0, false
+	}
+	length := int32(binary.BigEndian.Uint32(header[:4]))
+	code := int32(binary.BigEndian.Uint32(header[4:]))
+	if length != 16 || code != wire.CancelRequestCode {
+		return &prefixConn{Conn: conn, prefix: header[:n]}, 0, 0, false
+	}
+	var rest [8]byte
+	if _, err := io.ReadFull(conn, rest[:]); err != nil {
+		return conn, 0, 0, true
+	}
+	return conn, binary.BigEndian.Uint32(rest[:4]), binary.BigEndian.Uint32(rest[4:]), true
 }
 
 // Conn is one peer connection.

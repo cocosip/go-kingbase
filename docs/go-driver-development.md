@@ -20,12 +20,12 @@ Update task Evidence, feature status, live profile records, counts and log toget
 |---|---|---|---|---|---|---|
 | M0 skeleton | 19 | 16 | 1 | 2 | 0 | 0 |
 | M1 catalog layer | 8 | 0 | 0 | 8 | 0 | 0 |
-| M2 mode behaviour | 19 | 2 | 2 | 15 | 0 | 0 |
+| M2 mode behaviour | 19 | 3 | 2 | 14 | 0 | 0 |
 | M4 release quality | 10 | 0 | 0 | 10 | 0 | 0 |
 | M5 MySQL transport (conditional) | 9 | 0 | 0 | 9 | 0 | 0 |
-| **Total** | **65** | **18** | **3** | **44** | **0** | **0** |
+| **Total** | **65** | **19** | **3** | **43** | **0** | **0** |
 
-Verification V1–V19: 0 accepted, 19 pending. Decisions O1–O7: 3 resolved (O1, O2, O7), 4 open/evidence-pending (O3, O4, O5, O6). Features: 94 total; 26 are Impl=done and Offline=done (F-101–F-103, F-108–F-112, F-114, F-116, F-117, F-212, F-215, F-401, F-701, F-801–F-805, F-901–F-903, F-1102, F-1106, F-1107), 1 is Impl=done with Offline=pending (F-104), 1 is Impl=wip (F-301 binary parity), and 66 remain Impl=todo/Offline=pending; 69 Live=pending and 25 structurally offline-only Live=n/a (recount when requirements change). No accepted live-profile overrides exist. M3 is a verification gate, not an omitted implementation-task group.
+Verification V1–V19: 0 accepted, 19 pending. Decisions O1–O7: 3 resolved (O1, O2, O7), 4 open/evidence-pending (O3, O4, O5, O6). Features: 94 total; 27 are Impl=done and Offline=done (F-101–F-103, F-108–F-112, F-114, F-116, F-117, F-212, F-215, F-401, F-407, F-701, F-801–F-805, F-901–F-903, F-1102, F-1106, F-1107), 1 is Impl=done with Offline=pending (F-104), 1 is Impl=wip (F-301 binary parity), and 65 remain Impl=todo/Offline=pending; 69 Live=pending and 25 structurally offline-only Live=n/a (recount when requirements change). No accepted live-profile overrides exist. M3 is a verification gate, not an omitted implementation-task group.
 
 ## 3. Milestones
 
@@ -104,7 +104,7 @@ Every capability ID is owned by at least one canonical task below. Ranges expand
 | T-038 | Safe generated-column INSERT subset, pre-send rejection, unavailable/overflow IDs | F-601–F-604 | T-008, T-021, T-033 | todo | — |
 | T-039 | Actual uppercase type names, nullable unknown, length/precision and real ScanType | F-307, F-308 | T-021, T-031 | todo | — |
 | T-040 | Multiple results, early Close/drain and trailing server errors | F-406 | T-009, T-011 | todo | — |
-| T-041 | PG cancel-channel EOF/original synchronization and late-cancel races | F-407 | T-008, T-011, T-012 | todo | — |
+| T-041 | PG cancel-channel EOF/original synchronization and late-cancel races | F-407 | T-008, T-011, T-012 | done | Cancellation dials the independent cancel channel, sends the 16-byte CancelRequest with the server's backend key, observes the channel close, and shortens a later operation deadline to the cancel window so the original stream reports the terminal state in bounded time; the connection is always retired afterwards so a late cancel cannot abort the next command, and an undeliverable cancel interrupts the read immediately. `TestCancelRequestAbortsAndSynchronizes` pins the key, the 57014 server error and the retirement, `TestCancelShortensLateDeadline` pins the window against a server that ignores the cancel, and `TestQueryCancelOnlyContextInterruptsRead`/`TestQueryContextDeadlineRetires` cover bounded interruption |
 | T-042 | Default/supported/unsupported isolation, ReadOnly and transaction cleanup | F-701 | T-008 | done | `Begin`/`BeginTx` map LevelDefault plus the four standard levels and READ ONLY to BEGIN clauses, reject other levels before sending, refuse a second BEGIN, and require idle state after COMMIT/ROLLBACK; `TestBeginCommit`, `TestBeginRollback`, `TestBeginTxOptions`, `TestBeginTxUnsupportedIsolation`, `TestBeginWhileActiveRejected` |
 | T-043 | CopyIn/CopyInSchema SQL helpers, Tx Exec/flush/completion/Close semantics | F-702 | T-008, T-040 | todo | — |
 | T-044 | Async parser/listener queue limits/gaps and non-reentrant notice callbacks (P2) | F-703, F-704 | T-008, T-040 | todo | — |
@@ -234,3 +234,4 @@ Initial PG release excludes V8 (O4/V11/V13), native MySQL (O6/M5), binary COPY/i
 | 2026-11-24 | T-016 done: TCP keepalive is configurable (on by default, idle seconds, -1 disables) and keepalives_interval/count fail with an explicit unsupported-parameter error |
 | 2026-11-24 | T-035 wip: CheckNamedValue routes arguments through the standard converter (Valuer once, nil, uint64 range) and rejects named parameters before sending |
 | 2026-11-24 | F-104 offline evidence added: application_name and fallback_application_name are forwarded verbatim in the startup packet (TestConnectStartupParameters, TestConnectFallbackApplicationName) |
+| 2026-11-24 | T-041 done: the PG cancel channel is delivered on an independent connection with the backend key, a later operation deadline is shortened to the cancel window, the original stream keeps its protocol state until the server reports the cancellation, and the connection is retired so late cancels cannot reach the next command (prepared-statement bind failures now retire too); testpeer recognizes cancel connections without exposing them to scripts |

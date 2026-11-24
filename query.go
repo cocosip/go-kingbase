@@ -121,21 +121,34 @@ func (c *conn) beginCommand(ctx context.Context) error {
 		return err
 	}
 	c.commandSent = false
-	if deadline, ok := ctx.Deadline(); ok {
-		if err := c.netConn.SetDeadline(deadline); err != nil {
+	// A watcher left behind by an abandoned command would otherwise fire during
+	// this one; only a watcher that cannot be stopped leaves an unknown state.
+	if c.stopWatch != nil {
+		if !c.stopWatch() {
+			c.stopWatch = nil
+			c.retire()
+			return driver.ErrBadConn
+		}
+		c.stopWatch = nil
+	}
+	var deadline time.Time
+	if operationDeadline, ok := ctx.Deadline(); ok {
+		if err := c.netConn.SetDeadline(operationDeadline); err != nil {
 			c.retire()
 			return fmt.Errorf("kingbase: set deadline: %w", err)
 		}
+		deadline = operationDeadline
 	} else if err := c.netConn.SetDeadline(time.Time{}); err != nil {
 		c.retire()
 		return fmt.Errorf("kingbase: clear deadline: %w", err)
 	}
-	// Cancellation on a context without a deadline must still interrupt a
-	// stalled read or write, or the pool slot stays pinned forever. The socket is
-	// captured so the watcher never races with retirement.
+	// Cancellation sends a PG cancel request on the independent cancel channel
+	// and bounds how long the original stream may take to report the aborted
+	// command. The socket is captured so the watcher never races with
+	// retirement.
 	socket := c.netConn
 	c.stopWatch = context.AfterFunc(ctx, func() {
-		_ = socket.SetDeadline(time.Unix(1, 0))
+		c.startCancel(socket, deadline)
 	})
 	return nil
 }

@@ -171,6 +171,7 @@ func (s *stmt) ExecContext(ctx context.Context, args []driver.NamedValue) (drive
 	}
 	s.conn.commandSent = true
 	if err := s.conn.bindAndExecute(s.name, params, formats, false, nil); err != nil {
+		s.conn.retire()
 		return nil, s.conn.classifyCommandError(err)
 	}
 	return s.conn.classifyCommandResult()
@@ -187,6 +188,7 @@ func (s *stmt) QueryContext(ctx context.Context, args []driver.NamedValue) (driv
 	}
 	s.conn.commandSent = true
 	if err := s.conn.bindAndExecute(s.name, params, formats, true, s.conn.resultFormats()); err != nil {
+		s.conn.retire()
 		return nil, s.conn.classifyCommandError(err)
 	}
 	columns, ready, err := s.conn.awaitExtendedDescription()
