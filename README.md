@@ -46,7 +46,7 @@ gofmt -l .
 go mod tidy && git diff --exit-code
 ```
 
-CI (`.github/workflows/ci.yml`) runs the same commands on linux/windows/darwin
+CI (`.github/workflows/ci-cd.yml`) runs the same commands on linux/windows/darwin
 amd64/arm64 with the Go version pinned by `go.mod`.
 
 ## Dependency policy

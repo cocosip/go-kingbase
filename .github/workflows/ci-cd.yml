@@ -1,0 +1,84 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+
+env:
+  GOTOOLCHAIN: local
+  CGO_ENABLED: '0'
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # macOS hosted images are arm64; Intel macOS runs locally or self-hosted.
+        os:
+          - ubuntu-latest
+          - ubuntu-24.04-arm
+          - windows-latest
+          - windows-11-arm
+          - macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build
+        run: go build ./...
+      - name: Vet
+        run: go vet ./...
+      - name: Test with race detector
+        run: go test -race ./... -count=1 -timeout 10m
+      - name: Collect coverage
+        if: matrix.os == 'ubuntu-latest'
+        run: go test -coverprofile=coverage.out -covermode=atomic ./... -count=1 -timeout 10m
+      - name: Upload coverage
+        if: ${{ !cancelled() && matrix.os == 'ubuntu-latest' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-linux
+          path: coverage.out
+          if-no-files-found: warn
+          retention-days: 14
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Check formatting and module files
+        shell: bash
+        run: |
+          files=$(git ls-files -z '*.go' | xargs -0 gofmt -l)
+          if [ -n "$files" ]; then
+            printf 'Run gofmt on:\n%s\n' "$files"
+            exit 1
+          fi
+          go mod tidy -diff
+      - name: Check GitHub Actions workflows
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -color
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.14.0
+          args: --timeout=10m
