@@ -44,17 +44,24 @@ type typeCatalog struct {
 // lookup resolves a type OID to its catalog identity, following domains to
 // their base type.
 func (c *typeCatalog) lookup(oid uint32) (schema, name string, ok bool) {
+	info, ok := c.resolve(oid)
+	return info.schema, info.name, ok
+}
+
+// resolve returns the catalog entry for a type OID, following domains to their
+// base type so callers also see its length and kind.
+func (c *typeCatalog) resolve(oid uint32) (typeInfo, bool) {
 	for depth := 0; depth < maxDomainDepth; depth++ {
 		info, found := c.byOID[oid]
 		if !found {
-			return "", "", false
+			return typeInfo{}, false
 		}
 		if info.kind != 'd' || info.baseOID == 0 || info.baseOID == oid {
-			return info.schema, info.name, true
+			return info, true
 		}
 		oid = info.baseOID
 	}
-	return "", "", false
+	return typeInfo{}, false
 }
 
 // loadCatalog reads the server type namespace inside the connection budget.

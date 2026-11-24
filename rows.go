@@ -32,6 +32,9 @@ var (
 	_ driver.RowsNextResultSet              = (*rows)(nil)
 	_ driver.RowsColumnTypeDatabaseTypeName = (*rows)(nil)
 	_ driver.RowsColumnTypeScanType         = (*rows)(nil)
+	_ driver.RowsColumnTypeNullable         = (*rows)(nil)
+	_ driver.RowsColumnTypeLength           = (*rows)(nil)
+	_ driver.RowsColumnTypePrecisionScale   = (*rows)(nil)
 )
 
 func newRows(c *conn, columns []wire.ColumnDescription, ready bool) *rows {
@@ -112,6 +115,44 @@ func (r *rows) ColumnTypeDatabaseTypeName(index int) string {
 // ColumnTypeScanType returns the Go type produced by Next.
 func (r *rows) ColumnTypeScanType(index int) reflect.Type {
 	return r.scanTypes[index]
+}
+
+// ColumnTypeNullable reports nullability as unknown: RowDescription carries no
+// nullable flag, so claiming a definite answer would be dishonest.
+func (r *rows) ColumnTypeNullable(_ int) (bool, bool) {
+	return true, false
+}
+
+// ColumnTypeLength returns the fixed catalog length or the declared character
+// length from the column typmod.
+func (r *rows) ColumnTypeLength(index int) (int64, bool) {
+	column := r.columns[index]
+	info, known := r.conn.typeMetadata(column.TypeOID)
+	if !known || info.schema != schemaPGCatalog {
+		return 0, false
+	}
+	switch info.name {
+	case "varchar", "bpchar", "char":
+		if column.TypeMod >= 4 {
+			return int64(column.TypeMod - 4), true
+		}
+		return 0, false
+	}
+	if info.length > 0 {
+		return int64(info.length), true
+	}
+	return 0, false
+}
+
+// ColumnTypePrecisionScale returns numeric precision and scale from the typmod.
+func (r *rows) ColumnTypePrecisionScale(index int) (int64, int64, bool) {
+	column := r.columns[index]
+	info, known := r.conn.typeMetadata(column.TypeOID)
+	if !known || info.schema != schemaPGCatalog || info.name != "numeric" || column.TypeMod < 4 {
+		return 0, 0, false
+	}
+	typmod := column.TypeMod - 4
+	return int64((typmod >> 16) & 0xffff), int64(typmod & 0xffff), true
 }
 
 // Next fills dest with the next row and returns io.EOF at the end of the set.

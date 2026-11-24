@@ -208,6 +208,16 @@ func (c *conn) codecName(oid uint32) (schema, name string, ok bool) {
 }
 
 // typeLabels is the catalog view used by tests and diagnostics.
+// typeMetadata returns the resolved catalog entry for a result type, or false
+// when the server did not identify it.
+func (c *conn) typeMetadata(oid uint32) (typeInfo, bool) {
+	if c.catalog == nil {
+		return typeInfo{}, false
+	}
+	return c.catalog.resolve(oid)
+}
+
+// typeLabels is the catalog view used by tests and diagnostics.
 func (c *conn) typeLabels() map[uint32]string {
 	labels := make(map[uint32]string)
 	if c.catalog == nil {
