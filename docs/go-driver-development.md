@@ -233,3 +233,4 @@ Initial PG release excludes V8 (O4/V11/V13), native MySQL (O6/M5), binary COPY/i
 | 2026-11-24 | T-039 wip: real column metadata landed (honest nullable unknown, catalog/typmod lengths, numeric precision/scale, real ScanType); uppercase backend type names stay with the lexical-mode tasks |
 | 2026-11-24 | T-016 done: TCP keepalive is configurable (on by default, idle seconds, -1 disables) and keepalives_interval/count fail with an explicit unsupported-parameter error |
 | 2026-11-24 | T-035 wip: CheckNamedValue routes arguments through the standard converter (Valuer once, nil, uint64 range) and rejects named parameters before sending |
+| 2026-11-24 | F-104 offline evidence added: application_name and fallback_application_name are forwarded verbatim in the startup packet (TestConnectStartupParameters, TestConnectFallbackApplicationName) |

@@ -680,3 +680,27 @@ func TestConnectWithKeepAlivesDisabled(t *testing.T) {
 	}
 	_ = physical.Close()
 }
+
+func TestConnectFallbackApplicationName(t *testing.T) {
+	srv := testpeer.Start(t, func(peer *testpeer.Conn) {
+		params, err := peer.ReadStartup()
+		if err != nil {
+			peer.Errorf("read startup: %v", err)
+			return
+		}
+		if name := startupParam(params, "application_name"); name != "fallback-svc" {
+			peer.Errorf("application_name = %q, want fallback-svc", name)
+			return
+		}
+		if err := peer.StartupOK(nil); err != nil {
+			peer.Errorf("StartupOK: %v", err)
+			return
+		}
+		waitTerminate(peer)
+	})
+	physical, err := connectPeer(t, srv, "fallback_application_name=fallback-svc")
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	_ = physical.Close()
+}
