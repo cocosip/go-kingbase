@@ -261,8 +261,3 @@ func (c *conn) Close() error {
 func (c *conn) Prepare(_ string) (driver.Stmt, error) {
 	return nil, fmt.Errorf("kingbase: prepared statements are not implemented yet")
 }
-
-// Begin is implemented by the transaction task.
-func (c *conn) Begin() (driver.Tx, error) {
-	return nil, fmt.Errorf("kingbase: transactions are not implemented yet")
-}

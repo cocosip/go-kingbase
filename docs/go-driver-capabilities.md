@@ -113,7 +113,7 @@ DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup excha
 
 | ID | Capability | Priority | Verification | Notes | Impl | Offline | Live |
 |---|---|---|---|---|---|---|---|
-| F-701 | TxOptions and transaction lifecycle | P0 | both | LevelDefault, four explicit levels, unsupported error, ReadOnly, commit/rollback/cancel recovery | todo | pending | pending |
+| F-701 | TxOptions and transaction lifecycle | P0 | both | LevelDefault, four explicit levels, unsupported error, ReadOnly, commit/rollback/cancel recovery | done | done | pending |
 | F-702 | CopyIn/CopyInSchema text import | P1 | both | Statement-string helpers; Tx.Prepare/Exec/flush/Close; identifiers, NULL/escaping, completion/trailing errors | todo | pending | pending |
 | F-703 | LISTEN/NOTIFY | P2 | both | Async parsing; bounded 256-message queue, overflow gap/reconnect, no replay, nil gap marker | todo | pending | pending |
 | F-704 | NOTICE/WARNING callbacks | P2 | both | Default discard; no stderr, same-connection reentrancy forbidden | todo | pending | pending |

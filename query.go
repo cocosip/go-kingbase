@@ -131,9 +131,11 @@ func (c *conn) beginCommand(ctx context.Context) error {
 		return fmt.Errorf("kingbase: clear deadline: %w", err)
 	}
 	// Cancellation on a context without a deadline must still interrupt a
-	// stalled read or write, or the pool slot stays pinned forever.
+	// stalled read or write, or the pool slot stays pinned forever. The socket is
+	// captured so the watcher never races with retirement.
+	socket := c.netConn
 	c.stopWatch = context.AfterFunc(ctx, func() {
-		_ = c.netConn.SetDeadline(time.Unix(1, 0))
+		_ = socket.SetDeadline(time.Unix(1, 0))
 	})
 	return nil
 }
