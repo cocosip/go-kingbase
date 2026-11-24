@@ -225,7 +225,7 @@ Profiles contain tinyint range, boolean BIT versus bit-string policy, routine re
 
 ### 7.1 database/sql value boundary
 
-Classic Rows.Next exposes only nil, bool, int64, float64, string, []byte and time.Time (R2). Private codec representations normalize at that boundary. No default result is sql.NullBool, a narrow integer, decimal.Decimal, civil.Date/Time or []T. A newer optional scanning interface cannot alter this baseline; minimum Go version is O7.
+Classic Rows.Next exposes only nil, bool, int64, float64, string, []byte and time.Time (R2). Private codec representations normalize at that boundary. No default result is sql.NullBool, a narrow integer, decimal.Decimal, civil.Date/Time or []T. A newer optional scanning interface cannot alter this baseline; the Go baseline is 1.26.0 (§13.1).
 
 | Database value | Default non-NULL value / ScanType | Contract |
 |---|---|---|
@@ -395,7 +395,7 @@ For PG preserve sampled official Go R003/R004 semantics: require encrypts withou
 
 Read configured material at physical connect. Strict sampled POSIX secret permissions apply to sslkey only, not public sslcert/root certificates; Windows handling is separate. Tests include readable public certificates, unsafe private keys, missing/invalid material, key mismatch, untrusted/expired chain and wrong hostname. §14 records strict-missing-file migration differences.
 
-MySQL TLS is independently accepted in V8/V15 with the same configured trust policy. SM3 password authentication does not establish national-crypto TLS/certificate support. Runtime TLS-version/cipher policy follows the eventual supported Go toolchain.
+MySQL TLS is independently accepted in V8/V15 with the same configured trust policy. SM3 password authentication does not establish national-crypto TLS/certificate support. Runtime TLS-version/cipher policy is verified against the Go 1.26.0 baseline.
 
 ## 13. Planned Package Layout
 
@@ -413,15 +413,29 @@ go-kingbase/
   internal/mysql/                     conditional separately accepted backend
 ```
 
-No product implementation exists yet. T-001 fixes minimum Go version, CI/runtime/platform matrix, module identity and license/dependency policy before package creation/publication.
+No product implementation exists yet. T-001 implements the confirmed module/Go baseline below and completes the remaining CI/runtime/platform and license/dependency policy before package creation/publication.
+
+### 13.1 Confirmed module and Go baseline
+
+Use Go **1.26.0** for development and the baseline CI build/test/lint jobs. The product module path is **github.com/cocosip/go-kingbase**, derived from the configured Git origin, git@github.com:cocosip/go-kingbase.git. Package name remains gokb and database/sql driver registration remains kingbase.
+
+When T-001 creates the root go.mod, it must begin with:
+
+```go
+module github.com/cocosip/go-kingbase
+
+go 1.26.0
+```
+
+Use github.com/cocosip/go-kingbase in imports, examples and package-release checks. These are confirmed configuration decisions, not evidence that a module, build or Go-version compatibility test already exists. Supported platforms, license/dependency policy and pinned CI/linter versions remain the unfinished parts of O7.
 
 ## 14. API and Migration Compatibility
 
-Driver registration is kingbase and package gokb; module identity is O1. A new path requires import migration, not a drop-in claim. T-053 publishes compiling examples after implementation.
+Driver registration is kingbase, package is gokb and module is github.com/cocosip/go-kingbase (O1 resolved). The new path requires import migration, not a drop-in claim. T-053 publishes compiling examples after implementation.
 
 | Official surface/behaviour | First-release migration decision |
 |---|---|
-| Driver/Connector/Dialer | equivalent database/sql entry points; exact signatures/minimum Go fixed by T-001/O7 |
+| Driver/Connector/Dialer | equivalent database/sql entry points on Go 1.26.0; exact signatures delivered by T-001 |
 | CopyIn/CopyInSchema | statement-string helpers (§10.3), no writer claim |
 | Array | Scanner/Valuer helper with explicit dimensions/lower-bounds/NULL support; unsupported shapes return errors |
 | ReturnStatus/DateTime1/VarChar*/NChar/CursorString | retain typed intent under accepted target/routine profiles; checked conversion |
@@ -456,13 +470,13 @@ Implementation, offline proof and live acceptance are separate [progress](go-dri
 
 | ID | Decision/question | State/effect |
 |---|---|---|
-| O1 | published module identity/oid migration | open; new module preferred, package gokb retained; blocks T-001 publication |
+| O1 | published module identity/oid migration | resolved: github.com/cocosip/go-kingbase from Git origin; package gokb/registration kingbase retained; oid subpackage omitted per §14 |
 | O2 | public scalar/temporal contract | resolved in specification: standard driver values, date time.Time/time text, no implicit civil/sql.NullBool |
 | O3 | qualified catalog access | pending V2; no built-in escape hatch; fail if required metadata unavailable |
 | O4 | V8 support | later scope, V11/V13 before enabling; no universal no-special-code assertion |
 | O5 | live-profile availability | pending; required V9 evidence blocks M3, not offline work |
 | O6 | MySQL backend release | conditional M5 after V12/V15/native-bootstrap/reset evidence; excluded from initial PG claims |
-| O7 | minimum Go/platform/license/toolchain | open; blocks T-001/publication; standard Rows.Next contract regardless of newer scanner interface |
+| O7 | minimum Go/platform/license/toolchain | partially resolved: Go 1.26.0 confirmed; platforms, license/dependencies and pinned CI/linter versions remain open and gate T-001/publication |
 
 ## Appendix A: Snapshot Comparison
 
@@ -559,7 +573,7 @@ References were reviewed on 2026-11-24. Go interface/protocol specifications est
 | Ref | Primary source | What it establishes / limit |
 |---|---|---|
 | R1 | [Kingbase V9 parameter FAQ](https://help.kingbase.com.cn/v9/faq/faq-new/parameter.html) | database_mode is listed under internal parameters set at build/initdb time; exact product/release applicability remains V14 |
-| R2 | [Go database/sql/driver](https://pkg.go.dev/database/sql/driver) | Value, ErrBadConn, ConnBeginTx, reset/validation timing and metadata contracts; supported Go version still O7 |
+| R2 | [Go database/sql/driver](https://pkg.go.dev/database/sql/driver) | Value, ErrBadConn, ConnBeginTx, reset/validation timing and metadata contracts; implementation must verify the selected Go 1.26.0 baseline |
 | R3 | [Go database/sql](https://pkg.go.dev/database/sql) | Scan/Scanner/Valuer/Out and pinned Conn lifecycle; newer optional interfaces are not a baseline requirement |
 | R4 | [PostgreSQL 12 protocol flow](https://www.postgresql.org/docs/12/protocol-flow.html) | asynchronous-message parsing and cancellation model; verify Kingbase behaviour separately |
 | R5 | [PostgreSQL 12 SSL](https://www.postgresql.org/docs/12/libpq-ssl.html) | historical require-with-CA and private-key policy; official Go source below is the actual migration baseline |

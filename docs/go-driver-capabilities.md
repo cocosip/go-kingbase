@@ -152,7 +152,7 @@ No product code or reachable-server acceptance exists yet. Documentation correct
 | F-1104 | Concurrency tests | P0 | both | multiple modes interleaved + `-race` | todo | pending | pending |
 | F-1105 | Performance baseline | P2 | live | Actual single-row/COPY workloads; explicitly deferrable outside release blockers | todo | pending | pending |
 | F-1106 | Repository lint rules | P0 | offline | Run existing .golangci.yml once product module exists | todo | pending | n/a |
-| F-1107 | Toolchain/platform/package release contract | P0 | offline | O1/O7 closed; minimum Go, platforms, license/dependency policy, CI and package smoke checks | todo | pending | n/a |
+| F-1107 | Toolchain/platform/package release contract | P0 | offline | Go 1.26.0; module github.com/cocosip/go-kingbase from Git origin; O1 resolved, remaining O7 platform/license/dependency/CI decisions and package smoke checks required | todo | pending | n/a |
 
 ## 12. MySQL Transport Backend (conditional)
 

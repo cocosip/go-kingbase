@@ -25,7 +25,7 @@ Update task Evidence, feature status, live profile records, counts and log toget
 | M5 MySQL transport (conditional) | 9 | 0 | 0 | 9 | 0 | 0 |
 | **Total** | **65** | **0** | **0** | **65** | **0** | **0** |
 
-Verification V1–V19: 0 accepted, 19 pending. Decisions O1–O7: 1 specification decision resolved (O2), 6 open/evidence-pending. All 94 features: Impl=todo, Offline=pending; 69 Live=pending and 25 structurally offline-only Live=n/a (recount when requirements change). No accepted live-profile overrides exist. M3 is a verification gate, not an omitted implementation-task group.
+Verification V1–V19: 0 accepted, 19 pending. Decisions O1–O7: 2 specification decisions resolved (O1/O2), 1 partially resolved (O7: Go 1.26.0 confirmed), 4 open/evidence-pending. All 94 features: Impl=todo, Offline=pending; 69 Live=pending and 25 structurally offline-only Live=n/a (recount when requirements change). No accepted live-profile overrides exist. M3 is a verification gate, not an omitted implementation-task group.
 
 ## 3. Milestones
 
@@ -40,7 +40,7 @@ Verification V1–V19: 0 accepted, 19 pending. Decisions O1–O7: 1 specificatio
 
 ### 3.1 Development entry and first implementation order
 
-The specification is ready to serve as a development baseline; no product task is complete. Start with T-001 and close O1/O7 before committing the product scaffold: confirm the published module path, minimum Go version, supported OS/architecture matrix, license/dependency policy, pinned CI/linter versions and reproducible build/test/lint commands. Do not infer the published module path or license from the local directory name.
+The specification is ready to serve as a development baseline; no product task is complete. The confirmed Go version is **1.26.0** and module path is **github.com/cocosip/go-kingbase**, derived from Git origin git@github.com:cocosip/go-kingbase.git. T-001 must create go.mod with that module path and go 1.26.0, and use Go 1.26.0 for development/baseline CI. O1 is resolved; finish the remaining O7 decisions before committing the product scaffold: supported OS/architecture matrix, license/dependency policy, pinned CI/linter versions and reproducible build/test/lint commands. Do not infer a license from the repository address.
 
 After T-001, start T-002 (DSN/configuration) and T-012 (testpeer); then follow the declared dependencies through T-004/T-005 and the query/core-value tasks. Each protocol/parser implementation must choose and document concrete message/allocation/recursion/crypto-work limits with boundary tests before that task is done. Move a task to wip when implementation starts and record named offline proof before done; leave unrelated backlog and live acceptance pending.
 
@@ -54,7 +54,7 @@ Every capability ID is owned by at least one canonical task below. Ranges expand
 
 | ID | Deliverable | Capabilities | Depends on | Status | Evidence |
 |---|---|---|---|---|---|
-| T-001 | Scaffold/module/minimum-Go/platform/license/dependency/CI contract | F-1106, F-1107 | O1, O7 | todo | — |
+| T-001 | Scaffold github.com/cocosip/go-kingbase with Go 1.26.0; complete platform/license/dependency/CI contract | F-1106, F-1107 | O1 (resolved), O7 (remaining decisions) | todo | — |
 | T-002 | DSN parsing, allowlists, normalization, aliases, explicit empties | F-101, F-102, F-108–F-112, F-114 | T-001 | todo | — |
 | T-003 | Deterministic environment fallback/conflicts (P2) | F-107 | T-002 | todo | — |
 | T-004 | Connector/Dialer, full initialization budget, sockets and TLS policy | F-103, F-104, F-804, F-805 | T-002 | todo | — |
@@ -170,13 +170,13 @@ Full procedures/blocking features are in capability matrix section 13. Evidence 
 
 | ID | Decision | State | Effect |
 |---|---|---|---|
-| O1 | Published module identity/oid migration | open | blocks T-001 publication; package gokb/registration kingbase specified |
+| O1 | Published module identity/oid migration | resolved | github.com/cocosip/go-kingbase from Git origin; package gokb/registration kingbase retained; oid subpackage omitted per Architecture 14 |
 | O2 | Standard public scalar/temporal values | resolved | Architecture 7.1: bool/nil BIT, int64 small ints, exact text numerics/uint64/time, date/timestamp time.Time; no implicit civil/NullBool |
 | O3 | Qualified catalog shape/access | evidence-pending | V2; fail if required metadata unavailable, no built-in escape hatch |
 | O4 | V8 support | open, later scope | V11/V13 before adding a concrete V8 manifest; no inherited V9 acceptance |
 | O5 | Reachable V9 acceptance profiles | evidence-pending | required profiles block M3 until evidence or explicit justified scope decision |
 | O6 | Native MySQL release | open, conditional | V12/V15/V19 and M5; excluded from initial PG release |
-| O7 | Minimum Go/platform/license/dependency/release policy | open | blocks T-001 and publication; classic driver-value baseline does not rely on new scanner APIs |
+| O7 | Minimum Go/platform/license/dependency/release policy | partially resolved | Go 1.26.0 confirmed; supported platforms, license/dependencies and pinned CI/linter versions still gate T-001/publication |
 
 ## 7. Required Risk Cases by Owner
 
@@ -211,3 +211,4 @@ Initial PG release excludes V8 (O4/V11/V13), native MySQL (O6/M5), binary COPY/i
 |---|---|
 | 2026-11-24 | Original draft contained 49 todo tasks, 15 pending verification items and 6 open decisions |
 | 2026-11-24 | Aligned interface contracts and requirement ownership: 94 features, 65 todo tasks, 19 pending V-items, O2 resolved/O7 added; separated implementation/offline/live states and scoped release gates |
+| 2026-11-24 | Confirmed Go 1.26.0 and module github.com/cocosip/go-kingbase from Git origin; resolved O1 and the Go-version part of O7; implementation tasks remain todo |
