@@ -66,6 +66,66 @@ func TestResetSessionRollsBack(t *testing.T) {
 	_ = physical.Close()
 }
 
+func TestResetSessionKeepsPreparedStatements(t *testing.T) {
+	const query = "UPDATE t SET x = $1"
+	srv := testpeer.Start(t, func(peer *testpeer.Conn) {
+		if !startupOK(peer) {
+			return
+		}
+		if !describePrepared(peer, query, []uint32{23}) {
+			return
+		}
+		// BEGIN opens a transaction, then a checkout reset rolls it back.
+		payload, ok := expectMessage(peer, wire.MsgQuery)
+		if !ok {
+			return
+		}
+		if sql, err := wire.DecodeQuery(payload); err != nil || sql != "BEGIN" {
+			peer.Errorf("query = %q, err %v, want BEGIN", sql, err)
+			return
+		}
+		_ = peer.CommandComplete("BEGIN")
+		_ = peer.ReadyForQuery(wire.StatusInTransaction)
+		if !expectSimpleQuery(peer) {
+			return
+		}
+		// The server-side statement survived the rollback and must be reusable.
+		if !readBind(peer, "kb_stmt_0", []string{"7"}, false, nil) {
+			return
+		}
+		_ = peer.WriteMessage(wire.MsgBindComplete, nil)
+		_ = peer.CommandComplete("UPDATE 1")
+		_ = peer.ReadyForQuery(wire.StatusIdle)
+		if !closeStatement(peer, "kb_stmt_0") {
+			return
+		}
+		waitTerminate(peer)
+	})
+
+	physical, err := connectPeer(t, srv, "")
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	prepared, err := physical.PrepareContext(context.Background(), query)
+	if err != nil {
+		t.Fatalf("PrepareContext: %v", err)
+	}
+	statement := prepared.(*stmt)
+	if _, err := physical.ExecContext(context.Background(), "BEGIN", nil); err != nil {
+		t.Fatalf("BEGIN: %v", err)
+	}
+	if err := physical.ResetSession(context.Background()); err != nil {
+		t.Fatalf("ResetSession: %v", err)
+	}
+	if _, err := statement.ExecContext(context.Background(), []driver.NamedValue{{Ordinal: 1, Value: int64(7)}}); err != nil {
+		t.Fatalf("statement reuse after reset: %v", err)
+	}
+	if err := statement.Close(); err != nil {
+		t.Fatalf("statement.Close: %v", err)
+	}
+	_ = physical.Close()
+}
+
 func TestResetSessionRetiresRetiredConnection(t *testing.T) {
 	physical := &conn{cfg: &Config{User: testUser}}
 	if err := physical.ResetSession(context.Background()); !errors.Is(err, driver.ErrBadConn) {

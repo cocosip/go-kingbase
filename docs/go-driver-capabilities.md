@@ -33,7 +33,7 @@ DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup excha
 | F-112 | Duplicate parameter semantics | P1 | offline | after folding, the last occurrence wins | done | done | n/a |
 | F-113 | Runtime/lexical parameter handling | P1 | both | Allowlist, exact values, safe backend configuration, refresh lexical context or retire | todo | pending | pending |
 | F-114 | Missing `dbname` defaults to the user name | P1 | offline | libpq convention | done | done | n/a |
-| F-115 | Safe session reset before reuse | P0 | both | SessionResetter checkout timing; pinned Conn state; bounded reset, dirty/poisoned retirement, prepared-handle invalidation | todo | pending | pending |
+| F-115 | Safe session reset before reuse | P0 | both | SessionResetter checkout timing; pinned Conn state; bounded reset, dirty/poisoned retirement, prepared-handle invalidation | done | done | pending |
 | F-116 | `Pinger` and `Validator` (connection liveness) | P0 | both | used by `db.Ping` and pool health checks | done | done | pending |
 | F-117 | Client encoding | P0 | both | Initially UTF8/UTF-8 only; reject unimplemented encodings; never silently corrupt | done | done | pending |
 
