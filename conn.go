@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -219,11 +220,31 @@ func startupParameters(cfg *Config) [][2]string {
 	return params
 }
 
+// maxDiagnosticValue bounds how much untrusted server text a diagnostic may
+// echo back.
+const maxDiagnosticValue = 64
+
+// boundedValue renders untrusted server text for a diagnostic: control
+// characters are replaced, the value is capped, and the result is quoted.
+func boundedValue(value string) string {
+	clean := make([]rune, 0, len(value))
+	for _, r := range value {
+		if r < 0x20 || r == 0x7f {
+			r = '?'
+		}
+		clean = append(clean, r)
+		if len(clean) == maxDiagnosticValue {
+			return strconv.Quote(string(clean)) + "..."
+		}
+	}
+	return strconv.Quote(string(clean))
+}
+
 // validateStartup rejects startup states the driver cannot honour instead of
 // silently corrupting data.
 func (c *conn) validateStartup() error {
 	if encoding, ok := c.params["client_encoding"]; ok && !isUTF8(encoding) {
-		return fmt.Errorf("kingbase: server client_encoding %q is not supported (only UTF8)", encoding)
+		return fmt.Errorf("kingbase: server client_encoding %s is not supported (only UTF8)", boundedValue(encoding))
 	}
 	if c.txStatus != wire.StatusIdle {
 		return fmt.Errorf("kingbase: connection started in transaction state %q", c.txStatus)

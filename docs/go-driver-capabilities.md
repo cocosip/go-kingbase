@@ -57,7 +57,7 @@ DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup excha
 | F-216 | Ambiguous names and user types | P0 | offline | OID plus qualified identity/shape; app.int/year/bit never acquire built-in codecs or select mode | todo | pending | n/a |
 | F-217 | Verified alternate catalog queries | P0 | both | PG full-shape then accepted sys equivalent for missing-object cases; two-column fallback cannot enable required codecs | todo | pending | pending |
 | F-220 | Qualified profile/catalog validation | P0 | both | Only live-verified required shape rules; year/int markers do not determine mode or create arbitrary conflicts | todo | pending | pending |
-| F-221 | Bounded protocol/endpoint diagnostics | P0 | offline | Configured transport only; sanitized capped prefix; no zero-wait peek, cross-protocol reconnect, port scan or downgrade | todo | pending | n/a |
+| F-221 | Bounded protocol/endpoint diagnostics | P0 | offline | Configured transport only; sanitized capped prefix; no zero-wait peek, cross-protocol reconnect, port scan or downgrade | done | done | n/a |
 | F-218 | Catalog refresh boundary | P1 | both | New physical connection after type-changing DDL; stale/unknown OIDs safe; no mid-reader reload | todo | pending | pending |
 
 ## 4. Type Encoding and Decoding
@@ -160,7 +160,7 @@ For deployments whose native MySQL endpoint is established by V12/V15 (Architect
 
 | ID | Capability | Priority | Verification | Notes | Impl | Offline | Live |
 |---|---|---|---|---|---|---|---|
-| F-240 | Explicit transport selection | P1 | offline | wireProtocol=mysql only; default pg; no auto/peek/reconnect; unsupported backend clear error | todo | pending | n/a |
+| F-240 | Explicit transport selection | P1 | offline | wireProtocol=mysql only; default pg; no auto/peek/reconnect; unsupported backend clear error | done | done | n/a |
 | F-241 | MySQL handshake/capability negotiation | P1 | both | Implemented flags only; multi-results and PS multi-results separate; charset, AuthSwitch/MoreData, bounded header | todo | pending | pending |
 | F-242 | MySQL auth plugins | P1 | both | Verified native/caching_sha2 paths; protected full auth, no downgrade or unverified key retrieval | todo | pending | pending |
 | F-243 | MySQL in-band TLS | P1 | both | Independent SSLRequest/handshake/trust acceptance; same configured CA policy, no plaintext fallback | todo | pending | pending |

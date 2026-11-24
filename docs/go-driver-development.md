@@ -18,12 +18,12 @@ Update task Evidence, feature status, live profile records, counts and log toget
 
 | Milestone | Tasks | done | wip | todo | blocked | deferred |
 |---|---|---|---|---|---|---|
-| M0 skeleton | 19 | 14 | 1 | 4 | 0 | 0 |
+| M0 skeleton | 19 | 15 | 1 | 3 | 0 | 0 |
 | M1 catalog layer | 8 | 0 | 0 | 8 | 0 | 0 |
 | M2 mode behaviour | 19 | 2 | 0 | 17 | 0 | 0 |
 | M4 release quality | 10 | 0 | 0 | 10 | 0 | 0 |
 | M5 MySQL transport (conditional) | 9 | 0 | 0 | 9 | 0 | 0 |
-| **Total** | **65** | **16** | **1** | **48** | **0** | **0** |
+| **Total** | **65** | **17** | **1** | **47** | **0** | **0** |
 
 Verification V1–V19: 0 accepted, 19 pending. Decisions O1–O7: 3 resolved (O1, O2, O7), 4 open/evidence-pending (O3, O4, O5, O6). Features: 94 total; 26 are Impl=done and Offline=done (F-101–F-103, F-108–F-112, F-114, F-116, F-117, F-212, F-215, F-401, F-701, F-801–F-805, F-901–F-903, F-1102, F-1106, F-1107), 1 is Impl=done with Offline=pending (F-104), 1 is Impl=wip (F-301 binary parity), and 66 remain Impl=todo/Offline=pending; 69 Live=pending and 25 structurally offline-only Live=n/a (recount when requirements change). No accepted live-profile overrides exist. M3 is a verification gate, not an omitted implementation-task group.
 
@@ -74,7 +74,7 @@ Every capability ID is owned by at least one canonical task below. Ranges expand
 | T-016 | OS-specific TCP keepalive and unsupported-platform cases (P2) | F-105 | T-004 | todo | — |
 | T-017 | Opt-in multiple hosts/target attributes, no protocol fallback (P2) | F-106 | T-004 | todo | — |
 | T-018 | Allowlisted runtime/application/lexical settings and safe context changes | F-113, F-104, F-408 | T-008, T-015 | todo | — |
-| T-019 | Configured-protocol mismatch and bounded sanitized diagnostics | F-221, F-240 | T-004, T-012 | todo | — |
+| T-019 | Configured-protocol mismatch and bounded sanitized diagnostics | F-221, F-240 | T-004, T-012 | done | Handshake failures name the configured transport and never echo peer payload bytes; untrusted startup values are control-stripped and capped at 64 runes (`TestWrongProtocolPeerDiagnosticsBounded`, `TestNonUTF8EncodingDiagnosticIsBounded`); `wireProtocol` accepts pg only, rejects mysql with an explicit error, defaults to pg and never auto-detects |
 
 ### M1 catalog layer
 
@@ -229,3 +229,4 @@ Initial PG release excludes V8 (O4/V11/V13), native MySQL (O6/M5), binary COPY/i
 | 2026-11-24 | T-010 done: prepared-statement binary parameters are encoded from ParameterDescription OIDs with per-parameter formats, int2/int4 overflow is rejected before sending, unverified targets stay text, and CI moved to .github/workflows/ci-cd.yml |
 | 2026-11-24 | CI/CD workflow renamed to .github/workflows/ci-cd.yml and aligned with go-oceanbase conventions: concurrency groups, GOTOOLCHAIN local, coverage artifact, gofmt/tidy/actionlint gates |
 | 2026-11-24 | T-014 done: prepared statements survive checkout reset and stay reusable, completing F-115's reset/handle contract |
+| 2026-11-24 | T-019 done: handshake diagnostics name the configured transport, cap and control-strip untrusted startup values, never echo peer payload bytes, and the driver never auto-detects or falls back across protocols |

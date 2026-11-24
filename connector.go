@@ -79,7 +79,7 @@ func (c *Connector) Connect(ctx context.Context) (driver.Conn, error) {
 	physical.reader = wire.NewReader(physical.netConn, 0)
 	physical.writer = wire.NewWriter(physical.netConn)
 	if err := physical.handshake(); err != nil {
-		return nil, connectFailure(deadlineCtx, err)
+		return nil, connectFailure(deadlineCtx, fmt.Errorf("kingbase: %s handshake failed: %w", c.cfg.Network, err))
 	}
 	if err := physical.loadCatalog(deadlineCtx); err != nil {
 		return nil, connectFailure(deadlineCtx, err)
