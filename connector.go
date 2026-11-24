@@ -109,6 +109,9 @@ func (c *Connector) connectEndpoint(ctx context.Context, ep endpoint) (driver.Co
 	if err := physical.checkTargetSession(ctx); err != nil {
 		return nil, err
 	}
+	if err := physical.resolveMode(ctx); err != nil {
+		return nil, err
+	}
 	if err := physical.loadCatalog(ctx); err != nil {
 		return nil, err
 	}

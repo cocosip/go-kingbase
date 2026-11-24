@@ -28,7 +28,12 @@ type conn struct {
 	reader      *wire.Reader
 	writer      *wire.Writer
 
-	params        map[string]string
+	params map[string]string
+	// mode is the effective compatibility mode after discovery: the validated
+	// server report, or an explicit declaration labelled as unverified.
+	mode          CompatibilityMode
+	modeSource    modeSource
+	modeVerified  bool
 	backendPID    uint32
 	backendSecret uint32
 	txStatus      byte

@@ -119,7 +119,7 @@ func planPlaceholders(profile modeProfile, query string) (placeholderPlan, error
 // verified profile passes the statement through unchanged with -1 (no count
 // check) instead of fabricating semantics.
 func (c *conn) rewritePlaceholders(query string) (string, int, error) {
-	profile, verified := c.cfg.CompatibilityMode.profile()
+	profile, verified := c.mode.profile()
 	if !verified {
 		return query, -1, nil
 	}

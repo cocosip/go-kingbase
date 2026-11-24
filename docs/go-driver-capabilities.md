@@ -41,9 +41,9 @@ DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup excha
 
 | ID | Capability | Priority | Verification | Notes | Impl | Offline | Live |
 |---|---|---|---|---|---|---|---|
-| F-201 | Auto mode from authoritative server evidence | P0 | both | Validated startup/query report; bounded PG candidate chain; native bootstrap separately verified; no bare-name inference | todo | pending | pending |
-| F-202 | Explicit mode declaration and validation | P0 | both | Check known server conflicts; unavailable discovery records modeVerified=false; no fabricated actualMode | todo | pending | pending |
-| F-207 | Mode probe failure contract | P0 | both | Auto unknown fails; distinguish empty/missing/permission/timeout; no PG default or catalog-mode guess | todo | pending | pending |
+| F-201 | Auto mode from authoritative server evidence | P0 | both | Validated startup/query report; bounded PG candidate chain; native bootstrap separately verified; no bare-name inference | done | done | pending |
+| F-202 | Explicit mode declaration and validation | P0 | both | Check known server conflicts; unavailable discovery records modeVerified=false; no fabricated actualMode | done | done | pending |
+| F-207 | Mode probe failure contract | P0 | both | Auto unknown fails; distinguish empty/missing/permission/timeout; no PG default or catalog-mode guess | done | done | pending |
 | F-208 | Connector mode/protocol pinning | P1 | offline | Protocol fixed by configuration; authoritative mode conflicts fail; no greeting memo | todo | pending | n/a |
 | F-209 | Per-connection state isolation | P0 | offline | concurrent modes with `-race`; no process-global mutable state | todo | pending | n/a |
 
