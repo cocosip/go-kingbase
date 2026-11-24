@@ -34,7 +34,7 @@ DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup excha
 | F-113 | Runtime/lexical parameter handling | P1 | both | Allowlist, exact values, safe backend configuration, refresh lexical context or retire | todo | pending | pending |
 | F-114 | Missing `dbname` defaults to the user name | P1 | offline | libpq convention | done | done | n/a |
 | F-115 | Safe session reset before reuse | P0 | both | SessionResetter checkout timing; pinned Conn state; bounded reset, dirty/poisoned retirement, prepared-handle invalidation | todo | pending | pending |
-| F-116 | `Pinger` and `Validator` (connection liveness) | P0 | both | used by `db.Ping` and pool health checks | todo | pending | pending |
+| F-116 | `Pinger` and `Validator` (connection liveness) | P0 | both | used by `db.Ping` and pool health checks | done | done | pending |
 | F-117 | Client encoding | P0 | both | Initially UTF8/UTF-8 only; reject unimplemented encodings; never silently corrupt | done | done | pending |
 
 ## 2. Mode Selection
@@ -137,8 +137,8 @@ DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup excha
 | ID | Capability | Priority | Verification | Notes | Impl | Offline | Live |
 |---|---|---|---|---|---|---|---|
 | F-901 | Full mapping of server error fields | P0 | both | `errors.As` | done | done | pending |
-| F-902 | Error/operation classification | P1 | offline | Execution uncertainty separate from retry safety; redacted config/protocol/catalog/cancel errors | todo | pending | n/a |
-| F-903 | Safe retirement without duplicate execution | P0 | both | After possible execution mark invalid without ErrBadConn matching; only retry-safe boundaries may signal ErrBadConn | todo | pending | pending |
+| F-902 | Error/operation classification | P1 | offline | Execution uncertainty separate from retry safety; redacted config/protocol/catalog/cancel errors | done | done | n/a |
+| F-903 | Safe retirement without duplicate execution | P0 | both | After possible execution mark invalid without ErrBadConn matching; only retry-safe boundaries may signal ErrBadConn | done | done | pending |
 | F-1001 | Verified connection diagnostics | P1 | both | Configured/observed mode/protocol, source/verification, raw kernel/product release and capability profile; documented accessor | todo | pending | pending |
 | F-1002 | Public API migration ledger/examples | P1 | offline | Keep/replace/defer official helpers and options; compiling examples required after implementation | todo | pending | n/a |
 

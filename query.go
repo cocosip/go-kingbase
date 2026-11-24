@@ -25,10 +25,16 @@ func (c *conn) QueryContext(ctx context.Context, query string, args []driver.Nam
 	if err != nil {
 		return nil, err
 	}
+	var rows driver.Rows
 	if len(values) == 0 {
-		return c.querySimple(ctx, query)
+		rows, err = c.querySimple(ctx, query)
+	} else {
+		rows, err = c.queryExtended(ctx, query, values)
 	}
-	return c.queryExtended(ctx, query, values)
+	if err != nil {
+		return nil, c.classifyCommandError(err)
+	}
+	return rows, nil
 }
 
 // ExecContext runs a statement and returns its completion result.
@@ -37,10 +43,42 @@ func (c *conn) ExecContext(ctx context.Context, query string, args []driver.Name
 	if err != nil {
 		return nil, err
 	}
+	var result driver.Result
 	if len(values) == 0 {
-		return c.execSimple(ctx, query)
+		result, err = c.execSimple(ctx, query)
+	} else {
+		result, err = c.execExtended(ctx, query, values)
 	}
-	return c.execExtended(ctx, query, values)
+	if err != nil {
+		return nil, c.classifyCommandError(err)
+	}
+	return result, nil
+}
+
+// classifyCommandError marks post-send failures as execution-uncertain. A
+// server error response is a definite outcome and stays unwrapped, and
+// ErrBadConn only ever comes from pre-send checks.
+func (c *conn) classifyCommandError(err error) error {
+	if err == nil || !c.commandSent {
+		return err
+	}
+	return markUncertain(err)
+}
+
+// markUncertain wraps a failure that happened after a request was written,
+// unless it is already classified or is a definite server error.
+func markUncertain(err error) error {
+	if err == nil {
+		return nil
+	}
+	var serverErr *Error
+	if errors.As(err, &serverErr) {
+		return err
+	}
+	if errors.Is(err, driver.ErrBadConn) {
+		return err
+	}
+	return uncertain(err)
 }
 
 func namedValuesToValues(args []driver.NamedValue) ([]driver.Value, error) {
@@ -82,6 +120,7 @@ func (c *conn) beginCommand(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	c.commandSent = false
 	if deadline, ok := ctx.Deadline(); ok {
 		if err := c.netConn.SetDeadline(deadline); err != nil {
 			c.retire()
@@ -162,6 +201,7 @@ func (c *conn) querySimple(ctx context.Context, query string) (driver.Rows, erro
 	if err := c.beginCommand(ctx); err != nil {
 		return nil, err
 	}
+	c.commandSent = true
 	if err := c.writer.WriteMessage(wire.MsgQuery, wire.EncodeQuery(query)); err != nil {
 		c.retire()
 		return nil, fmt.Errorf("kingbase: send query: %w", err)
@@ -235,6 +275,7 @@ func (c *conn) queryExtended(ctx context.Context, query string, values []driver.
 	if err := c.beginCommand(ctx); err != nil {
 		return nil, err
 	}
+	c.commandSent = true
 	if err := c.sendExtended(query, params, true); err != nil {
 		return nil, err
 	}
@@ -249,6 +290,7 @@ func (c *conn) execSimple(ctx context.Context, query string) (driver.Result, err
 	if err := c.beginCommand(ctx); err != nil {
 		return nil, err
 	}
+	c.commandSent = true
 	if err := c.writer.WriteMessage(wire.MsgQuery, wire.EncodeQuery(query)); err != nil {
 		c.retire()
 		return nil, fmt.Errorf("kingbase: send query: %w", err)
@@ -264,6 +306,7 @@ func (c *conn) execExtended(ctx context.Context, query string, values []driver.V
 	if err := c.beginCommand(ctx); err != nil {
 		return nil, err
 	}
+	c.commandSent = true
 	if err := c.sendExtended(query, params, false); err != nil {
 		return nil, err
 	}

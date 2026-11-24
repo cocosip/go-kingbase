@@ -420,7 +420,7 @@ func TestServerErrorFullFieldMapping(t *testing.T) {
 		{Code: wire.ErrorSeverity, Value: testSeverity},
 		{Code: wire.ErrorSeverityNonLocal, Value: testSeverity},
 		{Code: wire.ErrorCode, Value: "23505"},
-		{Code: wire.ErrorMessage, Value: "duplicate key value"},
+		{Code: wire.ErrorMessage, Value: testDuplicateKey},
 		{Code: wire.ErrorDetail, Value: "Key (id)=(1) already exists."},
 		{Code: wire.ErrorHint, Value: "choose another key"},
 		{Code: wire.ErrorPosition, Value: "42"},

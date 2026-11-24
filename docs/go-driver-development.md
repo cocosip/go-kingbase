@@ -18,14 +18,14 @@ Update task Evidence, feature status, live profile records, counts and log toget
 
 | Milestone | Tasks | done | wip | todo | blocked | deferred |
 |---|---|---|---|---|---|---|
-| M0 skeleton | 19 | 10 | 1 | 8 | 0 | 0 |
+| M0 skeleton | 19 | 12 | 1 | 6 | 0 | 0 |
 | M1 catalog layer | 8 | 0 | 0 | 8 | 0 | 0 |
 | M2 mode behaviour | 19 | 0 | 0 | 19 | 0 | 0 |
 | M4 release quality | 10 | 0 | 0 | 10 | 0 | 0 |
 | M5 MySQL transport (conditional) | 9 | 0 | 0 | 9 | 0 | 0 |
-| **Total** | **65** | **10** | **1** | **54** | **0** | **0** |
+| **Total** | **65** | **12** | **1** | **52** | **0** | **0** |
 
-Verification V1–V19: 0 accepted, 19 pending. Decisions O1–O7: 3 resolved (O1, O2, O7), 4 open/evidence-pending (O3, O4, O5, O6). Features: 94 total; 21 are Impl=done and Offline=done (F-101–F-103, F-108–F-112, F-114, F-117, F-212, F-215, F-801–F-805, F-901, F-1102, F-1106, F-1107), 1 is Impl=done with Offline=pending (F-104), 2 are Impl=wip (F-301 binary parity, F-401 statement reuse), and 70 remain Impl=todo/Offline=pending; 69 Live=pending and 25 structurally offline-only Live=n/a (recount when requirements change). No accepted live-profile overrides exist. M3 is a verification gate, not an omitted implementation-task group.
+Verification V1–V19: 0 accepted, 19 pending. Decisions O1–O7: 3 resolved (O1, O2, O7), 4 open/evidence-pending (O3, O4, O5, O6). Features: 94 total; 24 are Impl=done and Offline=done (F-101–F-103, F-108–F-112, F-114, F-116, F-117, F-212, F-215, F-801–F-805, F-901–F-903, F-1102, F-1106, F-1107), 1 is Impl=done with Offline=pending (F-104), 2 are Impl=wip (F-301 binary parity, F-401 statement reuse), and 67 remain Impl=todo/Offline=pending; 69 Live=pending and 25 structurally offline-only Live=n/a (recount when requirements change). No accepted live-profile overrides exist. M3 is a verification gate, not an omitted implementation-task group.
 
 ## 3. Milestones
 
@@ -44,7 +44,7 @@ The specification is ready to serve as a development baseline. The confirmed Go 
 
 After T-001, start T-002 (DSN/configuration) and T-012 (testpeer); then follow the declared dependencies through T-004/T-005 and the query/core-value tasks. Each protocol/parser implementation must choose and document concrete message/allocation/recursion/crypto-work limits with boundary tests before that task is done. Move a task to wip when implementation starts and record named offline proof before done; leave unrelated backlog and live acceptance pending.
 
-Current progress follows that order: T-001/T-002/T-004–T-009/T-012/T-015 are done, T-020 is wip for verified alternate catalog queries, and text codecs resolve types by server identity rather than a built-in OID table. Next: T-010 binary codecs/parameter formats, then T-011 error classification and T-013/T-014 recovery work.
+Current progress follows that order: T-001/T-002/T-004–T-009/T-011–T-013/T-015 are done, T-020 is wip for verified alternate catalog queries, and post-send failures are classified as execution-uncertain instead of replayable. Next: T-014 checkout reset, then T-010 binary codecs and T-016/T-017 network options.
 
 Arrange the requested V9 profiles and ordinary-role catalog/mode captures early alongside offline work, recording O3/O5 evidence when available. Missing live infrastructure does not prevent the offline skeleton, but continues to block the applicable M3 support claims. Configure local credentials through ignored environment/config files or local secret/certificate directories; commit only redacted templates and intentional fixtures.
 
@@ -220,3 +220,4 @@ Initial PG release excludes V8 (O4/V11/V13), native MySQL (O6/M5), binary COPY/i
 | 2026-11-24 | T-004/T-008 done: TLS trust matrix and POSIX key permissions tested, cancellation and budget classification verified, unix-socket dial tested; simple/extended query plus Exec/Rows with drain and retire semantics landed; T-012 remains wip for SCRAM/SM3/COPY/async injection |
 | 2026-11-24 | T-006/T-007 done: SCRAM-SHA-256 (RFC 7677 vector plus bounded negative vectors) and evidenced SM3 password authentication land in internal/auth/internal/sm3, replayed against a scripted SCRAM/SM3 peer; T-012 completes with async/trailing-error/failure injection and the query layer now interrupts cancel-only contexts and preserves server errors across failed drains |
 | 2026-11-24 | T-009 done and T-020 wip: connect-time qualified catalog capture with bounded entries and domain resolution, classified catalog failures, and text codecs for core scalar/date-time/uuid/json types proven end to end; binary parity and sys-schema alternate queries remain |
+| 2026-11-24 | T-011/T-013 done: execution uncertainty is explicit (*gokb.UncertainError) and never surfaces as driver.ErrBadConn after a send, definite server errors stay definite, and Ping/IsValid cover liveness without duplicate execution |

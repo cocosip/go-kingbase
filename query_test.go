@@ -636,7 +636,7 @@ func TestQueryExtendedErrorKeepsConnection(t *testing.T) {
 		if err := peer.ErrorResponse(
 			wire.ErrorField{Code: wire.ErrorSeverity, Value: testSeverity},
 			wire.ErrorField{Code: wire.ErrorCode, Value: "23505"},
-			wire.ErrorField{Code: wire.ErrorMessage, Value: "duplicate key value"},
+			wire.ErrorField{Code: wire.ErrorMessage, Value: testDuplicateKey},
 		); err != nil {
 			peer.Errorf("ErrorResponse: %v", err)
 			return

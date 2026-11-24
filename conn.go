@@ -27,6 +27,9 @@ type conn struct {
 	backendSecret uint32
 	txStatus      byte
 	catalog       *typeCatalog
+	// commandSent records that a request was written, so a later failure is
+	// execution-uncertain rather than safely retryable.
+	commandSent bool
 	// stopWatch cancels the per-command context watcher that interrupts a
 	// stalled socket after cancellation.
 	stopWatch func() bool

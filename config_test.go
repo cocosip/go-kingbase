@@ -18,6 +18,7 @@ const (
 	testSQLStateAuth  = "28P01"
 	testAuthFailed    = "password authentication failed"
 	testHello         = "hello"
+	testDuplicateKey  = "duplicate key value"
 )
 
 func mustParse(t *testing.T, dsn string) *Config {

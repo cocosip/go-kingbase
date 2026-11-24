@@ -1,6 +1,7 @@
 package gokb
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -37,6 +38,36 @@ type Error struct {
 	// Extra holds extension fields keyed by their raw protocol code,
 	// including unparseable positions.
 	Extra map[byte]string
+}
+
+// UncertainError reports a failure after a command may have reached the
+// server. The connection is retired and the statement must not be retried
+// automatically, because it may have executed. database/sql never sees
+// driver.ErrBadConn for these failures.
+type UncertainError struct {
+	Err error
+}
+
+// Error implements error.
+func (e *UncertainError) Error() string {
+	return "kingbase: execution state uncertain: " + e.Err.Error()
+}
+
+// Unwrap exposes the underlying cause for errors.Is/errors.As.
+func (e *UncertainError) Unwrap() error {
+	return e.Err
+}
+
+// uncertain wraps a post-send failure exactly once.
+func uncertain(err error) error {
+	if err == nil {
+		return nil
+	}
+	var already *UncertainError
+	if errors.As(err, &already) {
+		return err
+	}
+	return &UncertainError{Err: err}
 }
 
 // Error renders the severity, message and SQLSTATE. Field values other than

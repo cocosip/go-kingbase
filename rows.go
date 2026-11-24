@@ -102,12 +102,12 @@ func (r *rows) Next(dest []driver.Value) error {
 		typ, payload, err := r.conn.reader.ReadMessage()
 		if err != nil {
 			r.fail()
-			return fmt.Errorf("kingbase: read result row: %w", err)
+			return uncertain(fmt.Errorf("kingbase: read result row: %w", err))
 		}
 		if handled, err := r.conn.handleAsync(typ, payload); handled {
 			if err != nil {
 				r.fail()
-				return err
+				return uncertain(err)
 			}
 			continue
 		}
@@ -116,11 +116,11 @@ func (r *rows) Next(dest []driver.Value) error {
 			columns, err := wire.DecodeDataRow(payload)
 			if err != nil {
 				r.fail()
-				return fmt.Errorf("kingbase: malformed DataRow: %w", err)
+				return uncertain(fmt.Errorf("kingbase: malformed DataRow: %w", err))
 			}
 			if len(columns) != len(r.columns) {
 				r.fail()
-				return fmt.Errorf("kingbase: result row has %d columns, want %d", len(columns), len(r.columns))
+				return uncertain(fmt.Errorf("kingbase: result row has %d columns, want %d", len(columns), len(r.columns)))
 			}
 			for i, column := range columns {
 				if column.Null {
@@ -141,19 +141,19 @@ func (r *rows) Next(dest []driver.Value) error {
 			r.ready = true
 			if err := r.conn.setTxStatus(payload); err != nil {
 				r.fail()
-				return err
+				return uncertain(err)
 			}
 			r.conn.endCommand()
 			return io.EOF
 		case wire.MsgRowDescription:
 			r.fail()
-			return fmt.Errorf("kingbase: multiple result sets are not implemented yet")
+			return uncertain(fmt.Errorf("kingbase: multiple result sets are not implemented yet"))
 		case wire.MsgCopyInResponse, wire.MsgCopyData, wire.MsgCopyDone:
 			r.fail()
-			return fmt.Errorf("kingbase: COPY is not implemented yet")
+			return uncertain(fmt.Errorf("kingbase: COPY is not implemented yet"))
 		default:
 			r.fail()
-			return fmt.Errorf("kingbase: unexpected message %q while reading rows", typ)
+			return uncertain(fmt.Errorf("kingbase: unexpected message %q while reading rows", typ))
 		}
 	}
 }
@@ -171,7 +171,7 @@ func (r *rows) Close() error {
 	if !r.finished {
 		reachedReady, err := r.conn.drainCurrentResult()
 		if err != nil {
-			firstErr = err
+			firstErr = markUncertain(err)
 		}
 		if reachedReady {
 			return firstErr
@@ -182,7 +182,7 @@ func (r *rows) Close() error {
 		}
 	}
 	if err := r.conn.drainToReady(); err != nil && firstErr == nil {
-		firstErr = err
+		firstErr = markUncertain(err)
 	}
 	return firstErr
 }
