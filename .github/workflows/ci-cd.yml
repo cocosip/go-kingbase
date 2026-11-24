@@ -44,6 +44,11 @@ jobs:
       - name: Vet
         run: go vet ./...
       - name: Test with race detector
+        # The driver itself stays CGO-free; the race runtime needs cgo, so only
+        # the hosted Linux runner enables it for this dedicated step.
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          CGO_ENABLED: '1'
         run: go test -race ./... -count=1 -timeout 10m
       - name: Collect coverage
         if: matrix.os == 'ubuntu-latest'
