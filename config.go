@@ -6,7 +6,9 @@ import (
 	"math"
 	"net"
 	"net/url"
+	"os"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -279,10 +281,79 @@ func ParseConfig(dsn string) (*Config, error) {
 		}
 		explicit[kind] = true
 	}
+	if err := cfg.applyEnvironment(explicit); err != nil {
+		return nil, err
+	}
 	if err := cfg.validate(explicit); err != nil {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+// environmentPrefix marks the driver's fallback environment variables.
+const environmentPrefix = "KINGBASE_"
+
+// applyEnvironment fills parameters the DSN did not set from KINGBASE_*
+// variables. An explicit DSN value always wins, including an empty password.
+// Names match case-insensitively; aliases for one parameter must agree, and
+// application order is the sorted variable name so diagnostics are stable.
+func (c *Config) applyEnvironment(explicit map[paramKind]bool) error {
+	type entry struct {
+		name  string
+		kind  paramKind
+		value string
+	}
+	var entries []entry
+	for _, item := range os.Environ() {
+		name, value, ok := strings.Cut(item, "=")
+		if !ok || len(name) <= len(environmentPrefix) || !strings.EqualFold(name[:len(environmentPrefix)], environmentPrefix) {
+			continue
+		}
+		kind := lookupParam(name[len(environmentPrefix):])
+		if kind == paramUnknown {
+			// Unrelated KINGBASE_* variables are ignored like an absent value.
+			continue
+		}
+		entries = append(entries, entry{name: name, kind: kind, value: value})
+	}
+	if len(entries) == 0 {
+		return nil
+	}
+	slices.SortFunc(entries, func(a, b entry) int {
+		return strings.Compare(strings.ToUpper(a.name), strings.ToUpper(b.name))
+	})
+	values := make(map[paramKind]string, len(entries))
+	names := make(map[paramKind]string, len(entries))
+	for _, item := range entries {
+		if previous, seen := values[item.kind]; seen {
+			if previous != item.value {
+				return fmt.Errorf("kingbase: conflicting environment variables %s and %s", names[item.kind], item.name)
+			}
+			continue
+		}
+		values[item.kind] = item.value
+		names[item.kind] = item.name
+	}
+	kinds := make([]paramKind, 0, len(values))
+	for kind := range values {
+		kinds = append(kinds, kind)
+	}
+	slices.SortFunc(kinds, func(a, b paramKind) int {
+		return strings.Compare(names[a], names[b])
+	})
+	for _, kind := range kinds {
+		if explicit[kind] {
+			continue
+		}
+		value := values[kind]
+		if strings.IndexByte(value, 0) >= 0 {
+			return fmt.Errorf("kingbase: environment variable %s contains a NUL byte", names[kind])
+		}
+		if err := c.apply(kind, value); err != nil {
+			return fmt.Errorf("kingbase: %s: %w", names[kind], err)
+		}
+	}
+	return nil
 }
 
 // isURLDSN reports whether dsn begins with a valid URL scheme followed by

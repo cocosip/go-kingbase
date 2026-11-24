@@ -25,7 +25,7 @@ DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup excha
 | F-104 | `application_name` / `fallback_application_name` | P1 | live | verified application-name visibility per backend, not assumed PG SQL on MySQL | done | done | pending |
 | F-105 | TCP keepalive | P2 | offline | OS-specific settings; explicit unsupported error until implemented | done | done | n/a |
 | F-106 | Multiple hosts and target_session_attrs | P2 | live | Separate opt-in target-selection policy; no protocol or port fallback | done | done | pending |
-| F-107 | Environment-variable fallback (`KINGBASE_*`) | P2 | offline | explicit parameters win; names are case-insensitive | todo | pending | n/a |
+| F-107 | Environment-variable fallback (`KINGBASE_*`) | P2 | offline | explicit parameters win; names are case-insensitive | done | done | n/a |
 | F-108 | Parameter-name normalization | P0 | offline | lowercase + strip `_`, so `connect_timeout`/`connectTimeout` collapse; explicit aliases: `compatibilityMode` ← `compatibleMode`, `mode`, `databaseMode` | done | done | n/a |
 | F-109 | Case-insensitive enum values | P0 | offline | `MYSQL` / `MySQL` / `mysql` equivalent | done | done | n/a |
 | F-110 | Values that keep their case | P0 | offline | `user`, `password`, `dbname`, paths, runtime parameter values are not folded | done | done | n/a |

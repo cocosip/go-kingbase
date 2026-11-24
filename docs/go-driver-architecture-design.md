@@ -164,7 +164,7 @@ compatibilityMode selects semantics; wireProtocol selects transport. There is no
 2. URL and libpq key=value forms are accepted. postgres/postgresql URL schemes are aliases with default PG transport. Quoting/backslash escaping preserves spaces and explicit empty strings; missing dbname defaults to user. Empty password is not replaced by environment fallback.
 3. Unknown driver keys fail. Runtime forwarding uses an allowlist, never arbitrary unknown-key pass-through. Values retain case and bytes after DSN unescaping; backend configuration uses safe binding/encoding.
 4. UNIX sockets are PG-only initially. No explicitly requested TLS is silently disabled: absent sslmode uses local-socket behaviour; explicitly requesting TLS on a UNIX socket fails configuration validation.
-5. P2 KINGBASE_* fallback fills absent fields only. On case-sensitive platforms collect aliases deterministically and reject conflicting normalized environment names. Documentation must disclose the feature as unavailable until implemented.
+5. KINGBASE_* fallback fills absent fields only; an explicit DSN value (including an empty password) always wins. On case-sensitive platforms aliases are collected deterministically and conflicting normalized environment names are rejected. Unknown KINGBASE_* variables are ignored, values pass the same validation as DSN values, and diagnostics name the variable.
 6. The earlier of context deadline and positive connect_timeout covers DNS, TCP/socket, TLS, auth, identity/mode and required catalog/validation. Zero is unlimited only without a context deadline. Timeout closes the socket, stops helpers and never publishes partial initialization; clear temporary deadlines after successful Connect.
 
 ### 4.2 Normalization and escaping
