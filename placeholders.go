@@ -17,14 +17,15 @@ type placeholderPlan struct {
 // errMixedPlaceholders rejects a statement that mixes ? with $n.
 var errMixedPlaceholders = errors.New("kingbase: mixed ? and $n placeholders in one statement")
 
-// planPlaceholders applies the verified PG lexical rules to a statement:
-// ? placeholders become sequential $n, explicit $n passes through, and quoted
-// strings, E-strings, quoted identifiers, dollar-quoted bodies, comments and the
-// ?|, ?& and @? operators stay untouched. A bare ? is always a placeholder, so
-// the jsonb ? operator must be written as jsonb_exists() or with ?|/?&; named
-// styles (:name, @name) are rejected because the driver binds positional
-// parameters only.
-func planPlaceholders(query string) (placeholderPlan, error) {
+// planPlaceholders applies the profile's verified identifier quoting and the
+// driver's positional placeholder rules to a statement: ? placeholders become
+// sequential $n, explicit $n passes through, and quoted strings, E-strings,
+// quoted identifiers, dollar-quoted bodies, comments and the ?|, ?& and @?
+// operators stay untouched. A bare ? is always a placeholder, so the jsonb ?
+// operator must be written as jsonb_exists() or with ?|/?&; named styles
+// (:name, @name) are rejected because the driver binds positional parameters
+// only.
+func planPlaceholders(profile modeProfile, query string) (placeholderPlan, error) {
 	var out strings.Builder
 	out.Grow(len(query) + 8)
 	next := 0        // ordinal assigned to the next ? placeholder
@@ -32,7 +33,7 @@ func planPlaceholders(query string) (placeholderPlan, error) {
 	sawQuestion := false
 	sawExplicit := false
 	for i := 0; i < len(query); {
-		if end, ok := literalSpan(query, i); ok {
+		if end, ok := literalSpan(profile, query, i); ok {
 			out.WriteString(query[i:end])
 			i = end
 			continue
@@ -113,29 +114,28 @@ func planPlaceholders(query string) (placeholderPlan, error) {
 	return plan, nil
 }
 
-// rewritePlaceholders applies the PG placeholder rules to a statement and
-// reports its positional parameter count. Explicit non-PG modes pass the
-// statement through unchanged with -1 (no count check) until mode evidence
-// exists; the unresolved ModeAuto uses the verified PG baseline.
+// rewritePlaceholders applies the profile's verified placeholder rules to a
+// statement and reports its positional parameter count. A mode without a
+// verified profile passes the statement through unchanged with -1 (no count
+// check) instead of fabricating semantics.
 func (c *conn) rewritePlaceholders(query string) (string, int, error) {
-	switch c.cfg.CompatibilityMode {
-	case ModeOracle, ModeMySQL, ModeSQLServer:
+	profile, verified := c.cfg.CompatibilityMode.profile()
+	if !verified {
 		return query, -1, nil
-	default:
-		plan, err := planPlaceholders(query)
-		if err != nil {
-			return "", 0, err
-		}
-		return plan.query, plan.args, nil
 	}
+	plan, err := planPlaceholders(profile, query)
+	if err != nil {
+		return "", 0, err
+	}
+	return plan.query, plan.args, nil
 }
 
 // literalSpan returns the end of a quoted literal or identifier, a
 // dollar-quoted body or a comment starting at i, and whether i starts one. An
 // explicit $n placeholder is not a literal span.
-func literalSpan(query string, i int) (int, bool) {
+func literalSpan(profile modeProfile, query string, i int) (int, bool) {
 	switch query[i] {
-	case '\'', '"':
+	case '\'':
 		return skipQuoted(query, i, false), true
 	case '-':
 		if i+1 < len(query) && query[i+1] == '-' {
@@ -157,6 +157,10 @@ func literalSpan(query string, i int) (int, bool) {
 			if _, end, ok := dollarQuoteAt(query, i); ok {
 				return end, true
 			}
+		}
+	default:
+		if profile.quotesIdentifier(query[i]) {
+			return skipQuoted(query, i, false), true
 		}
 	}
 	return 0, false

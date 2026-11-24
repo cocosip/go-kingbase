@@ -27,6 +27,7 @@ func TestPlanPlaceholders(t *testing.T) {
 		{"dollar in identifier", "SELECT foo$1, bar FROM t", "SELECT foo$1, bar FROM t", 0},
 		{"dollar in identifier with placeholder", "SELECT foo$1, ? FROM t", "SELECT foo$1, $1 FROM t", 1},
 		{"unterminated quote", "SELECT 'a?b", "SELECT 'a?b", 0},
+		{"doubled quotes", "SELECT '', '' , ?", "SELECT '', '' , $1", 1},
 		{
 			"literals and comments",
 			"SELECT 'a?b', \"c?\", E'e\\'?', $$?$$, $tag$?$tag$ -- ?\n/* ? /* ? */ */, ?",
@@ -36,7 +37,7 @@ func TestPlanPlaceholders(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			plan, err := planPlaceholders(tc.query)
+			plan, err := planPlaceholders(pgModeProfile, tc.query)
 			if err != nil {
 				t.Fatalf("planPlaceholders: %v", err)
 			}
@@ -64,7 +65,7 @@ func TestPlanPlaceholdersRejects(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, err := planPlaceholders(tc.query); err == nil || !strings.Contains(err.Error(), tc.want) {
+			if _, err := planPlaceholders(pgModeProfile, tc.query); err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("planPlaceholders(%q) = %v, want %q", tc.query, err, tc.want)
 			}
 		})
@@ -203,51 +204,64 @@ func TestPrepareRewritesQuestionPlaceholders(t *testing.T) {
 }
 
 func TestNonPGModeLeavesPlaceholdersUntouched(t *testing.T) {
-	srv := testpeer.Start(t, func(peer *testpeer.Conn) {
-		if !startupOK(peer) {
-			return
-		}
-		payload, ok := expectMessage(peer, wire.MsgParse)
-		if !ok {
-			return
-		}
-		_, sql, _, err := wire.DecodeParse(payload)
-		if err != nil || sql != "SELECT ?" {
-			peer.Errorf("parse sql = %q err %v, want the statement unchanged", sql, err)
-			return
-		}
-		if _, ok := expectMessage(peer, wire.MsgBind); !ok {
-			return
-		}
-		if _, ok := expectMessage(peer, wire.MsgDescribe); !ok {
-			return
-		}
-		if _, ok := expectMessage(peer, wire.MsgExecute); !ok {
-			return
-		}
-		if _, ok := expectMessage(peer, wire.MsgSync); !ok {
-			return
-		}
-		_ = peer.WriteMessage(wire.MsgParseComplete, nil)
-		_ = peer.WriteMessage(wire.MsgBindComplete, nil)
-		_ = peer.SendResult([]wire.ColumnDescription{
-			{Name: "n", TypeOID: 23, TypeLen: 4, TypeMod: -1, Format: 1},
-		}, [][][]byte{{[]byte("1")}}, "SELECT 1", wire.StatusIdle)
-		waitTerminate(peer)
-	})
-	cfg := peerConfig(t, srv, "")
-	cfg.CompatibilityMode = ModeMySQL
-	physical, err := (&Connector{cfg: cfg}).Connect(context.Background())
-	if err != nil {
-		t.Fatalf("Connect: %v", err)
+	for _, mode := range []CompatibilityMode{ModeOracle, ModeMySQL, ModeSQLServer} {
+		t.Run(mode.String(), func(t *testing.T) {
+			srv := testpeer.Start(t, func(peer *testpeer.Conn) {
+				if !startupOK(peer) {
+					return
+				}
+				payload, ok := expectMessage(peer, wire.MsgParse)
+				if !ok {
+					return
+				}
+				_, sql, _, err := wire.DecodeParse(payload)
+				if err != nil || sql != "SELECT ?, ?" {
+					peer.Errorf("parse sql = %q err %v, want the statement unchanged", sql, err)
+					return
+				}
+				payload, ok = expectMessage(peer, wire.MsgBind)
+				if !ok {
+					return
+				}
+				// An unverified mode skips the client-side count check too.
+				if _, _, _, params, _, err := wire.DecodeBind(payload); err != nil || len(params) != 2 {
+					peer.Errorf("bind params = %q err %v", params, err)
+					return
+				}
+				if _, ok := expectMessage(peer, wire.MsgDescribe); !ok {
+					return
+				}
+				if _, ok := expectMessage(peer, wire.MsgExecute); !ok {
+					return
+				}
+				if _, ok := expectMessage(peer, wire.MsgSync); !ok {
+					return
+				}
+				_ = peer.WriteMessage(wire.MsgParseComplete, nil)
+				_ = peer.WriteMessage(wire.MsgBindComplete, nil)
+				_ = peer.SendResult([]wire.ColumnDescription{
+					{Name: "n", TypeOID: 23, TypeLen: 4, TypeMod: -1, Format: 1},
+				}, [][][]byte{{[]byte("1")}}, "SELECT 1", wire.StatusIdle)
+				waitTerminate(peer)
+			})
+			cfg := peerConfig(t, srv, "")
+			cfg.CompatibilityMode = mode
+			physical, err := (&Connector{cfg: cfg}).Connect(context.Background())
+			if err != nil {
+				t.Fatalf("Connect: %v", err)
+			}
+			connection := physical.(*conn)
+			defer func() { _ = connection.Close() }()
+			rows, err := connection.QueryContext(context.Background(), "SELECT ?, ?", []driver.NamedValue{
+				{Ordinal: 1, Value: int64(7)},
+				{Ordinal: 2, Value: int64(8)},
+			})
+			if err != nil {
+				t.Fatalf("QueryContext: %v", err)
+			}
+			_ = rows.Close()
+		})
 	}
-	connection := physical.(*conn)
-	defer func() { _ = connection.Close() }()
-	rows, err := connection.QueryContext(context.Background(), "SELECT ?", []driver.NamedValue{{Ordinal: 1, Value: int64(7)}})
-	if err != nil {
-		t.Fatalf("QueryContext: %v", err)
-	}
-	_ = rows.Close()
 }
 
 func TestExecRewritesQuestionPlaceholders(t *testing.T) {

@@ -214,7 +214,7 @@ V9 first; V8R6 later with separate profile manifest and V11 acceptance. V8R3 is 
 
 ## 6. Mode Profiles
 
-Profiles contain tinyint range, boolean BIT versus bit-string policy, routine return conventions and length semantics. Wire protocol, identity, lexical settings and catalog shape are separate connection context.
+Profiles carry only offline-verified semantic knobs. The verified PG baseline currently holds identifier-quote and placeholder rules consumed by the placeholder lexer; codec fields (tinyint range, boolean BIT versus bit-string policy, routine return conventions and length semantics) are added only with verified mode evidence. Wire protocol, identity, lexical settings and catalog shape remain separate connection context.
 
 - PG/Oracle may share codecs only where shape and accepted behaviour agree; equal SDK tables do not prove semantic equivalence.
 - Connector pins configured transport and resolved/declaration mode. Conflicting authoritative mode on a later connection fails. Never remember a greeting as a transport-selection policy.

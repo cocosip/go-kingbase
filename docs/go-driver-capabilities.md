@@ -31,7 +31,7 @@ DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup excha
 | F-110 | Values that keep their case | P0 | offline | `user`, `password`, `dbname`, paths, runtime parameter values are not folded | done | done | n/a |
 | F-111 | URL percent-decoding | P0 | offline | `app%40tenant` → `app@tenant`, decode before folding | done | done | n/a |
 | F-112 | Duplicate parameter semantics | P1 | offline | after folding, the last occurrence wins | done | done | n/a |
-| F-113 | Runtime/lexical parameter handling | P1 | both | Allowlist, exact values, safe backend configuration, refresh lexical context or retire | todo | pending | pending |
+| F-113 | Runtime/lexical parameter handling | P1 | both | Allowlist, exact values, safe backend configuration, refresh lexical context or retire | done | done | pending |
 | F-114 | Missing `dbname` defaults to the user name | P1 | offline | libpq convention | done | done | n/a |
 | F-115 | Safe session reset before reuse | P0 | both | SessionResetter checkout timing; pinned Conn state; bounded reset, dirty/poisoned retirement, prepared-handle invalidation | done | done | pending |
 | F-116 | `Pinger` and `Validator` (connection liveness) | P0 | both | used by `db.Ping` and pool health checks | done | done | pending |
@@ -86,7 +86,7 @@ DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup excha
 | F-405 | Qualified target OID inference | P0 | both | Explicit verified target or inference; byte/bool/bytes wrappers cannot hardcode same-named user targets | todo | pending | pending |
 | F-406 | Multiple results and terminal errors | P1 | both | NextResultSet/early Close drains all trailers; trailing errors preserved before outputs/success | done | done | pending |
 | F-407 | Cancellation and synchronization | P0 | both | PG cancel EOF plus original ReadyForQuery barriers; races/timeout retire; MySQL aborts until control path accepted | done | done | pending |
-| F-408 | Session lexical settings | P0 | both | Verified quote/backslash/question/comment rules; context updates or reject/retire; no stale rewrite cache | todo | pending | pending |
+| F-408 | Session lexical settings | P0 | both | Verified quote/backslash/question/comment rules; context updates or reject/retire; no stale rewrite cache | done | done | pending |
 
 ## 6. Stored Procedures and OUT Parameters
 
