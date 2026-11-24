@@ -36,6 +36,9 @@ func (c *conn) PrepareContext(ctx context.Context, query string) (driver.Stmt, e
 	if c.netConn == nil {
 		return nil, driver.ErrBadConn
 	}
+	if isCopyStatement(query) {
+		return c.prepareCopyIn(ctx, query)
+	}
 	name := "kb_stmt_" + strconv.Itoa(c.nextStmtID)
 	c.nextStmtID++
 	if err := c.beginCommand(ctx); err != nil {

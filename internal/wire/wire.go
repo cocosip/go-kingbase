@@ -38,6 +38,7 @@ const (
 	MsgCopyData               MsgType = 'd'
 	MsgCopyDone               MsgType = 'c'
 	MsgCopyInResponse         MsgType = 'G'
+	MsgCopyOutResponse        MsgType = 'H'
 	MsgDataRow                MsgType = 'D'
 	MsgEmptyQueryResponse     MsgType = 'I'
 	MsgErrorResponse          MsgType = 'E'

@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cocosip/go-kingbase/internal/auth"
@@ -32,6 +33,10 @@ type conn struct {
 	// commandSent records that a request was written, so a later failure is
 	// execution-uncertain rather than safely retryable.
 	commandSent bool
+	// copyMu guards activeCopy, the COPY FROM STDIN stream that owns the wire
+	// while it is open.
+	copyMu     sync.Mutex
+	activeCopy *copyIn
 	// stopWatch cancels the per-command context watcher that interrupts a
 	// stalled socket after cancellation.
 	stopWatch func() bool

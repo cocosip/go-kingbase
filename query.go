@@ -117,10 +117,18 @@ func (c *conn) beginCommand(ctx context.Context) error {
 	if c.netConn == nil {
 		return driver.ErrBadConn
 	}
+	// A command issued while a COPY stream is open (for example a rollback)
+	// first finishes that stream so the wire is back at ReadyForQuery.
+	if stream := c.currentCopy(); stream != nil {
+		stream.shutdown()
+		if c.netConn == nil {
+			return driver.ErrBadConn
+		}
+	}
+	c.commandSent = false
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	c.commandSent = false
 	// A watcher left behind by an abandoned command would otherwise fire during
 	// this one; only a watcher that cannot be stopped leaves an unknown state.
 	if c.stopWatch != nil {
