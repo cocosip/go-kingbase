@@ -372,3 +372,73 @@ func TestStatementOnRetiredConnection(t *testing.T) {
 		t.Fatalf("Close on retired connection: %v", err)
 	}
 }
+
+type countingValuer struct {
+	calls int
+}
+
+func (v *countingValuer) Value() (driver.Value, error) {
+	v.calls++
+	return "resolved", nil
+}
+
+func TestCheckNamedValue(t *testing.T) {
+	physical := &conn{}
+	valuer := &countingValuer{}
+	cases := []struct {
+		name      string
+		argument  driver.NamedValue
+		want      driver.Value
+		wantErr   string
+		wantCalls int
+	}{
+		{
+			name:     "named parameter rejected",
+			argument: driver.NamedValue{Ordinal: 1, Name: "id", Value: int64(1)},
+			wantErr:  "named parameters are not supported",
+		},
+		{
+			name:     "uint64 above int64 rejected",
+			argument: driver.NamedValue{Ordinal: 1, Value: uint64(1 << 63)},
+			wantErr:  "parameter 1",
+		},
+		{
+			name:     "uint64 within range converted",
+			argument: driver.NamedValue{Ordinal: 1, Value: uint64(1 << 62)},
+			want:     int64(1 << 62),
+		},
+		{
+			name:      "valuer resolved once",
+			argument:  driver.NamedValue{Ordinal: 2, Value: valuer},
+			want:      "resolved",
+			wantCalls: 1,
+		},
+		{
+			name:     "nil stays nil",
+			argument: driver.NamedValue{Ordinal: 3, Value: nil},
+			want:     nil,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			valuer.calls = 0
+			argument := tc.argument
+			err := physical.CheckNamedValue(&argument)
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("error = %v, want %q", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("CheckNamedValue: %v", err)
+			}
+			if argument.Value != tc.want {
+				t.Errorf("value = %#v, want %#v", argument.Value, tc.want)
+			}
+			if valuer.calls != tc.wantCalls {
+				t.Errorf("Valuer calls = %d, want %d", valuer.calls, tc.wantCalls)
+			}
+		})
+	}
+}

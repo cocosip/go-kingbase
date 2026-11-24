@@ -249,3 +249,21 @@ func (c *conn) resultFormats() []int16 {
 	}
 	return []int16{1}
 }
+
+var _ driver.NamedValueChecker = (*conn)(nil)
+
+// CheckNamedValue normalizes one argument with the standard converter before
+// encoding. Named parameters are rejected explicitly because the wire protocol
+// binds by position, and uint64 values above MaxInt64 or broken Valuers fail
+// here, before any bytes reach the server.
+func (c *conn) CheckNamedValue(argument *driver.NamedValue) error {
+	if argument.Name != "" {
+		return fmt.Errorf("kingbase: named parameters are not supported (parameter %q)", argument.Name)
+	}
+	value, err := driver.DefaultParameterConverter.ConvertValue(argument.Value)
+	if err != nil {
+		return fmt.Errorf("kingbase: parameter %d: %w", argument.Ordinal, err)
+	}
+	argument.Value = value
+	return nil
+}

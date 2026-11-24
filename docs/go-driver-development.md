@@ -20,10 +20,10 @@ Update task Evidence, feature status, live profile records, counts and log toget
 |---|---|---|---|---|---|---|
 | M0 skeleton | 19 | 16 | 1 | 2 | 0 | 0 |
 | M1 catalog layer | 8 | 0 | 0 | 8 | 0 | 0 |
-| M2 mode behaviour | 19 | 2 | 1 | 16 | 0 | 0 |
+| M2 mode behaviour | 19 | 2 | 2 | 15 | 0 | 0 |
 | M4 release quality | 10 | 0 | 0 | 10 | 0 | 0 |
 | M5 MySQL transport (conditional) | 9 | 0 | 0 | 9 | 0 | 0 |
-| **Total** | **65** | **18** | **2** | **45** | **0** | **0** |
+| **Total** | **65** | **18** | **3** | **44** | **0** | **0** |
 
 Verification V1–V19: 0 accepted, 19 pending. Decisions O1–O7: 3 resolved (O1, O2, O7), 4 open/evidence-pending (O3, O4, O5, O6). Features: 94 total; 26 are Impl=done and Offline=done (F-101–F-103, F-108–F-112, F-114, F-116, F-117, F-212, F-215, F-401, F-701, F-801–F-805, F-901–F-903, F-1102, F-1106, F-1107), 1 is Impl=done with Offline=pending (F-104), 1 is Impl=wip (F-301 binary parity), and 66 remain Impl=todo/Offline=pending; 69 Live=pending and 25 structurally offline-only Live=n/a (recount when requirements change). No accepted live-profile overrides exist. M3 is a verification gate, not an omitted implementation-task group.
 
@@ -98,7 +98,7 @@ Every capability ID is owned by at least one canonical task below. Ranges expand
 | T-032 | Array Scanner/Valuer, NULL/dimensions/lower bounds, domains and opaque composites | F-304 | T-021 | todo | — |
 | T-033 | Mode/session-aware placeholder lexer plus index/name expansion plan | F-402, F-408 | T-018, T-030 | todo | — |
 | T-034 | Qualified parameter target binding; no unconditional bytea/BIT OID | F-405 | T-021, T-033 | todo | — |
-| T-035 | Logical NumInput/NamedValue/Valuer/NULL/wrapper and uint64 conversion | F-403, F-404 | T-034 | todo | — |
+| T-035 | Logical NumInput/NamedValue/Valuer/NULL/wrapper and uint64 conversion | F-403, F-404 | T-034 | wip | done: server-reported NumInput, positional NamedValue binding, `CheckNamedValue` delegates to the standard converter so Valuers resolve once, nil stays nil and uint64 above MaxInt64 fails before send, named parameters are rejected explicitly (`TestCheckNamedValue`). Remaining: wrapper target metadata and the placeholder-lexer validation (T-033) |
 | T-036 | Parsed SQLServer routine identifiers and profile-gated convenience rewrite | F-503 | T-033, T-030 | todo | — |
 | T-037 | Per-form OUT/INOUT/status assignment only after completion | F-501, F-502, F-504, F-505 | T-035, T-036, T-040 | todo | — |
 | T-038 | Safe generated-column INSERT subset, pre-send rejection, unavailable/overflow IDs | F-601–F-604 | T-008, T-021, T-033 | todo | — |
@@ -232,3 +232,4 @@ Initial PG release excludes V8 (O4/V11/V13), native MySQL (O6/M5), binary COPY/i
 | 2026-11-24 | T-019 done: handshake diagnostics name the configured transport, cap and control-strip untrusted startup values, never echo peer payload bytes, and the driver never auto-detects or falls back across protocols |
 | 2026-11-24 | T-039 wip: real column metadata landed (honest nullable unknown, catalog/typmod lengths, numeric precision/scale, real ScanType); uppercase backend type names stay with the lexical-mode tasks |
 | 2026-11-24 | T-016 done: TCP keepalive is configurable (on by default, idle seconds, -1 disables) and keepalives_interval/count fail with an explicit unsupported-parameter error |
+| 2026-11-24 | T-035 wip: CheckNamedValue routes arguments through the standard converter (Valuer once, nil, uint64 range) and rejects named parameters before sending |
