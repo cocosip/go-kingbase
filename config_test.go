@@ -298,8 +298,6 @@ func TestParseConfigErrors(t *testing.T) {
 		{"mysql transport", "wireProtocol=mysql", errNotSupported},
 		{"bad transport", "wireProtocol=bogus", "unknown wireProtocol"},
 		{"bad encoding", "client_encoding=latin1", "unsupported client_encoding"},
-		{"keepalives", "keepalives=1", errNotSupported},
-		{"keepalives idle", "keepalives_idle=30", errNotSupported},
 		{"target session attrs", "target_session_attrs=any", errNotSupported},
 		{"multiple hosts", "host=a,b", "multiple hosts"},
 		{"bad scheme", "mysql://h/db", "unsupported DSN scheme"},
@@ -439,5 +437,48 @@ func TestParseConfigBoolValues(t *testing.T) {
 	cfg := mustParse(t, "get_auto_increment_id=yes")
 	if !cfg.GetLastInsertID {
 		t.Error("get_auto_increment_id alias was not accepted")
+	}
+}
+
+func TestConfigKeepAlives(t *testing.T) {
+	cases := []struct {
+		name string
+		dsn  string
+		want bool
+		idle time.Duration
+	}{
+		{name: "default enabled", dsn: "", want: true},
+		{name: "disabled", dsn: "keepalives=0", want: false},
+		{name: "explicit enabled", dsn: "keepalives=1", want: true},
+		{name: "idle seconds", dsn: "keepalives=1 keepalives_idle=30", want: true, idle: 30 * time.Second},
+		{name: "idle without toggle", dsn: "keepalives_idle=15", want: true, idle: 15 * time.Second},
+		{name: "idle zero keeps default", dsn: "keepalives_idle=0", want: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := ParseConfig("user=alice dbname=tenant " + tc.dsn)
+			if err != nil {
+				t.Fatalf("ParseConfig: %v", err)
+			}
+			if cfg.KeepAlives != tc.want {
+				t.Errorf("KeepAlives = %v, want %v", cfg.KeepAlives, tc.want)
+			}
+			if cfg.KeepAlivesIdle != tc.idle {
+				t.Errorf("KeepAlivesIdle = %v, want %v", cfg.KeepAlivesIdle, tc.idle)
+			}
+		})
+	}
+
+	invalid := []string{
+		"keepalives=maybe",
+		"keepalives_idle=-1",
+		"keepalives_idle=abc",
+		"keepalives_interval=5",
+		"keepalives_count=3",
+	}
+	for _, dsn := range invalid {
+		if _, err := ParseConfig("user=alice dbname=tenant " + dsn); err == nil {
+			t.Errorf("ParseConfig(%q) succeeded, want error", dsn)
+		}
 	}
 }

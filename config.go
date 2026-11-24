@@ -159,6 +159,8 @@ type Config struct {
 	SSLRootCert string
 
 	ConnectTimeout          time.Duration
+	KeepAlives              bool
+	KeepAlivesIdle          time.Duration
 	ApplicationName         string
 	FallbackApplicationName string
 	ClientEncoding          string
@@ -183,6 +185,7 @@ func ParseConfig(dsn string) (*Config, error) {
 		WireProtocol:      WirePG,
 		SSLMode:           SSLRequire,
 		ClientEncoding:    encodingUTF8,
+		KeepAlives:        true,
 	}
 
 	var params []parameter
@@ -283,6 +286,8 @@ const (
 	paramSearchPath
 	paramKeepalives
 	paramKeepalivesIdle
+	paramKeepalivesInterval
+	paramKeepalivesCount
 	paramTargetSessionAttrs
 )
 
@@ -315,6 +320,8 @@ var parameterKinds = map[string]paramKind{
 	"searchpath":                  paramSearchPath,
 	"keepalives":                  paramKeepalives,
 	"keepalivesidle":              paramKeepalivesIdle,
+	"keepalivesinterval":          paramKeepalivesInterval,
+	"keepalivescount":             paramKeepalivesCount,
 	"targetsessionattrs":          paramTargetSessionAttrs,
 }
 
@@ -397,7 +404,13 @@ func (c *Config) apply(kind paramKind, value string) error {
 		c.Options = value
 	case paramSearchPath:
 		c.SearchPath = value
-	case paramKeepalives, paramKeepalivesIdle, paramTargetSessionAttrs:
+	case paramKeepalives:
+		return c.applyBool(kind, value)
+	case paramKeepalivesIdle:
+		return c.applyKeepAlivesIdle(value)
+	case paramKeepalivesInterval, paramKeepalivesCount:
+		return fmt.Errorf("kingbase: configuration parameter %q is not supported by this driver", paramName(kind))
+	case paramTargetSessionAttrs:
 		return fmt.Errorf("kingbase: configuration parameter %q is not supported yet", paramName(kind))
 	default:
 		return fmt.Errorf("kingbase: unknown configuration parameter %q", paramName(kind))
@@ -412,6 +425,8 @@ func (c *Config) applyBool(kind paramKind, value string) error {
 		return err
 	}
 	switch kind {
+	case paramKeepalives:
+		c.KeepAlives = b
 	case paramBinaryParameters:
 		c.BinaryParameters = b
 	case paramDisablePreparedBinaryResult:
@@ -452,6 +467,10 @@ func paramName(kind paramKind) string {
 		return "keepalives"
 	case paramKeepalivesIdle:
 		return "keepalives_idle"
+	case paramKeepalivesInterval:
+		return "keepalives_interval"
+	case paramKeepalivesCount:
+		return "keepalives_count"
 	case paramTargetSessionAttrs:
 		return "target_session_attrs"
 	default:
@@ -645,4 +664,13 @@ func parseKeyValueValue(s string) (value, rest string, err error) {
 		return "", "", fmt.Errorf("kingbase: unterminated quoted DSN value")
 	}
 	return b.String(), "", nil
+}
+
+func (c *Config) applyKeepAlivesIdle(value string) error {
+	seconds, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || seconds < 0 || seconds > maxConnectTimeoutSeconds {
+		return fmt.Errorf("kingbase: invalid keepalives_idle %q (want non-negative seconds)", value)
+	}
+	c.KeepAlivesIdle = time.Duration(seconds) * time.Second
+	return nil
 }

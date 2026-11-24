@@ -44,7 +44,7 @@ func (c *Connector) Connect(ctx context.Context) (driver.Conn, error) {
 	defer cancel()
 
 	network, address := c.cfg.addr()
-	var dialer net.Dialer
+	dialer := net.Dialer{KeepAlive: c.keepAliveInterval()}
 	netConn, err := dialer.DialContext(deadlineCtx, network, address)
 	if err != nil {
 		return nil, connectFailure(deadlineCtx, fmt.Errorf("kingbase: dial %s: %w", address, err))
@@ -134,4 +134,13 @@ func (c *Config) addr() (network, address string) {
 		return networkUnix, c.Host + "/.s.PGSQL." + strconv.Itoa(c.Port)
 	}
 	return networkTCP, net.JoinHostPort(c.Host, strconv.Itoa(c.Port))
+}
+
+// keepAliveInterval maps the configured keepalive policy onto net.Dialer,
+// where a negative value disables keepalives and zero keeps the OS default.
+func (c *Connector) keepAliveInterval() time.Duration {
+	if !c.cfg.KeepAlives {
+		return -1
+	}
+	return c.cfg.KeepAlivesIdle
 }

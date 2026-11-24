@@ -18,12 +18,12 @@ Update task Evidence, feature status, live profile records, counts and log toget
 
 | Milestone | Tasks | done | wip | todo | blocked | deferred |
 |---|---|---|---|---|---|---|
-| M0 skeleton | 19 | 15 | 1 | 3 | 0 | 0 |
+| M0 skeleton | 19 | 16 | 1 | 2 | 0 | 0 |
 | M1 catalog layer | 8 | 0 | 0 | 8 | 0 | 0 |
 | M2 mode behaviour | 19 | 2 | 1 | 16 | 0 | 0 |
 | M4 release quality | 10 | 0 | 0 | 10 | 0 | 0 |
 | M5 MySQL transport (conditional) | 9 | 0 | 0 | 9 | 0 | 0 |
-| **Total** | **65** | **17** | **2** | **46** | **0** | **0** |
+| **Total** | **65** | **18** | **2** | **45** | **0** | **0** |
 
 Verification V1–V19: 0 accepted, 19 pending. Decisions O1–O7: 3 resolved (O1, O2, O7), 4 open/evidence-pending (O3, O4, O5, O6). Features: 94 total; 26 are Impl=done and Offline=done (F-101–F-103, F-108–F-112, F-114, F-116, F-117, F-212, F-215, F-401, F-701, F-801–F-805, F-901–F-903, F-1102, F-1106, F-1107), 1 is Impl=done with Offline=pending (F-104), 1 is Impl=wip (F-301 binary parity), and 66 remain Impl=todo/Offline=pending; 69 Live=pending and 25 structurally offline-only Live=n/a (recount when requirements change). No accepted live-profile overrides exist. M3 is a verification gate, not an omitted implementation-task group.
 
@@ -71,7 +71,7 @@ Every capability ID is owned by at least one canonical task below. Ranges expand
 | T-013 | Pinger/Validator, poisoned-connection retirement without retry | F-116, F-903 | T-008, T-011 | todo | — |
 | T-014 | Checkout reset, pinned-session preservation, budgets/handle invalidation | F-115 | T-008, T-013 | todo | — |
 | T-015 | UTF-8 startup/status and explicit unsupported encoding | F-117 | T-005 | done | Requests `client_encoding=UTF8`, validates the reported ParameterStatus and fails on others: `TestConnectRejectsNonUTF8Encoding` on 2026-11-24 |
-| T-016 | OS-specific TCP keepalive and unsupported-platform cases (P2) | F-105 | T-004 | todo | — |
+| T-016 | OS-specific TCP keepalive and unsupported-platform cases (P2) | F-105 | T-004 | done | `keepalives` (default on) and `keepalives_idle` seconds map onto `net.Dialer.KeepAlive`, with -1 disabling the probe; `keepalives_interval`/`keepalives_count` fail with an explicit unsupported-parameter error (`TestConfigKeepAlives`, `TestConnectWithKeepAlivesDisabled`) |
 | T-017 | Opt-in multiple hosts/target attributes, no protocol fallback (P2) | F-106 | T-004 | todo | — |
 | T-018 | Allowlisted runtime/application/lexical settings and safe context changes | F-113, F-104, F-408 | T-008, T-015 | todo | — |
 | T-019 | Configured-protocol mismatch and bounded sanitized diagnostics | F-221, F-240 | T-004, T-012 | done | Handshake failures name the configured transport and never echo peer payload bytes; untrusted startup values are control-stripped and capped at 64 runes (`TestWrongProtocolPeerDiagnosticsBounded`, `TestNonUTF8EncodingDiagnosticIsBounded`); `wireProtocol` accepts pg only, rejects mysql with an explicit error, defaults to pg and never auto-detects |
@@ -231,3 +231,4 @@ Initial PG release excludes V8 (O4/V11/V13), native MySQL (O6/M5), binary COPY/i
 | 2026-11-24 | T-014 done: prepared statements survive checkout reset and stay reusable, completing F-115's reset/handle contract |
 | 2026-11-24 | T-019 done: handshake diagnostics name the configured transport, cap and control-strip untrusted startup values, never echo peer payload bytes, and the driver never auto-detects or falls back across protocols |
 | 2026-11-24 | T-039 wip: real column metadata landed (honest nullable unknown, catalog/typmod lengths, numeric precision/scale, real ScanType); uppercase backend type names stay with the lexical-mode tasks |
+| 2026-11-24 | T-016 done: TCP keepalive is configurable (on by default, idle seconds, -1 disables) and keepalives_interval/count fail with an explicit unsupported-parameter error |

@@ -666,3 +666,17 @@ func TestConnectRequiresConfiguredPassword(t *testing.T) {
 		})
 	}
 }
+
+func TestConnectWithKeepAlivesDisabled(t *testing.T) {
+	srv := testpeer.Start(t, func(peer *testpeer.Conn) {
+		if !startupOK(peer) {
+			return
+		}
+		waitTerminate(peer)
+	})
+	physical, err := connectPeer(t, srv, "keepalives=0 keepalives_idle=5")
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	_ = physical.Close()
+}
