@@ -1,6 +1,6 @@
 # KingbaseES Go Driver — Capability Matrix
 
-> Status: corrected requirements; all implementation and acceptance pending
+> Status: corrected requirements; T-001 scaffold done, no driver behaviour or acceptance yet
 > Date: 2026-11-24
 > Companion documents: [Architecture Design](go-driver-architecture-design.md) · [Development Plan and Progress](go-driver-development.md)
 
@@ -13,7 +13,7 @@
 - offline = unit/replay; live = actual server; both = both required. Impl/offline/live statuses below are independent: todo/pending/pending initially. n/a live means the requirement is offline-only, not that a missing server passed.
 - Aggregate live accepted requires all applicable profiles in the release manifest. A blocked/unavailable profile stays pending and cannot be advertised. Tests/provenance live in the progress tracker, with per-profile records in section 17.
 
-No product code or reachable-server acceptance exists yet. Documentation correction does not change implementation status.
+A product scaffold exists (T-001: module, Apache-2.0 license, CI/lint contract). No driver behaviour or reachable-server acceptance exists yet; documentation correction does not change implementation status.
 
 ## 1. Connection and Configuration
 
@@ -151,8 +151,8 @@ No product code or reachable-server acceptance exists yet. Documentation correct
 | F-1103 | Scoped real-server profile matrix | P0 | live | V9 profiles first; exact accepted edition/release/mode/wire; unavailable profile pending, V8 later | todo | pending | pending |
 | F-1104 | Concurrency tests | P0 | both | multiple modes interleaved + `-race` | todo | pending | pending |
 | F-1105 | Performance baseline | P2 | live | Actual single-row/COPY workloads; explicitly deferrable outside release blockers | todo | pending | pending |
-| F-1106 | Repository lint rules | P0 | offline | Run existing .golangci.yml once product module exists | todo | pending | n/a |
-| F-1107 | Toolchain/platform/package release contract | P0 | offline | Go 1.26.0; module github.com/cocosip/go-kingbase from Git origin; O1 resolved, remaining O7 platform/license/dependency/CI decisions and package smoke checks required | todo | pending | n/a |
+| F-1106 | Repository lint rules | P0 | offline | Run existing .golangci.yml once product module exists | done | done | n/a |
+| F-1107 | Toolchain/platform/package release contract | P0 | offline | Go 1.26.0; module github.com/cocosip/go-kingbase from Git origin; Apache-2.0; linux/windows/darwin amd64+arm64; stdlib-only core; CI pinned; package smoke checks at T-051/T-053 | done | done | n/a |
 
 ## 12. MySQL Transport Backend (conditional)
 

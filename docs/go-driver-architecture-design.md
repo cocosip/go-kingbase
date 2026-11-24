@@ -1,10 +1,10 @@
 # KingbaseES Go Driver — Architecture Design
 
-> Status: corrected requirements and interface contract; implementation and live acceptance pending
+> Status: corrected requirements and interface contract; scaffold (T-001) complete, driver behaviour and live acceptance pending
 > Date: 2026-11-24
 > Companion documents: [Capability Matrix](go-driver-capabilities.md) · [Development Plan and Progress](go-driver-development.md)
 > Premise: an independent implementation, with no vendor implementation copied. Source inspection has informed this specification, so it is not evidence of a formal clean-room process. Vendor source and generated OID lists are research evidence, not live-server acceptance.
-> Implementation: every development task is still `todo`; specification changes are not implementation evidence.
+> Implementation: T-001 scaffold is committed; every driver-behaviour task is still `todo` and specification changes are not implementation evidence.
 
 ## 1. Goals and Confirmed Requirements
 
@@ -413,7 +413,7 @@ go-kingbase/
   internal/mysql/                     conditional separately accepted backend
 ```
 
-No product implementation exists yet. T-001 implements the confirmed module/Go baseline below and completes the remaining CI/runtime/platform and license/dependency policy before package creation/publication.
+T-001 created go.mod, the license/dependency/CI contract and this skeleton package; packages are added by their owning tasks as behaviour is implemented.
 
 ### 13.1 Confirmed module and Go baseline
 
@@ -427,7 +427,7 @@ module github.com/cocosip/go-kingbase
 go 1.26.0
 ```
 
-Use github.com/cocosip/go-kingbase in imports, examples and package-release checks. These are confirmed configuration decisions, not evidence that a module, build or Go-version compatibility test already exists. Supported platforms, license/dependency policy and pinned CI/linter versions remain the unfinished parts of O7.
+Use github.com/cocosip/go-kingbase in imports, examples and package-release checks. T-001 created the module, license (Apache-2.0 with NOTICE), dependency policy (standard library only for the core driver), support matrix (linux/windows/darwin on amd64/arm64) and CI contract (Go pinned by go.mod, golangci-lint v2.14.0). O7 is therefore resolved; package smoke checks remain part of T-051/T-053.
 
 ## 14. API and Migration Compatibility
 
@@ -476,7 +476,7 @@ Implementation, offline proof and live acceptance are separate [progress](go-dri
 | O4 | V8 support | later scope, V11/V13 before enabling; no universal no-special-code assertion |
 | O5 | live-profile availability | pending; required V9 evidence blocks M3, not offline work |
 | O6 | MySQL backend release | conditional M5 after V12/V15/native-bootstrap/reset evidence; excluded from initial PG claims |
-| O7 | minimum Go/platform/license/toolchain | partially resolved: Go 1.26.0 confirmed; platforms, license/dependencies and pinned CI/linter versions remain open and gate T-001/publication |
+| O7 | minimum Go/platform/license/toolchain | resolved: Go 1.26.0; Apache-2.0 with NOTICE; stdlib-only core; linux/windows/darwin amd64+arm64; CI pinned with golangci-lint v2.14.0 (§13.1) |
 
 ## Appendix A: Snapshot Comparison
 

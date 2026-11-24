@@ -1,6 +1,6 @@
 # KingbaseES Go Driver — Development Plan and Progress
 
-> Status: corrected requirements; no implementation completed
+> Status: implementation in progress (T-001 scaffold done); no live acceptance
 > Date: 2026-11-24
 > Companions: [Architecture](go-driver-architecture-design.md) · [Capability Matrix](go-driver-capabilities.md)
 
@@ -18,20 +18,20 @@ Update task Evidence, feature status, live profile records, counts and log toget
 
 | Milestone | Tasks | done | wip | todo | blocked | deferred |
 |---|---|---|---|---|---|---|
-| M0 skeleton | 19 | 0 | 0 | 19 | 0 | 0 |
+| M0 skeleton | 19 | 1 | 0 | 18 | 0 | 0 |
 | M1 catalog layer | 8 | 0 | 0 | 8 | 0 | 0 |
 | M2 mode behaviour | 19 | 0 | 0 | 19 | 0 | 0 |
 | M4 release quality | 10 | 0 | 0 | 10 | 0 | 0 |
 | M5 MySQL transport (conditional) | 9 | 0 | 0 | 9 | 0 | 0 |
-| **Total** | **65** | **0** | **0** | **65** | **0** | **0** |
+| **Total** | **65** | **1** | **0** | **64** | **0** | **0** |
 
-Verification V1–V19: 0 accepted, 19 pending. Decisions O1–O7: 2 specification decisions resolved (O1/O2), 1 partially resolved (O7: Go 1.26.0 confirmed), 4 open/evidence-pending. All 94 features: Impl=todo, Offline=pending; 69 Live=pending and 25 structurally offline-only Live=n/a (recount when requirements change). No accepted live-profile overrides exist. M3 is a verification gate, not an omitted implementation-task group.
+Verification V1–V19: 0 accepted, 19 pending. Decisions O1–O7: 3 resolved (O1, O2, O7), 4 open/evidence-pending (O3, O4, O5, O6). Features: 94 total; 2 Impl=done/Offline=done (F-1106, F-1107), 92 Impl=todo/Offline=pending; 69 Live=pending and 25 structurally offline-only Live=n/a (recount when requirements change). No accepted live-profile overrides exist. M3 is a verification gate, not an omitted implementation-task group.
 
 ## 3. Milestones
 
 | Milestone | Exit criteria | Status |
 |---|---|---|
-| M0 skeleton | Offline DSN/auth/query/core value/failure replay works; no live support claim | todo |
+| M0 skeleton | Offline DSN/auth/query/core value/failure replay works; no live support claim | wip |
 | M1 catalog layer | Qualified registry and hostile/real-provenance fixture logic passes offline; live catalog proof remains M3 | todo |
 | M2 mode behaviour | Scoped types/binding/routines/identity/transactions/COPY pass named offline cases; no pending-live item is called accepted | todo |
 | M3 live acceptance | Every included feature has required proof on each manifest V9 profile; P0/P1 cannot be deferred within scope; enabled P2 needs the same proof; applicable V1–V19 closed, missing evidence blocks, excluded-profile N/A has reason | todo |
@@ -40,7 +40,7 @@ Verification V1–V19: 0 accepted, 19 pending. Decisions O1–O7: 2 specificatio
 
 ### 3.1 Development entry and first implementation order
 
-The specification is ready to serve as a development baseline; no product task is complete. The confirmed Go version is **1.26.0** and module path is **github.com/cocosip/go-kingbase**, derived from Git origin git@github.com:cocosip/go-kingbase.git. T-001 must create go.mod with that module path and go 1.26.0, and use Go 1.26.0 for development/baseline CI. O1 is resolved; finish the remaining O7 decisions before committing the product scaffold: supported OS/architecture matrix, license/dependency policy, pinned CI/linter versions and reproducible build/test/lint commands. Do not infer a license from the repository address.
+The specification is ready to serve as a development baseline. The confirmed Go version is **1.26.0** and module path is **github.com/cocosip/go-kingbase**, derived from Git origin git@github.com:cocosip/go-kingbase.git. T-001 created go.mod with that module path and go 1.26.0. O1 and O7 are resolved: supported platforms are linux/windows/darwin on amd64 and arm64, the license is Apache-2.0 (LICENSE/NOTICE committed), the dependency policy is standard-library-only for the core driver, and CI pins Go by `go.mod` with golangci-lint v2.14.0. Reproducible build/test/lint commands are documented in README.md and mirrored in `.github/workflows/ci.yml`.
 
 After T-001, start T-002 (DSN/configuration) and T-012 (testpeer); then follow the declared dependencies through T-004/T-005 and the query/core-value tasks. Each protocol/parser implementation must choose and document concrete message/allocation/recursion/crypto-work limits with boundary tests before that task is done. Move a task to wip when implementation starts and record named offline proof before done; leave unrelated backlog and live acceptance pending.
 
@@ -54,7 +54,7 @@ Every capability ID is owned by at least one canonical task below. Ranges expand
 
 | ID | Deliverable | Capabilities | Depends on | Status | Evidence |
 |---|---|---|---|---|---|
-| T-001 | Scaffold github.com/cocosip/go-kingbase with Go 1.26.0; complete platform/license/dependency/CI contract | F-1106, F-1107 | O1 (resolved), O7 (remaining decisions) | todo | — |
+| T-001 | Scaffold github.com/cocosip/go-kingbase with Go 1.26.0; complete platform/license/dependency/CI contract | F-1106, F-1107 | O1 (resolved), O7 (resolved) | done | `go build ./...`, `go vet ./...`, `go test ./...`, `golangci-lint run ./...` (0 issues) on 2026-11-24; go.mod, LICENSE/NOTICE (Apache-2.0), README contract, `.github/workflows/ci.yml`, `.golangci.yml` unchanged; no product behaviour yet |
 | T-002 | DSN parsing, allowlists, normalization, aliases, explicit empties | F-101, F-102, F-108–F-112, F-114 | T-001 | todo | — |
 | T-003 | Deterministic environment fallback/conflicts (P2) | F-107 | T-002 | todo | — |
 | T-004 | Connector/Dialer, full initialization budget, sockets and TLS policy | F-103, F-104, F-804, F-805 | T-002 | todo | — |
@@ -176,7 +176,7 @@ Full procedures/blocking features are in capability matrix section 13. Evidence 
 | O4 | V8 support | open, later scope | V11/V13 before adding a concrete V8 manifest; no inherited V9 acceptance |
 | O5 | Reachable V9 acceptance profiles | evidence-pending | required profiles block M3 until evidence or explicit justified scope decision |
 | O6 | Native MySQL release | open, conditional | V12/V15/V19 and M5; excluded from initial PG release |
-| O7 | Minimum Go/platform/license/dependency/release policy | partially resolved | Go 1.26.0 confirmed; supported platforms, license/dependencies and pinned CI/linter versions still gate T-001/publication |
+| O7 | Minimum Go/platform/license/dependency/release policy | resolved | Go 1.26.0; module github.com/cocosip/go-kingbase; license Apache-2.0 with NOTICE; standard-library-only core dependency policy; platforms linux/windows/darwin on amd64/arm64; CI pinned by go.mod with golangci-lint v2.14.0; commands in README.md and `.github/workflows/ci.yml` |
 
 ## 7. Required Risk Cases by Owner
 
@@ -212,3 +212,4 @@ Initial PG release excludes V8 (O4/V11/V13), native MySQL (O6/M5), binary COPY/i
 | 2026-11-24 | Original draft contained 49 todo tasks, 15 pending verification items and 6 open decisions |
 | 2026-11-24 | Aligned interface contracts and requirement ownership: 94 features, 65 todo tasks, 19 pending V-items, O2 resolved/O7 added; separated implementation/offline/live states and scoped release gates |
 | 2026-11-24 | Confirmed Go 1.26.0 and module github.com/cocosip/go-kingbase from Git origin; resolved O1 and the Go-version part of O7; implementation tasks remain todo |
+| 2026-11-24 | T-001 done: scaffold committed; resolved O7 (Apache-2.0, linux/windows/darwin amd64+arm64, stdlib-only core, pinned CI/linter); build/vet/test/lint pass offline; no driver behaviour implemented yet |
