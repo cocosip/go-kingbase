@@ -19,20 +19,20 @@ A product scaffold exists (T-001: module, Apache-2.0 license, CI/lint contract).
 
 | ID | Capability | Priority | Verification | Notes | Impl | Offline | Live |
 |---|---|---|---|---|---|---|---|
-| F-101 | DSN parsing: URL and libpq forms | P0 | offline | spaces/quotes/backslashes/empty values | todo | pending | n/a |
-| F-102 | Driver/runtime allowlist and validation | P0 | offline | Unknown driver keys fail; only listed runtime settings forwarded safely; explicit unsupported P2 options fail | todo | pending | n/a |
+| F-101 | DSN parsing: URL and libpq forms | P0 | offline | spaces/quotes/backslashes/empty values | done | done | n/a |
+| F-102 | Driver/runtime allowlist and validation | P0 | offline | Unknown driver keys fail; only listed runtime settings forwarded safely; explicit unsupported P2 options fail | done | done | n/a |
 | F-103 | Whole physical Connect timeout | P0 | both | Context/timeout covers DNS through identity, mode, catalog and idle validation; close partial sessions | todo | pending | pending |
 | F-104 | `application_name` / `fallback_application_name` | P1 | live | verified application-name visibility per backend, not assumed PG SQL on MySQL | todo | pending | pending |
 | F-105 | TCP keepalive | P2 | offline | OS-specific settings; explicit unsupported error until implemented | todo | pending | n/a |
 | F-106 | Multiple hosts and target_session_attrs | P2 | live | Separate opt-in target-selection policy; no protocol or port fallback | todo | pending | pending |
 | F-107 | Environment-variable fallback (`KINGBASE_*`) | P2 | offline | explicit parameters win; names are case-insensitive | todo | pending | n/a |
-| F-108 | Parameter-name normalization | P0 | offline | lowercase + strip `_`, so `connect_timeout`/`connectTimeout` collapse; explicit aliases: `compatibilityMode` ← `compatibleMode`, `mode`, `databaseMode` | todo | pending | n/a |
-| F-109 | Case-insensitive enum values | P0 | offline | `MYSQL` / `MySQL` / `mysql` equivalent | todo | pending | n/a |
-| F-110 | Values that keep their case | P0 | offline | `user`, `password`, `dbname`, paths, runtime parameter values are not folded | todo | pending | n/a |
-| F-111 | URL percent-decoding | P0 | offline | `app%40tenant` → `app@tenant`, decode before folding | todo | pending | n/a |
-| F-112 | Duplicate parameter semantics | P1 | offline | after folding, the last occurrence wins | todo | pending | n/a |
+| F-108 | Parameter-name normalization | P0 | offline | lowercase + strip `_`, so `connect_timeout`/`connectTimeout` collapse; explicit aliases: `compatibilityMode` ← `compatibleMode`, `mode`, `databaseMode` | done | done | n/a |
+| F-109 | Case-insensitive enum values | P0 | offline | `MYSQL` / `MySQL` / `mysql` equivalent | done | done | n/a |
+| F-110 | Values that keep their case | P0 | offline | `user`, `password`, `dbname`, paths, runtime parameter values are not folded | done | done | n/a |
+| F-111 | URL percent-decoding | P0 | offline | `app%40tenant` → `app@tenant`, decode before folding | done | done | n/a |
+| F-112 | Duplicate parameter semantics | P1 | offline | after folding, the last occurrence wins | done | done | n/a |
 | F-113 | Runtime/lexical parameter handling | P1 | both | Allowlist, exact values, safe backend configuration, refresh lexical context or retire | todo | pending | pending |
-| F-114 | Missing `dbname` defaults to the user name | P1 | offline | libpq convention | todo | pending | n/a |
+| F-114 | Missing `dbname` defaults to the user name | P1 | offline | libpq convention | done | done | n/a |
 | F-115 | Safe session reset before reuse | P0 | both | SessionResetter checkout timing; pinned Conn state; bounded reset, dirty/poisoned retirement, prepared-handle invalidation | todo | pending | pending |
 | F-116 | `Pinger` and `Validator` (connection liveness) | P0 | both | used by `db.Ping` and pool health checks | todo | pending | pending |
 | F-117 | Client encoding | P0 | both | Initially UTF8/UTF-8 only; reject unimplemented encodings; never silently corrupt | todo | pending | pending |

@@ -18,14 +18,14 @@ Update task Evidence, feature status, live profile records, counts and log toget
 
 | Milestone | Tasks | done | wip | todo | blocked | deferred |
 |---|---|---|---|---|---|---|
-| M0 skeleton | 19 | 1 | 0 | 18 | 0 | 0 |
+| M0 skeleton | 19 | 2 | 0 | 17 | 0 | 0 |
 | M1 catalog layer | 8 | 0 | 0 | 8 | 0 | 0 |
 | M2 mode behaviour | 19 | 0 | 0 | 19 | 0 | 0 |
 | M4 release quality | 10 | 0 | 0 | 10 | 0 | 0 |
 | M5 MySQL transport (conditional) | 9 | 0 | 0 | 9 | 0 | 0 |
-| **Total** | **65** | **1** | **0** | **64** | **0** | **0** |
+| **Total** | **65** | **2** | **0** | **63** | **0** | **0** |
 
-Verification V1–V19: 0 accepted, 19 pending. Decisions O1–O7: 3 resolved (O1, O2, O7), 4 open/evidence-pending (O3, O4, O5, O6). Features: 94 total; 2 Impl=done/Offline=done (F-1106, F-1107), 92 Impl=todo/Offline=pending; 69 Live=pending and 25 structurally offline-only Live=n/a (recount when requirements change). No accepted live-profile overrides exist. M3 is a verification gate, not an omitted implementation-task group.
+Verification V1–V19: 0 accepted, 19 pending. Decisions O1–O7: 3 resolved (O1, O2, O7), 4 open/evidence-pending (O3, O4, O5, O6). Features: 94 total; F-1106/F-1107 F-101/F-102/F-108/F-109/F-110/F-111/F-112/F-114 are Impl=done and Offline=done (10 of 94), the rest Impl=todo/Offline=pending; 69 Live=pending and 25 structurally offline-only Live=n/a (recount when requirements change). No accepted live-profile overrides exist. M3 is a verification gate, not an omitted implementation-task group.
 
 ## 3. Milestones
 
@@ -55,7 +55,7 @@ Every capability ID is owned by at least one canonical task below. Ranges expand
 | ID | Deliverable | Capabilities | Depends on | Status | Evidence |
 |---|---|---|---|---|---|
 | T-001 | Scaffold github.com/cocosip/go-kingbase with Go 1.26.0; complete platform/license/dependency/CI contract | F-1106, F-1107 | O1 (resolved), O7 (resolved) | done | `go build ./...`, `go vet ./...`, `go test ./...`, `golangci-lint run ./...` (0 issues) on 2026-11-24; go.mod, LICENSE/NOTICE (Apache-2.0), README contract, `.github/workflows/ci.yml`, `.golangci.yml` unchanged; no product behaviour yet |
-| T-002 | DSN parsing, allowlists, normalization, aliases, explicit empties | F-101, F-102, F-108–F-112, F-114 | T-001 | todo | — |
+| T-002 | DSN parsing, allowlists, normalization, aliases, explicit empties | F-101, F-102, F-108–F-112, F-114 | T-001 | done | `go test ./...` `TestParseConfigURL`, `TestParseConfigEquivalentURLs`, `TestParseConfigKeyValue`, `TestParseConfigAliasesAndDuplicates`, `TestParseConfigDefaults`, `TestParseConfigMissingDatabaseDefaultsToUser`, `TestParseConfigErrors`, `TestParseConfigErrorsDoNotLeakPassword`; `golangci-lint run ./...` (0 issues) on 2026-11-24 |
 | T-003 | Deterministic environment fallback/conflicts (P2) | F-107 | T-002 | todo | — |
 | T-004 | Connector/Dialer, full initialization budget, sockets and TLS policy | F-103, F-104, F-804, F-805 | T-002 | todo | — |
 | T-005 | PG startup, cleartext/MD5, startup parameters and synchronization | F-801 | T-004, T-012 | todo | — |
@@ -213,3 +213,4 @@ Initial PG release excludes V8 (O4/V11/V13), native MySQL (O6/M5), binary COPY/i
 | 2026-11-24 | Aligned interface contracts and requirement ownership: 94 features, 65 todo tasks, 19 pending V-items, O2 resolved/O7 added; separated implementation/offline/live states and scoped release gates |
 | 2026-11-24 | Confirmed Go 1.26.0 and module github.com/cocosip/go-kingbase from Git origin; resolved O1 and the Go-version part of O7; implementation tasks remain todo |
 | 2026-11-24 | T-001 done: scaffold committed; resolved O7 (Apache-2.0, linux/windows/darwin amd64+arm64, stdlib-only core, pinned CI/linter); build/vet/test/lint pass offline; no driver behaviour implemented yet |
+| 2026-11-24 | T-002 done: URL/libpq DSN parsing with normalization, aliases, last-wins duplicates, percent decoding, explicit empties, unknown/P2 parameter rejection and error redaction; table tests and lint pass |
