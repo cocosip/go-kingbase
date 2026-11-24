@@ -240,11 +240,31 @@ func boundedValue(value string) string {
 	return strconv.Quote(string(clean))
 }
 
+// stringLiteralParameter is the session setting that changes how the server
+// parses string literals. The driver has no verified lexer for the legacy mode,
+// so an unverified value is rejected at connect and a mid-session change retires
+// the connection: silently rewriting or reusing SQL under changed rules is not
+// safe.
+const stringLiteralParameter = "standard_conforming_strings"
+
+// checkStringLiteralMode accepts only standard-conforming string literals.
+func checkStringLiteralMode(value string) error {
+	if strings.EqualFold(value, "on") {
+		return nil
+	}
+	return fmt.Errorf("kingbase: session %s %s is not supported (only on)", stringLiteralParameter, boundedValue(value))
+}
+
 // validateStartup rejects startup states the driver cannot honour instead of
 // silently corrupting data.
 func (c *conn) validateStartup() error {
 	if encoding, ok := c.params["client_encoding"]; ok && !isUTF8(encoding) {
 		return fmt.Errorf("kingbase: server client_encoding %s is not supported (only UTF8)", boundedValue(encoding))
+	}
+	if literalMode, ok := c.params[stringLiteralParameter]; ok {
+		if err := checkStringLiteralMode(literalMode); err != nil {
+			return err
+		}
 	}
 	if c.txStatus != wire.StatusIdle {
 		return fmt.Errorf("kingbase: connection started in transaction state %q", c.txStatus)

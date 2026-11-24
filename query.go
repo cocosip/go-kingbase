@@ -194,6 +194,14 @@ func (c *conn) handleAsync(typ wire.MsgType, payload []byte) (bool, error) {
 		if err != nil {
 			return true, fmt.Errorf("kingbase: malformed ParameterStatus: %w", err)
 		}
+		// A setting that changes how the server parses string literals makes the
+		// session context unverifiable; retire instead of continuing under
+		// unknown lexical rules.
+		if name == stringLiteralParameter {
+			if err := checkStringLiteralMode(value); err != nil {
+				return true, err
+			}
+		}
 		c.params[name] = value
 		return true, nil
 	case wire.MsgNotificationResponse:
