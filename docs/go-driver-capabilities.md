@@ -52,7 +52,7 @@ DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup excha
 | ID | Capability | Priority | Verification | Notes | Impl | Offline | Live |
 |---|---|---|---|---|---|---|---|
 | F-212 | Unknown type/OID handling | P0 | offline | a type the driver has no codec for decodes as `string`/`[]byte`; absent OID has empty DatabaseTypeName; ScanType follows actual text string/binary bytes; malformed frames still error | done | done | n/a |
-| F-214 | Qualified registry and fixture provenance | P0 | both | Synthetic/SDK fixtures distinct from actual server captures; live captures include namespace/shape/query/product provenance | wip | pending | pending |
+| F-214 | Qualified registry and fixture provenance | P0 | both | Synthetic/SDK fixtures distinct from actual server captures; live captures include namespace/shape/query/product provenance | done | done | pending |
 | F-215 | Required connect-time qualified catalog | P0 | both | Namespace names, typtype, element/base/length/delimiter/row links before user SQL; bounded capture; no fixed row-count promise | done | done | pending |
 | F-216 | Ambiguous names and user types | P0 | offline | OID plus qualified identity/shape; app.int/year/bit never acquire built-in codecs or select mode | done | done | n/a |
 | F-217 | Verified alternate catalog queries | P0 | both | PG full-shape then accepted sys equivalent for missing-object cases; two-column fallback cannot enable required codecs | done | done | pending |
