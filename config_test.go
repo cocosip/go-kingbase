@@ -19,6 +19,7 @@ const (
 	testAuthFailed    = "password authentication failed"
 	testHello         = "hello"
 	testDuplicateKey  = "duplicate key value"
+	testBob           = "bob"
 )
 
 func mustParse(t *testing.T, dsn string) *Config {
@@ -230,7 +231,7 @@ func TestParseConfigMissingDatabaseDefaultsToUser(t *testing.T) {
 	}
 
 	cfg = mustParse(t, "user=bob")
-	if cfg.Database != "bob" {
+	if cfg.Database != testBob {
 		t.Errorf("Database = %q, want user name bob", cfg.Database)
 	}
 }

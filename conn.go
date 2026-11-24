@@ -27,6 +27,7 @@ type conn struct {
 	backendSecret uint32
 	txStatus      byte
 	catalog       *typeCatalog
+	nextStmtID    int
 	// commandSent records that a request was written, so a later failure is
 	// execution-uncertain rather than safely retryable.
 	commandSent bool
@@ -256,8 +257,4 @@ func (c *conn) Close() error {
 	return nil
 }
 
-// Prepare is implemented by the query task; extending the driver must return
-// an explicit error rather than a silently unusable statement.
-func (c *conn) Prepare(_ string) (driver.Stmt, error) {
-	return nil, fmt.Errorf("kingbase: prepared statements are not implemented yet")
-}
+// startupParameters builds the startup packet parameters. Only implemented

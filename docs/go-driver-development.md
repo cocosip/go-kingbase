@@ -25,7 +25,7 @@ Update task Evidence, feature status, live profile records, counts and log toget
 | M5 MySQL transport (conditional) | 9 | 0 | 0 | 9 | 0 | 0 |
 | **Total** | **65** | **13** | **2** | **50** | **0** | **0** |
 
-Verification V1–V19: 0 accepted, 19 pending. Decisions O1–O7: 3 resolved (O1, O2, O7), 4 open/evidence-pending (O3, O4, O5, O6). Features: 94 total; 25 are Impl=done and Offline=done (F-101–F-103, F-108–F-112, F-114, F-116, F-117, F-212, F-215, F-701, F-801–F-805, F-901–F-903, F-1102, F-1106, F-1107), 1 is Impl=done with Offline=pending (F-104), 2 are Impl=wip (F-301 binary parity, F-401 statement reuse), and 66 remain Impl=todo/Offline=pending; 69 Live=pending and 25 structurally offline-only Live=n/a (recount when requirements change). No accepted live-profile overrides exist. M3 is a verification gate, not an omitted implementation-task group.
+Verification V1–V19: 0 accepted, 19 pending. Decisions O1–O7: 3 resolved (O1, O2, O7), 4 open/evidence-pending (O3, O4, O5, O6). Features: 94 total; 26 are Impl=done and Offline=done (F-101–F-103, F-108–F-112, F-114, F-116, F-117, F-212, F-215, F-401, F-701, F-801–F-805, F-901–F-903, F-1102, F-1106, F-1107), 1 is Impl=done with Offline=pending (F-104), 1 is Impl=wip (F-301 binary parity), and 66 remain Impl=todo/Offline=pending; 69 Live=pending and 25 structurally offline-only Live=n/a (recount when requirements change). No accepted live-profile overrides exist. M3 is a verification gate, not an omitted implementation-task group.
 
 ## 3. Milestones
 
@@ -44,7 +44,7 @@ The specification is ready to serve as a development baseline. The confirmed Go 
 
 After T-001, start T-002 (DSN/configuration) and T-012 (testpeer); then follow the declared dependencies through T-004/T-005 and the query/core-value tasks. Each protocol/parser implementation must choose and document concrete message/allocation/recursion/crypto-work limits with boundary tests before that task is done. Move a task to wip when implementation starts and record named offline proof before done; leave unrelated backlog and live acceptance pending.
 
-Current progress follows that order: T-001/T-002/T-004–T-009/T-011–T-013/T-015 are done, T-020 is wip for verified alternate catalog queries, and transaction lifecycle (T-042) now maps isolation levels and READ ONLY with strict post-commit state checks. Next: T-014 prepared-handle reset gaps, then T-010 binary codecs and T-040 multiple results.
+Current progress follows that order: T-001/T-002/T-004–T-009/T-011–T-013/T-015 are done, T-020/T-014 remain wip, and server-side prepared statements now reuse Parse state with the server reporting NumInput. Next: T-010 binary codecs, T-033–T-035 placeholder/binding rules, and T-040 multiple results.
 
 Arrange the requested V9 profiles and ordinary-role catalog/mode captures early alongside offline work, recording O3/O5 evidence when available. Missing live infrastructure does not prevent the offline skeleton, but continues to block the applicable M3 support claims. Configure local credentials through ignored environment/config files or local secret/certificate directories; commit only redacted templates and intentional fixtures.
 
@@ -223,3 +223,4 @@ Initial PG release excludes V8 (O4/V11/V13), native MySQL (O6/M5), binary COPY/i
 | 2026-11-24 | T-011/T-013 done: execution uncertainty is explicit (*gokb.UncertainError) and never surfaces as driver.ErrBadConn after a send, definite server errors stay definite, and Ping/IsValid cover liveness without duplicate execution |
 | 2026-11-24 | T-042 done: BeginTx maps default plus four standard isolation levels and READ ONLY, rejects snapshot/write-committed/linearizable before sending, and commits/rolls back through the simple protocol with an idle-state check |
 | 2026-11-24 | T-014 wip: SessionResetter rolls back open/failed transactions within the caller budget and retires instead of reusing an unclean connection; prepared-handle invalidation and pinned GUC reset remain dependent on later tasks |
+| 2026-11-24 | Prepared statements landed: Parse/Describe/Sync at prepare time with server-reported NumInput, Bind/Describe/Execute/Sync reuse without re-parsing, argument count validated before send, Close drops the server statement, and prepare errors keep the connection reusable |

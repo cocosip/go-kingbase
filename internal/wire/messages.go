@@ -564,6 +564,55 @@ func DecodePasswordMessage(payload []byte) (string, error) {
 	return password, d.end()
 }
 
+// EncodeClose returns a Close payload for a statement ('S') or portal ('P').
+func EncodeClose(kind byte, name string) []byte {
+	return AppendString([]byte{kind}, name)
+}
+
+// DecodeClose decodes a Close payload.
+func DecodeClose(payload []byte) (kind byte, name string, err error) {
+	d := decoder{data: payload}
+	raw, err := d.int8()
+	if err != nil {
+		return 0, "", err
+	}
+	if name, err = d.cstring(); err != nil {
+		return 0, "", err
+	}
+	return byte(raw), name, d.end()
+}
+
+// EncodeParameterDescription returns a ParameterDescription payload.
+func EncodeParameterDescription(oids []uint32) []byte {
+	payload := AppendInt16(nil, int16(len(oids)))
+	for _, oid := range oids {
+		payload = AppendInt32(payload, int32(oid))
+	}
+	return payload
+}
+
+// DecodeParameterDescription returns the parameter type OIDs of a prepared
+// statement, whose count is the authoritative NumInput value.
+func DecodeParameterDescription(payload []byte) ([]uint32, error) {
+	d := decoder{data: payload}
+	count, err := d.int16()
+	if err != nil {
+		return nil, err
+	}
+	if count < 0 {
+		return nil, fmt.Errorf("wire: malformed %s count %d", "ParameterDescription", count)
+	}
+	oids := make([]uint32, count)
+	for i := range oids {
+		oid, err := d.uint32()
+		if err != nil {
+			return nil, err
+		}
+		oids[i] = oid
+	}
+	return oids, d.end()
+}
+
 // DecodeSASLInitialResponse decodes a SASLInitialResponse payload: mechanism,
 // initial client response length (-1 means omitted) and response bytes.
 func DecodeSASLInitialResponse(payload []byte) (mechanism string, data []byte, err error) {

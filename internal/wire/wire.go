@@ -57,6 +57,7 @@ const (
 // their byte values with the backend messages of the same name.
 const (
 	MsgBind      MsgType = 'B'
+	MsgClose     MsgType = 'C'
 	MsgDescribe  MsgType = 'D'
 	MsgExecute   MsgType = 'E'
 	MsgFlush     MsgType = 'H'
