@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cocosip/go-kingbase/internal/auth"
@@ -43,6 +44,10 @@ type conn struct {
 	// stopWatch cancels the per-command context watcher that interrupts a
 	// stalled socket after cancellation.
 	stopWatch func() bool
+
+	// inNotice counts running notice handlers on the protocol reader; the
+	// counter is atomic because COPY completes on a separate goroutine.
+	inNotice atomic.Int32
 }
 
 var _ driver.Conn = (*conn)(nil)
@@ -76,7 +81,9 @@ func (c *conn) handshake() error {
 			}
 			c.backendPID, c.backendSecret = pid, secret
 		case wire.MsgNoticeResponse:
-			// Notices are discarded by default; callbacks are F-704 work.
+			if err := c.dispatchNotice(payload); err != nil {
+				return err
+			}
 		case wire.MsgErrorResponse:
 			return serverError(payload)
 		case wire.MsgReadyForQuery:
@@ -174,6 +181,12 @@ func (c *conn) readSASLData(want int32) ([]byte, error) {
 	}
 	switch typ {
 	case wire.MsgAuthentication:
+	case wire.MsgNoticeResponse:
+		// A notice may legally arrive between authentication exchanges.
+		if err := c.dispatchNotice(payload); err != nil {
+			return nil, err
+		}
+		return c.readSASLData(want)
 	case wire.MsgErrorResponse:
 		return nil, serverError(payload)
 	default:

@@ -3,6 +3,7 @@ package gokb
 import (
 	"context"
 	"database/sql/driver"
+	"errors"
 
 	"github.com/cocosip/go-kingbase/internal/wire"
 )
@@ -22,6 +23,12 @@ func (c *conn) ResetSession(ctx context.Context) error {
 		return nil
 	}
 	if _, err := c.ExecContext(ctx, "ROLLBACK", nil); err != nil {
+		// A refusal from a notice handler happened before anything was sent and
+		// leaves the connection untouched; retiring it would lose a healthy
+		// session the handler was only inspecting.
+		if errors.Is(err, errNoticeReentry) {
+			return err
+		}
 		c.retire()
 		return driver.ErrBadConn
 	}

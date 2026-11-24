@@ -85,6 +85,9 @@ func isCopyStatement(query string) bool {
 // connection. The COPY statement is sent immediately; the returned statement
 // accepts rows until Exec is called without values or Close.
 func (c *conn) prepareCopyIn(ctx context.Context, query string) (driver.Stmt, error) {
+	if c.inNotice.Load() > 0 {
+		return nil, errNoticeReentry
+	}
 	if c.txStatus != wire.StatusInTransaction {
 		return nil, errCopyOutsideTx
 	}
@@ -204,6 +207,11 @@ func (ci *copyIn) Query([]driver.Value) (driver.Rows, error) {
 // import. An unencodable value aborts the COPY with CopyFail so the server
 // imports nothing from this stream.
 func (ci *copyIn) ExecContext(ctx context.Context, args []driver.NamedValue) (driver.Result, error) {
+	// A notice handler runs on whichever goroutine reads the wire; a command
+	// from it would wait for a completion this same goroutine must close.
+	if ci.conn.inNotice.Load() > 0 {
+		return nil, errNoticeReentry
+	}
 	if ci.closed {
 		return nil, errCopyInClosed
 	}
@@ -265,6 +273,9 @@ func (ci *copyIn) ExecContext(ctx context.Context, args []driver.NamedValue) (dr
 // Close flushes buffered rows and completes the import. Import failures are
 // reported here because a statement close is the last chance to surface them.
 func (ci *copyIn) Close() error {
+	if ci.conn.inNotice.Load() > 0 {
+		return errNoticeReentry
+	}
 	if ci.closed {
 		return nil
 	}

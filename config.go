@@ -176,6 +176,9 @@ type Config struct {
 	// no target check is performed.
 	TargetSessionAttrs TargetSessionAttrs
 
+	// NoticeHandler receives server notices; nil discards them.
+	NoticeHandler NoticeHandler
+
 	BinaryParameters            bool
 	DisablePreparedBinaryResult bool
 	GetLastInsertID             bool

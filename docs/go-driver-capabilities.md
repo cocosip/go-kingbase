@@ -116,7 +116,7 @@ DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup excha
 | F-701 | TxOptions and transaction lifecycle | P0 | both | LevelDefault, four explicit levels, unsupported error, ReadOnly, commit/rollback/cancel recovery | done | done | pending |
 | F-702 | CopyIn/CopyInSchema text import | P1 | both | Statement-string helpers; Tx.Prepare/Exec/flush/Close; identifiers, NULL/escaping, completion/trailing errors | done | done | pending |
 | F-703 | LISTEN/NOTIFY | P2 | both | Async parsing; bounded 256-message queue, overflow gap/reconnect, no replay, nil gap marker | todo | pending | pending |
-| F-704 | NOTICE/WARNING callbacks | P2 | both | Default discard; no stderr, same-connection reentrancy forbidden | todo | pending | pending |
+| F-704 | NOTICE/WARNING callbacks | P2 | both | Default discard; no stderr, same-connection reentrancy forbidden | done | done | pending |
 | F-705 | Binary COPY import | P2 | both | Deferred from first PG release; future complete/abort/ownership contract and live acceptance | todo | pending | pending |
 | F-706 | COPY output | P2 | both | Deferred from first PG release; distinguish text/binary output and reader ownership | todo | pending | pending |
 | F-707 | Raw COPY streams | P2 | both | Deferred from first PG release; no backup/CDC/cross-version promise | todo | pending | pending |

@@ -62,6 +62,9 @@ func (c *conn) classifyCommandError(err error) error {
 	if err == nil || !c.commandSent {
 		return err
 	}
+	if errors.Is(err, errNoticeReentry) {
+		return err
+	}
 	return markUncertain(err)
 }
 
@@ -116,6 +119,11 @@ func encodeParameters(values []driver.Value) ([][]byte, error) {
 func (c *conn) beginCommand(ctx context.Context) error {
 	if c.netConn == nil {
 		return driver.ErrBadConn
+	}
+	// A notice handler runs on the protocol reader; reentering the connection
+	// would wait for a response only this reader could consume.
+	if c.inNotice.Load() > 0 {
+		return errNoticeReentry
 	}
 	// A command issued while a COPY stream is open (for example a rollback)
 	// first finishes that stream so the wire is back at ReadyForQuery.
@@ -195,8 +203,7 @@ func (c *conn) retire() {
 func (c *conn) handleAsync(typ wire.MsgType, payload []byte) (bool, error) {
 	switch typ {
 	case wire.MsgNoticeResponse:
-		// Notices are discarded by default; callbacks are notification work.
-		return true, nil
+		return true, c.dispatchNotice(payload)
 	case wire.MsgParameterStatus:
 		name, value, err := wire.DecodeParameterStatus(payload)
 		if err != nil {
