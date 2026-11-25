@@ -148,7 +148,7 @@ DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup excha
 |---|---|---|---|---|---|---|---|
 | F-1101 | Unit/contract suite | P0 | offline | Coverage target at least 70 percent plus named risk tests; percentage alone is not acceptance | done | done | n/a |
 | F-1102 | Fake-server/failure suite | P0 | offline | Fragmentation, sizes/counts/EOF, auth faults, async rows, trailing errors, reset/cancel/retry races | done | done | n/a |
-| F-1103 | Scoped real-server profile matrix | P0 | live | V9 profiles first; exact accepted edition/release/mode/wire; unavailable profile pending, V8 later | todo | pending | pending |
+| F-1103 | Scoped real-server profile matrix | P0 | live | V9 profiles first; exact accepted edition/release/mode/wire; unavailable profile pending, V8 later | wip | wip | pending |
 | F-1104 | Concurrency tests | P0 | both | multiple modes interleaved + `-race` | todo | pending | pending |
 | F-1105 | Performance baseline | P2 | live | Actual single-row/COPY workloads; explicitly deferrable outside release blockers | todo | pending | pending |
 | F-1106 | Repository lint rules | P0 | offline | Run existing .golangci.yml once product module exists | done | done | n/a |
