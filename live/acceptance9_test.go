@@ -31,3 +31,25 @@ func TestLiveApplicationName(t *testing.T) {
 		t.Errorf("application_name = %q, want live_probe", name)
 	}
 }
+
+func TestLiveFallbackApplicationName(t *testing.T) {
+	db, err := sql.Open("kingbase", os.Getenv("KINGBASE_TEST_DSN")+" fallback_application_name=live_fallback")
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatalf("Conn: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+	var name string
+	if err := conn.QueryRowContext(ctx, "SHOW application_name").Scan(&name); err != nil {
+		t.Fatalf("SHOW application_name: %v", err)
+	}
+	if name != "live_fallback" {
+		t.Errorf("fallback application_name = %q, want live_fallback", name)
+	}
+}
