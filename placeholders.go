@@ -1,6 +1,7 @@
 package kingbase
 
 import (
+	"database/sql/driver"
 	"errors"
 	"fmt"
 	"strconv"
@@ -14,6 +15,7 @@ type placeholderPlan struct {
 	query   string
 	args    int
 	targets map[int]targetRef
+	names   map[string]int
 }
 
 // targetRef is a SQL-spelled qualified type name attached to one parameter.
@@ -54,14 +56,41 @@ func (c *targetCollector) add(query string, index, start int) {
 // errMixedPlaceholders rejects a statement that mixes ? with $n.
 var errMixedPlaceholders = errors.New("kingbase: mixed ? and $n placeholders in one statement")
 
+// namedPlaceholders assigns stable ordinals to :name/@name bindings. One
+// prefix style is accepted per statement; repeated names reuse one ordinal.
+type namedPlaceholders struct {
+	names  map[string]int
+	prefix byte
+}
+
+func (n *namedPlaceholders) rewrite(query string, start int, out *strings.Builder, collector *targetCollector) (int, error) {
+	prefix := query[start]
+	if n.prefix != 0 && n.prefix != prefix {
+		return 0, errors.New("kingbase: mixed @ and : named placeholders in one statement")
+	}
+	n.prefix = prefix
+	end := identifierEnd(query, start+1)
+	name := query[start+1 : end]
+	index, exists := n.names[name]
+	if !exists {
+		index = len(n.names) + 1
+		n.names[name] = index
+	}
+	collector.add(query, index, end)
+	out.WriteString("$")
+	out.WriteString(strconv.Itoa(index))
+	return end, nil
+}
+
 // planPlaceholders applies the profile's verified identifier quoting and the
-// driver's positional placeholder rules to a statement: ? placeholders become
-// sequential $n, explicit $n passes through, and quoted strings, E-strings,
-// quoted identifiers, dollar-quoted bodies, comments and the ?|, ?& and @?
-// operators stay untouched. A bare ? is always a placeholder, so the jsonb ?
-// operator must be written as jsonb_exists() or with ?|/?&; named styles
-// (:name, @name) are rejected because the driver binds positional parameters
-// only.
+// driver's placeholder rules to a statement: ? placeholders become sequential
+// $n, explicit $n passes through, :name/@name bind by name and are rewritten to
+// $n, and quoted strings, E-strings, quoted identifiers, dollar-quoted bodies,
+// comments and the ?|, ?& and @? operators stay untouched. One style per
+// statement is enforced. A bare ? is always a placeholder, so the jsonb ?
+// operator must be written as jsonb_exists() or with ?|/?&.
+//
+//nolint:gocyclo // One pass over mutually exclusive literal/operator/placeholder states.
 func planPlaceholders(profile modeProfile, query string) (placeholderPlan, error) {
 	var out strings.Builder
 	out.Grow(len(query) + 8)
@@ -69,6 +98,7 @@ func planPlaceholders(profile modeProfile, query string) (placeholderPlan, error
 	explicitMax := 0 // largest explicit $n index
 	sawQuestion := false
 	sawExplicit := false
+	named := namedPlaceholders{names: map[string]int{}}
 	collector := targetCollector{}
 	for i := 0; i < len(query); {
 		if end, ok := literalSpan(profile, query, i); ok {
@@ -92,7 +122,7 @@ func planPlaceholders(profile modeProfile, query string) (placeholderPlan, error
 			if err != nil || index < 1 {
 				return placeholderPlan{}, fmt.Errorf("kingbase: invalid placeholder %q", query[i:end])
 			}
-			if sawQuestion {
+			if sawQuestion || len(named.names) != 0 {
 				return placeholderPlan{}, errMixedPlaceholders
 			}
 			sawExplicit = true
@@ -108,7 +138,7 @@ func planPlaceholders(profile modeProfile, query string) (placeholderPlan, error
 				i += 2
 				continue
 			}
-			if sawExplicit {
+			if sawExplicit || len(named.names) != 0 {
 				return placeholderPlan{}, errMixedPlaceholders
 			}
 			sawQuestion = true
@@ -124,7 +154,15 @@ func planPlaceholders(profile modeProfile, query string) (placeholderPlan, error
 				continue
 			}
 			if i+1 < len(query) && isIdentifierStart(query[i+1]) && namedPlaceholderStart(query, i) {
-				return placeholderPlan{}, fmt.Errorf("kingbase: named placeholder %q is not supported (use $n or ?)", query[i:identifierEnd(query, i+1)])
+				if sawQuestion || sawExplicit {
+					return placeholderPlan{}, errMixedPlaceholders
+				}
+				end, err := named.rewrite(query, i, &out, &collector)
+				if err != nil {
+					return placeholderPlan{}, err
+				}
+				i = end
+				continue
 			}
 			out.WriteByte(char)
 			i++
@@ -136,7 +174,15 @@ func planPlaceholders(profile modeProfile, query string) (placeholderPlan, error
 				continue
 			}
 			if i+1 < len(query) && isIdentifierStart(query[i+1]) && namedPlaceholderStart(query, i) {
-				return placeholderPlan{}, fmt.Errorf("kingbase: named placeholder %q is not supported (use $n or ?)", query[i:identifierEnd(query, i+1)])
+				if sawQuestion || sawExplicit {
+					return placeholderPlan{}, errMixedPlaceholders
+				}
+				end, err := named.rewrite(query, i, &out, &collector)
+				if err != nil {
+					return placeholderPlan{}, err
+				}
+				i = end
+				continue
 			}
 			out.WriteByte(char)
 			i++
@@ -146,12 +192,80 @@ func planPlaceholders(profile modeProfile, query string) (placeholderPlan, error
 		}
 	}
 	plan := placeholderPlan{query: out.String(), targets: collector.refs}
-	if sawQuestion {
+	switch {
+	case sawQuestion:
 		plan.args = next
-	} else {
+	case sawExplicit:
 		plan.args = explicitMax
+	case len(named.names) != 0:
+		plan.args = len(named.names)
+		plan.names = named.names
 	}
 	return plan, nil
+}
+
+// bindValues maps caller arguments onto the plan's ordinals. Positional
+// placeholders require empty names and sequential ordinals; named placeholders
+// require every supplied name to exist, every placeholder to be supplied once,
+// and no duplicate names. A negative args count is an unverified pass-through
+// and keeps the positional contract without a client-side count.
+func (p placeholderPlan) bindValues(args []driver.NamedValue) ([]driver.Value, error) {
+	if p.args < 0 {
+		values := make([]driver.Value, len(args))
+		for i, arg := range args {
+			if arg.Name != "" {
+				return nil, fmt.Errorf("kingbase: named parameter %q supplied for a pass-through statement", arg.Name)
+			}
+			if arg.Ordinal != i+1 {
+				return nil, fmt.Errorf("kingbase: invalid parameter ordinal %d", arg.Ordinal)
+			}
+			values[i] = arg.Value
+		}
+		return values, nil
+	}
+	if p.names == nil {
+		if len(args) != p.args {
+			return nil, fmt.Errorf("kingbase: statement expects %d arguments, got %d", p.args, len(args))
+		}
+		values := make([]driver.Value, len(args))
+		for i, arg := range args {
+			if arg.Name != "" {
+				return nil, fmt.Errorf("kingbase: named parameter %q supplied for positional placeholders", arg.Name)
+			}
+			if arg.Ordinal != i+1 {
+				return nil, fmt.Errorf("kingbase: invalid parameter ordinal %d", arg.Ordinal)
+			}
+			values[i] = arg.Value
+		}
+		return values, nil
+	}
+	values := make([]driver.Value, p.args)
+	seen := make([]bool, p.args)
+	for _, arg := range args {
+		if arg.Name == "" {
+			return nil, errors.New("kingbase: named placeholders require sql.Named arguments")
+		}
+		index, ok := p.names[arg.Name]
+		if !ok {
+			return nil, fmt.Errorf("kingbase: unknown named parameter %q", arg.Name)
+		}
+		if seen[index-1] {
+			return nil, fmt.Errorf("kingbase: duplicate named parameter %q", arg.Name)
+		}
+		seen[index-1] = true
+		values[index-1] = arg.Value
+	}
+	for index, ok := range seen {
+		if ok {
+			continue
+		}
+		for name, position := range p.names {
+			if position == index+1 {
+				return nil, fmt.Errorf("kingbase: missing named parameter %q", name)
+			}
+		}
+	}
+	return values, nil
 }
 
 // rewriteParameters returns the normalized statement and its explicit
@@ -164,16 +278,6 @@ func (c *conn) rewriteParameters(query string) (placeholderPlan, error) {
 		return placeholderPlan{query: query, args: -1}, nil
 	}
 	return planPlaceholders(profile, query)
-}
-
-// rewritePlaceholders applies the profile's verified placeholder rules to a
-// statement and reports its positional parameter count.
-func (c *conn) rewritePlaceholders(query string) (string, int, error) {
-	plan, err := c.rewriteParameters(query)
-	if err != nil {
-		return "", 0, err
-	}
-	return plan.query, plan.args, nil
 }
 
 // literalSpan returns the end of a quoted literal or identifier, a
@@ -337,22 +441,18 @@ func identifierEnd(query string, start int) int {
 	return start
 }
 
-// namedPlaceholderStart reports whether a ':' or '@' at i begins a named
-// placeholder token rather than an array slice bound or a postfix position. A
-// preceding operand (identifier, digit, ')' or ']' or '[') means slicing or
-// indexing, which PG accepts.
+// namedPlaceholderStart distinguishes a named bind from an array slice or
+// postfix position. A preceding identifier byte, ')' or ']' means slicing or
+// indexing; whitespace/operators are token boundaries.
 func namedPlaceholderStart(query string, i int) bool {
-	for j := i - 1; j >= 0; j-- {
-		switch query[j] {
-		case ' ', '\t', '\n', '\r':
-			continue
-		case '[', ')', ']':
-			return false
-		default:
-			return !isIdentifierByte(query[j])
-		}
+	if i == 0 {
+		return true
 	}
-	return true
+	switch query[i-1] {
+	case ')', ']', '[':
+		return false
+	}
+	return !isIdentifierByte(query[i-1])
 }
 
 func identifierByteBefore(query string, i int) bool {

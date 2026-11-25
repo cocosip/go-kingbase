@@ -21,11 +21,11 @@ var (
 // extended protocol; a statement without arguments uses the simple query
 // protocol.
 func (c *conn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
-	values, err := namedValuesToValues(args)
+	plan, err := c.rewriteParameters(query)
 	if err != nil {
 		return nil, err
 	}
-	plan, err := c.rewriteParameters(query)
+	values, err := plan.bindValues(args)
 	if err != nil {
 		return nil, err
 	}
@@ -46,11 +46,11 @@ func (c *conn) QueryContext(ctx context.Context, query string, args []driver.Nam
 
 // ExecContext runs a statement and returns its completion result.
 func (c *conn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
-	values, err := namedValuesToValues(args)
+	plan, err := c.rewriteParameters(query)
 	if err != nil {
 		return nil, err
 	}
-	plan, err := c.rewriteParameters(query)
+	values, err := plan.bindValues(args)
 	if err != nil {
 		return nil, err
 	}
@@ -108,23 +108,6 @@ func markUncertain(err error) error {
 		return err
 	}
 	return uncertain(err)
-}
-
-func namedValuesToValues(args []driver.NamedValue) ([]driver.Value, error) {
-	if len(args) == 0 {
-		return nil, nil
-	}
-	values := make([]driver.Value, len(args))
-	for i, arg := range args {
-		if arg.Name != "" {
-			return nil, fmt.Errorf("kingbase: named parameters are not implemented yet")
-		}
-		if arg.Ordinal != i+1 {
-			return nil, fmt.Errorf("kingbase: invalid parameter ordinal %d", arg.Ordinal)
-		}
-		values[i] = arg.Value
-	}
-	return values, nil
 }
 
 func encodeParameters(values []driver.Value) ([][]byte, error) {

@@ -164,7 +164,7 @@ func TestModeDiscoveryUnavailableAutoFails(t *testing.T) {
 			return
 		}
 		if err := peer.RowDescription([]wire.ColumnDescription{
-			{Name: "name", TypeOID: 25, TypeLen: -1, TypeMod: -1, Format: 0},
+			{Name: testColumnName, TypeOID: 25, TypeLen: -1, TypeMod: -1, Format: 0},
 			{Name: "setting", TypeOID: 25, TypeLen: -1, TypeMod: -1, Format: 0},
 		}); err != nil {
 			return
@@ -278,7 +278,7 @@ func TestModeDiscoveryVersionOnlyFallsThrough(t *testing.T) {
 			return
 		}
 		if err := peer.RowDescription([]wire.ColumnDescription{
-			{Name: "name", TypeOID: 25, TypeLen: -1, TypeMod: -1, Format: 0},
+			{Name: testColumnName, TypeOID: 25, TypeLen: -1, TypeMod: -1, Format: 0},
 			{Name: "setting", TypeOID: 25, TypeLen: -1, TypeMod: -1, Format: 0},
 		}); err != nil {
 			return
@@ -321,7 +321,7 @@ func TestModeDiscoveryQueryProvenancePassthrough(t *testing.T) {
 			return
 		}
 		_ = peer.RowDescription([]wire.ColumnDescription{
-			{Name: "name", TypeOID: 25, TypeLen: -1, TypeMod: -1, Format: 0},
+			{Name: testColumnName, TypeOID: 25, TypeLen: -1, TypeMod: -1, Format: 0},
 			{Name: "setting", TypeOID: 25, TypeLen: -1, TypeMod: -1, Format: 0},
 		})
 		_ = peer.DataRow([][]byte{[]byte(testDatabaseMode), []byte("mysql")})

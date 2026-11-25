@@ -26,6 +26,9 @@ func TestPlanPlaceholders(t *testing.T) {
 		{"array slices", "SELECT arr[1:n], payload[:length(payload)] FROM t", "SELECT arr[1:n], payload[:length(payload)] FROM t", 0},
 		{"dollar in identifier", "SELECT foo$1, bar FROM t", "SELECT foo$1, bar FROM t", 0},
 		{"dollar in identifier with placeholder", "SELECT foo$1, ? FROM t", "SELECT foo$1, $1 FROM t", 1},
+		{"named colon", "SELECT * FROM t WHERE id = :id AND name = :name", "SELECT * FROM t WHERE id = $1 AND name = $2", 2},
+		{"named repeated", "SELECT :id, :id + 1", "SELECT $1, $1 + 1", 1},
+		{"named at", "SELECT * FROM t WHERE id = @id", "SELECT * FROM t WHERE id = $1", 1},
 		{"unterminated quote", "SELECT 'a?b", "SELECT 'a?b", 0},
 		{"doubled quotes", "SELECT '', '' , ?", "SELECT '', '' , $1", 1},
 		{
@@ -100,8 +103,9 @@ func TestPlanPlaceholdersRejects(t *testing.T) {
 	}{
 		{"mixed", "SELECT ? WHERE a = $1", "mixed"},
 		{"mixed reverse", "SELECT $1 WHERE a = ?", "mixed"},
-		{"named colon", "SELECT * FROM t WHERE id = :id", "named placeholder"},
-		{"named at", "SELECT * FROM t WHERE id = @id", "named placeholder"},
+		{"mixed named question", "SELECT :id WHERE a = ?", "mixed"},
+		{"mixed named explicit", "SELECT @id WHERE a = $1", "mixed"},
+		{"mixed named prefixes", "SELECT :id, @other", "mixed @ and :"},
 		{"zero index", "SELECT $0", "invalid placeholder"},
 	}
 	for _, tc := range cases {
@@ -373,7 +377,63 @@ func TestExecZeroArgumentCountMismatchFailsBeforeSend(t *testing.T) {
 	}
 }
 
-func TestPrepareRejectsNamedPlaceholdersBeforeSend(t *testing.T) {
+func TestQueryBindsNamedPlaceholders(t *testing.T) {
+	srv := testpeer.Start(t, func(peer *testpeer.Conn) {
+		if !startupOK(peer) {
+			return
+		}
+		payload, ok := expectMessage(peer, wire.MsgParse)
+		if !ok {
+			return
+		}
+		_, sql, _, err := wire.DecodeParse(payload)
+		if err != nil || sql != "SELECT $1, $1, $2" {
+			peer.Errorf("parse sql = %q err %v", sql, err)
+			return
+		}
+		payload, ok = expectMessage(peer, wire.MsgBind)
+		if !ok {
+			return
+		}
+		_, _, _, params, _, err := wire.DecodeBind(payload)
+		if err != nil || len(params) != 2 || string(params[0]) != "7" || string(params[1]) != testColumnName {
+			peer.Errorf("bind params = %q err %v", params, err)
+			return
+		}
+		if _, ok := expectMessage(peer, wire.MsgDescribe); !ok {
+			return
+		}
+		if _, ok := expectMessage(peer, wire.MsgExecute); !ok {
+			return
+		}
+		if _, ok := expectMessage(peer, wire.MsgSync); !ok {
+			return
+		}
+		_ = peer.WriteMessage(wire.MsgParseComplete, nil)
+		_ = peer.WriteMessage(wire.MsgBindComplete, nil)
+		_ = peer.SendResult([]wire.ColumnDescription{
+			{Name: "n", TypeOID: 23, TypeLen: 4, TypeMod: -1, Format: 0},
+		}, [][][]byte{{[]byte("1")}}, "SELECT 1", wire.StatusIdle)
+		waitTerminate(peer)
+	})
+	physical, err := connectPeer(t, srv, "")
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	defer func() { _ = physical.Close() }()
+	rows, err := physical.QueryContext(context.Background(), "SELECT :id, :id, :name", []driver.NamedValue{
+		{Name: "id", Value: int64(7)},
+		{Name: "name", Value: "name"},
+	})
+	if err != nil {
+		t.Fatalf("QueryContext: %v", err)
+	}
+	if err := rows.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+}
+
+func TestNamedBindingRejectsMissingUnknownAndDuplicate(t *testing.T) {
 	srv := testpeer.Start(t, func(peer *testpeer.Conn) {
 		if !startupOK(peer) {
 			return
@@ -385,11 +445,49 @@ func TestPrepareRejectsNamedPlaceholdersBeforeSend(t *testing.T) {
 		t.Fatalf("Connect: %v", err)
 	}
 	defer func() { _ = physical.Close() }()
-	if _, err := physical.PrepareContext(context.Background(), "SELECT * FROM t WHERE id = :id"); err == nil ||
-		!strings.Contains(err.Error(), "named placeholder") {
-		t.Fatalf("PrepareContext = %v, want a named-placeholder error", err)
+	cases := []struct {
+		name string
+		args []driver.NamedValue
+		want string
+	}{
+		{"missing", []driver.NamedValue{{Name: "id", Value: int64(1)}}, "missing named parameter"},
+		{"unknown", []driver.NamedValue{{Name: "id", Value: int64(1)}, {Name: "other", Value: int64(2)}}, "unknown named parameter"},
+		{"duplicate", []driver.NamedValue{{Name: "id", Value: int64(1)}, {Name: "id", Value: int64(2)}}, "duplicate named parameter"},
+		{"positional", []driver.NamedValue{{Ordinal: 1, Value: int64(1)}}, "require sql.Named"},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			_, err := physical.QueryContext(context.Background(), "SELECT :id, :name", testCase.args)
+			if err == nil || !strings.Contains(err.Error(), testCase.want) {
+				t.Fatalf("error = %v, want %q", err, testCase.want)
+			}
+		})
 	}
 	if physical.netConn == nil {
-		t.Error("connection was retired for a pre-send lexer error")
+		t.Error("connection was retired for a pre-send binding error")
+	}
+}
+
+func TestPrepareRewritesNamedPlaceholders(t *testing.T) {
+	srv := testpeer.Start(t, func(peer *testpeer.Conn) {
+		if !startupOK(peer) {
+			return
+		}
+		if !describePrepared(peer, "SELECT * FROM t WHERE id = $1", []uint32{23}) {
+			return
+		}
+		waitTerminate(peer)
+	})
+	physical, err := connectPeer(t, srv, "")
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	defer func() { _ = physical.Close() }()
+	statement, err := physical.PrepareContext(context.Background(), "SELECT * FROM t WHERE id = :id")
+	if err != nil {
+		t.Fatalf("PrepareContext: %v", err)
+	}
+	if statement == nil {
+		t.Fatal("PrepareContext returned a nil statement")
 	}
 }

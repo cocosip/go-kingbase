@@ -355,7 +355,7 @@ func TestStatementArgumentMismatchRejectedBeforeSend(t *testing.T) {
 	}
 	statement := prepared.(*stmt)
 	if _, err := statement.QueryContext(context.Background(), []driver.NamedValue{{Ordinal: 1, Value: "a"}}); err == nil ||
-		!strings.Contains(err.Error(), "expects 2 parameters") {
+		!strings.Contains(err.Error(), "expects 2 arguments") {
 		t.Fatalf("error = %v, want parameter-count error", err)
 	}
 	if err := statement.Close(); err != nil {
@@ -394,9 +394,9 @@ func TestCheckNamedValue(t *testing.T) {
 		wantCalls int
 	}{
 		{
-			name:     "named parameter rejected",
+			name:     "named parameter retained",
 			argument: driver.NamedValue{Ordinal: 1, Name: "id", Value: int64(1)},
-			wantErr:  "named parameters are not supported",
+			want:     int64(1),
 		},
 		{
 			name:     "uint64 above int64 preserved",

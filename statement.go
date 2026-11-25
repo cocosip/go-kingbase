@@ -21,6 +21,7 @@ type stmt struct {
 	conn      *conn
 	name      string
 	paramOIDs []uint32
+	plan      placeholderPlan
 	// generatedQuery is the safe INSERT with RETURNING appended; Exec uses it
 	// through an unnamed Parse so Query keeps the caller's original statement.
 	generatedQuery string
@@ -45,13 +46,13 @@ func (c *conn) PrepareContext(ctx context.Context, query string) (driver.Stmt, e
 	if isCopyStatement(query) {
 		return c.prepareCopyIn(ctx, query)
 	}
-	// Prepared statements accept ? placeholders too; the server's ParameterDescription
-	// then reports the argument count database/sql enforces.
-	planned, _, err := c.rewritePlaceholders(query)
+	// Prepared statements accept ? and named placeholders too; the server's
+	// ParameterDescription then reports the argument count database/sql enforces.
+	plan, err := c.rewriteParameters(query)
 	if err != nil {
 		return nil, err
 	}
-	query = planned
+	query = plan.query
 	var generatedQuery string
 	var autoIDErr error
 	if c.cfg != nil && c.cfg.GetLastInsertID && c.mode == ModePG {
@@ -86,6 +87,7 @@ func (c *conn) PrepareContext(ctx context.Context, query string) (driver.Stmt, e
 		conn:           c,
 		name:           name,
 		paramOIDs:      paramOIDs,
+		plan:           plan,
 		generatedQuery: generatedQuery,
 		autoIDErr:      autoIDErr,
 	}, nil
@@ -198,12 +200,9 @@ func (s *stmt) ExecContext(ctx context.Context, args []driver.NamedValue) (drive
 	if s.autoIDErr != nil {
 		return nil, s.autoIDErr
 	}
-	values, err := namedValuesToValues(args)
+	values, err := s.bindValues(args)
 	if err != nil {
 		return nil, err
-	}
-	if len(values) != len(s.paramOIDs) {
-		return nil, fmt.Errorf("kingbase: statement expects %d parameters, got %d", len(s.paramOIDs), len(values))
 	}
 	if s.generatedQuery != "" {
 		params, formats, err := s.conn.encodeParametersWithTypes(values, s.paramOIDs)
@@ -220,7 +219,7 @@ func (s *stmt) ExecContext(ctx context.Context, args []driver.NamedValue) (drive
 		}
 		return s.conn.classifyCommandResult(true)
 	}
-	params, formats, err := s.encodeArguments(args)
+	params, formats, err := s.conn.encodeParametersWithTypes(values, s.paramOIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -237,7 +236,11 @@ func (s *stmt) ExecContext(ctx context.Context, args []driver.NamedValue) (drive
 
 // QueryContext runs the prepared statement and returns rows.
 func (s *stmt) QueryContext(ctx context.Context, args []driver.NamedValue) (driver.Rows, error) {
-	params, formats, err := s.encodeArguments(args)
+	values, err := s.bindValues(args)
+	if err != nil {
+		return nil, err
+	}
+	params, formats, err := s.conn.encodeParametersWithTypes(values, s.paramOIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -256,16 +259,17 @@ func (s *stmt) QueryContext(ctx context.Context, args []driver.NamedValue) (driv
 	return newRows(s.conn, columns, ready), nil
 }
 
-// encodeArguments validates the count before sending anything.
-func (s *stmt) encodeArguments(args []driver.NamedValue) ([][]byte, []int16, error) {
-	values, err := namedValuesToValues(args)
+// bindValues maps named/positional arguments onto the statement plan and
+// enforces the server-reported parameter count.
+func (s *stmt) bindValues(args []driver.NamedValue) ([]driver.Value, error) {
+	values, err := s.plan.bindValues(args)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if len(values) != len(s.paramOIDs) {
-		return nil, nil, fmt.Errorf("kingbase: statement expects %d parameters, got %d", len(s.paramOIDs), len(values))
+		return nil, fmt.Errorf("kingbase: statement expects %d parameters, got %d", len(s.paramOIDs), len(values))
 	}
-	return s.conn.encodeParametersWithTypes(values, s.paramOIDs)
+	return values, nil
 }
 
 // bindAndExecute sends Bind[/Describe]/Execute/Sync for a prepared statement.
@@ -313,13 +317,10 @@ func (c *conn) resultFormats() []int16 {
 var _ driver.NamedValueChecker = (*conn)(nil)
 
 // CheckNamedValue normalizes one argument with the standard converter before
-// encoding. Named parameters are rejected explicitly because the wire protocol
-// binds by position, and uint64 values above MaxInt64 or broken Valuers fail
-// here, before any bytes reach the server.
+// encoding. Names are retained so the statement plan can bind them; uint64
+// values above MaxInt64 or broken Valuers fail here, before any bytes reach the
+// server.
 func (c *conn) CheckNamedValue(argument *driver.NamedValue) error {
-	if argument.Name != "" {
-		return fmt.Errorf("kingbase: named parameters are not supported (parameter %q)", argument.Name)
-	}
 	// Keep the compatibility wrappers and the full uint64 range intact until
 	// binding; the default converter would collapse them into string/int64 and
 	// lose the caller's target intent or reject values above MaxInt64.

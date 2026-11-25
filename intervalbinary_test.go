@@ -30,7 +30,7 @@ func TestIntervalBinaryMatchesText(t *testing.T) {
 		months int32
 		want   string
 	}{
-		{"mixed", fourHoursFiveMinutesSix, 3, 14, "1 year 2 mons 3 days 04:05:06"},
+		{"mixed fields", fourHoursFiveMinutesSix, 3, 14, "1 year 2 mons 3 days 04:05:06"},
 		{"negative components", -int64(1*60*60+2*60+3) * microsPerSecond, -2, -1, "-1 mon -2 days -01:02:03"},
 		{"zero", 0, 0, 0, "00:00:00"},
 		{"days only", 0, 1, 0, "1 day"},

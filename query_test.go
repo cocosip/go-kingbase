@@ -142,7 +142,7 @@ func TestQuerySimpleRows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("QueryContext: %v", err)
 	}
-	if names := result.Columns(); len(names) != 2 || names[0] != "id" || names[1] != "name" {
+	if names := result.Columns(); len(names) != 2 || names[0] != "id" || names[1] != testColumnName {
 		t.Errorf("Columns = %v, want [id name]", names)
 	}
 	dest := make([]driver.Value, 2)
