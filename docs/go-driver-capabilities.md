@@ -96,7 +96,7 @@ DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup excha
 | F-502 | OUT/INOUT assignment | P0 | both | Checked sql.Out conversion after complete results; incomplete/cancelled call has no valid outputs | wip | pending | pending |
 | F-503 | SQLServer routine-name convenience | P1 | both | Profile-gated parsed qualified identifier; no arbitrary SQL concatenation | wip | wip | pending |
 | F-504 | Non-SQLServer routine forms | P1 | both | Include official MySQL-compatible OUT path; mode/form/wire-specific acceptance; no blanket rejection or silent assignment | wip | pending | pending |
-| F-505 | OUT tinyint signedness/range | P1 | both | Checked uint8/int8 destinations; NULL/overflow explicit | todo | pending | pending |
+| F-505 | OUT tinyint signedness/range | P1 | both | Checked uint8/int8 destinations; NULL/overflow explicit | done | done | pending |
 | F-506 | Refcursor ownership and lifecycle | P1 | both | Pinned session/transaction, explicit fetch/close, multiple cursor and cancellation handling | done | done | pending |
 
 ## 7. Auto-Increment and Sequences
