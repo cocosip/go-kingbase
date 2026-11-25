@@ -2,12 +2,15 @@ package kingbase
 
 import (
 	"context"
+	"database/sql"
+	"fmt"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 
 	"github.com/cocosip/go-kingbase/internal/testpeer"
+	"github.com/cocosip/go-kingbase/internal/wire"
 )
 
 func TestConnectorPinsConfigurationSnapshot(t *testing.T) {
@@ -146,6 +149,75 @@ func TestConnectorPinsAutoResolvedMode(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "connector mode") ||
 		!strings.Contains(err.Error(), "mysql") {
 		t.Fatalf("second Connect error = %v, want a connector resolved-mode conflict", err)
+	}
+}
+
+func TestConcurrentPGAndMySQLQueries(t *testing.T) {
+	serve := func(peer *testpeer.Conn) {
+		if !startupOK(peer) {
+			return
+		}
+		for {
+			typ, payload, err := peer.ReadMessage()
+			if err != nil {
+				return
+			}
+			if typ == wire.MsgTerminate {
+				return
+			}
+			if typ != wire.MsgQuery {
+				peer.Errorf("unexpected message %q", typ)
+				return
+			}
+			query, err := wire.DecodeQuery(payload)
+			if err != nil || !strings.Contains(query, "SELECT 42") {
+				peer.Errorf("unexpected query %q: %v", query, err)
+				return
+			}
+			_ = peer.RowDescription([]wire.ColumnDescription{
+				{Name: "n", TypeOID: 23, TypeLen: 4, TypeMod: -1, Format: 0},
+			})
+			_ = peer.DataRow([][]byte{[]byte("42")})
+			_ = peer.CommandComplete("SELECT 1")
+			if err := peer.ReadyForQuery(wire.StatusIdle); err != nil {
+				return
+			}
+		}
+	}
+	pgDB := sql.OpenDB(newConnector(peerConfig(t, testpeer.Start(t, serve), "compatibilityMode=pg")))
+	mysqlDB := sql.OpenDB(newConnector(peerConfig(t, testpeer.Start(t, serve), "compatibilityMode=mysql")))
+	defer func() { _ = pgDB.Close() }()
+	defer func() { _ = mysqlDB.Close() }()
+	for _, db := range []*sql.DB{pgDB, mysqlDB} {
+		db.SetMaxOpenConns(4)
+		db.SetMaxIdleConns(4)
+	}
+
+	var wait sync.WaitGroup
+	errors := make(chan error, 16)
+	run := func(db *sql.DB) {
+		defer wait.Done()
+		for i := 0; i < 10; i++ {
+			var got int64
+			if err := db.QueryRowContext(context.Background(), "SELECT 42").Scan(&got); err != nil {
+				errors <- err
+				return
+			}
+			if got != 42 {
+				errors <- fmt.Errorf("query result = %d, want 42", got)
+				return
+			}
+		}
+	}
+	for i := 0; i < 8; i++ {
+		wait.Add(2)
+		go run(pgDB)
+		go run(mysqlDB)
+	}
+	wait.Wait()
+	close(errors)
+	for err := range errors {
+		t.Error(err)
 	}
 }
 
