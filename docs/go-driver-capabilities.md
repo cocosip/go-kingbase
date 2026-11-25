@@ -107,7 +107,7 @@ DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup excha
 | F-602 | Generated-ID type/range coverage | P0 | both | Checked exact int64 only; unsigned high-bit/float/nonintegral/ambiguous IDs unavailable or overflow; explicit Query for other values | done | done | pending |
 | F-603 | Generated tinyint conversion | P0 | offline | Apply accepted mode range and exact int64 conversion | todo | pending | n/a |
 | F-604 | Unavailable/overflow LastInsertId | P0 | offline | Typed error, not zero; preserve RowsAffected; reject unsafe requested rewrite before executing | done | done | n/a |
-| F-605 | Sequence access boundaries | P1 | both | Explicit verified SQL on owning connection; no MAX/last-sequence identity guess; no portable GetSchema promise | todo | pending | pending |
+| F-605 | Sequence access boundaries | P1 | both | Explicit verified SQL on owning connection; no MAX/last-sequence identity guess; no portable GetSchema promise | done | done | pending |
 
 ## 8. Transactions, COPY, Notifications
 

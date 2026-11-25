@@ -16,6 +16,7 @@ promise parity.
 | `sslmode`, certificate paths | keep | `require`, `verify-ca`, `verify-full`, `disable`; explicit missing trust material is an error, never a plaintext fallback. |
 | `binary_parameters` | keep | Applies to server-prepared parameters and verified explicit `$n::pg_catalog.type` targets; raw bytes without a target stay text + server inference. |
 | `get_last_insert_id` / `get_auto_increment_id` | replace | Restricted opt-in generated-ID capture; `LastInsertId` returns a typed unavailable/overflow error, never zero. |
+| Explicit `nextval`/`currval` sequence calls | replace | Caller SQL on one pinned `*sql.Conn`; the driver never guesses with `MAX()`/last-sequence state and offers no portable sequence/GetSchema helper. |
 | `client_encoding` | keep | UTF8/UTF-8 only in this release; other encodings fail before publishing a connection. |
 
 ## Values and helpers
