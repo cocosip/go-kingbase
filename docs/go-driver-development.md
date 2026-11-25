@@ -125,10 +125,10 @@ Every capability ID is owned by at least one canonical task below. Ranges expand
 | T-053 | Compiling API migration examples, scope/evidence and cross-doc consistency | F-1002 | T-001, T-031, T-035, T-043 | done | [go-driver-migration.md](go-driver-migration.md) is the public keep/replace/defer ledger for driver/config names, COPY IN, identifiers, arrays, wrappers, generated IDs, refcursor, metadata, TLS and standard value boundaries. Six compiling examples cover open/query/array, transactions, COPY IN, explicit cursor fetch/close, LISTEN/NOTIFY and per-connection metadata; automatic routine OUT cursor creation, sql.Out/ReturnStatus, other routine conveniences, COPY OUT/binary COPY and the MySQL backend are explicitly deferred rather than promised. `go build ./...`, `go vet ./...` and `golangci-lint run ./...` cover the example packages; T-031/T-035/T-037/T-043 remain the implementation source of truth |
 | T-054 | Named unit/contract suite and meaningful coverage threshold | F-1101 | T-012, T-046 | done | The combined `go test -coverprofile=coverage.out -covermode=atomic ./...` profile totals 74.4% (root package 81.4%, `internal/wire` 74.3%, `internal/auth` 88.4%, `internal/sm3` 97.5%). CI now enforces a 70% floor with `go tool cover -func` plus `awk` before uploading the profile, so the threshold is a regression floor rather than an acceptance claim. Named risk suites already cover hostile catalog shape/ambiguity, protocol framing/failure, cancel timing, COPY completion, generated-ID capture, listeners, metadata, wrappers and qualified binding; those suites expand with the remaining T-046 boundary cases |
 | T-055 | Scoped V9 live-profile manifest, commands/artifacts and feature-pair acceptance | F-1103 | T-026, T-046 | wip | Manifest/harness slice: [go-driver-live-profile.md](go-driver-live-profile.md) defines the profile identity fields, V1–V19 acceptance ledger and no-substitution policy; `live/live_test.go` (build tag `live`) checks startup, mode/wire metadata, one qualified parameter and the version report with optional `live-smoke.json` artifacts; `live/evidence_test.go` captures the qualified catalog rows/columns, builtin shapes, `pg_settings` mode/timezone context, TLS rejection, boundary values and transaction recovery into `evidence-<mode>.json`; the acceptance suites cover catalog/builtins, transactions, prepared/named queries, COPY IN, cursors, binary parameters, arrays, metadata, lifecycle, boundaries, routines/OUT, generated IDs and cancellation in all four modes. The 2026-11-25 run evidences V1–V6, V9, V10, V12, V14 and V16–V19; V7 is partial (only SCRAM enabled), V8 is blocked by the missing TLS listener, and V11/V13/V15 are out of this profile's scope, so no profile is accepted. Credentials stay env-only. Remaining: a TLS-enabled deployment and the additional enabled auth methods before acceptance |
-| T-056 | Future binary COPY import complete/abort/ownership contract (P2) | F-705 | T-043 | todo | — |
-| T-057 | Future COPY OUT text/binary readers and ownership contract (P2) | F-706 | T-043 | todo | — |
-| T-058 | Future raw COPY stream limits/ownership, no backup promise (P2) | F-707 | T-043 | todo | — |
-| T-059 | Future GSS/SSPI/channel-binding extension profiles (P2) | F-806 | T-006 | todo | — |
+| T-056 | Future binary COPY import complete/abort/ownership contract (P2) | F-705 | T-043 | todo | Formal deferral recorded in section 8: reason, revisit condition and scope boundary; not a release blocker |
+| T-057 | Future COPY OUT text/binary readers and ownership contract (P2) | F-706 | T-043 | todo | Formal deferral recorded in section 8: reason, revisit condition and scope boundary; not a release blocker |
+| T-058 | Future raw COPY stream limits/ownership, no backup promise (P2) | F-707 | T-043 | todo | Formal deferral recorded in section 8: reason, revisit condition and scope boundary; not a release blocker |
+| T-059 | Future GSS/SSPI/channel-binding extension profiles (P2) | F-806 | T-006 | todo | Formal deferral recorded in section 8: reason, revisit condition and scope boundary; not a release blocker |
 
 ### M5 MySQL transport (conditional)
 
@@ -203,11 +203,14 @@ Full procedures/blocking features are in capability matrix section 13. Evidence 
 
 ## 8. Scope Exclusions and Deferrals
 
-Initial PG release excludes V8 (O4/V11/V13), native MySQL (O6/M5), binary COPY/import-export/raw work (T-056/T-057/T-058) and extra auth (T-059). These remain todo backlog requirements, not false done/accepted rows. Other P2 tasks T-003/T-016/T-017/T-044/T-052 can be formally deferred with reason and revisit condition before release. Do not defer an in-scope P0/P1 proof to close M3.
+Initial PG release excludes V8 (O4/V11/V13), native MySQL (O6/M5), binary COPY/import-export/raw work (T-056/T-057/T-058) and extra auth (T-059). These remain todo backlog requirements, not false done/accepted rows. All other P2 proof tasks are done; the table below records the formal deferrals with their reason and revisit condition. Do not defer an in-scope P0/P1 proof to close M3.
 
 | Formal deferral ID | Reason | Revisit condition |
 |---|---|---|
-| — | No additional formal task deferrals recorded | — |
+| T-056 | Binary COPY import is outside the initial COPY IN contract: completed/aborted blocks, row-count reporting and stream ownership are not part of the released statement shape | revisit when binary COPY enters scope with a capable deployment and a full client contract |
+| T-057 | COPY OUT text/binary readers are outside the initial COPY IN contract and have no released ownership/error contract | revisit when COPY OUT enters the release scope |
+| T-058 | Raw COPY stream limits and ownership are outside the initial contract; the driver makes no backup/restore promise | revisit when raw COPY or backup-adjacent helpers enter scope |
+| T-059 | GSS/SSPI/channel-binding extensions are not enabled on the reference deployment and have no verified transcript | revisit when an enabled deployment offers the method and evidence can be captured |
 
 ## 9. Log
 
