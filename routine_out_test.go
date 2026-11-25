@@ -129,3 +129,37 @@ func TestExecRoutineWithOutputsAssignsTestpeerRow(t *testing.T) {
 		t.Errorf("output = %d, want 3", value)
 	}
 }
+
+func TestAssignOutValueTinyintRanges(t *testing.T) {
+	var signed int8
+	if err := assignOutValue(reflect.ValueOf(&signed).Elem(), int64(127)); err != nil || signed != 127 {
+		t.Errorf("int8 127 = %d, %v", signed, err)
+	}
+	if err := assignOutValue(reflect.ValueOf(&signed).Elem(), int64(128)); err == nil {
+		t.Error("int8 accepted 128")
+	}
+	if err := assignOutValue(reflect.ValueOf(&signed).Elem(), int64(-128)); err != nil || signed != -128 {
+		t.Errorf("int8 -128 = %d, %v", signed, err)
+	}
+	if err := assignOutValue(reflect.ValueOf(&signed).Elem(), int64(-129)); err == nil {
+		t.Error("int8 accepted -129")
+	}
+	var unsigned uint8
+	if err := assignOutValue(reflect.ValueOf(&unsigned).Elem(), int64(255)); err != nil || unsigned != 255 {
+		t.Errorf("uint8 255 = %d, %v", unsigned, err)
+	}
+	if err := assignOutValue(reflect.ValueOf(&unsigned).Elem(), int64(256)); err == nil {
+		t.Error("uint8 accepted 256")
+	}
+	if err := assignOutValue(reflect.ValueOf(&unsigned).Elem(), int64(-1)); err == nil {
+		t.Error("uint8 accepted -1")
+	}
+	var nullable sql.NullInt64
+	if err := assignOutValue(reflect.ValueOf(&nullable).Elem(), nil); err != nil || nullable.Valid {
+		t.Errorf("tinyint NULL = %#v, %v", nullable, err)
+	}
+	if err := assignOutValue(reflect.ValueOf(&nullable).Elem(), int64(127)); err != nil ||
+		!nullable.Valid || nullable.Int64 != 127 {
+		t.Errorf("tinyint scanner = %#v, %v", nullable, err)
+	}
+}
