@@ -93,6 +93,9 @@ const (
 	modeCodecNString
 	// modeCodecBoolBit is SQLServer's boolean bit decoded as bool.
 	modeCodecBoolBit
+	// modeCodecMoney decodes SQLServer's 8-byte money as exact decimal text
+	// scaled by 10^4; the text format already carries that scale.
+	modeCodecMoney
 )
 
 // modeTypeSpec pins the required base length and decode family of a sys type.
@@ -119,6 +122,7 @@ var modeTypeSpecs = map[CompatibilityMode]map[string]modeTypeSpec{
 		"nchar":         {-1, modeCodecNString},
 		"nvarchar":      {-1, modeCodecNString},
 		"bit":           {1, modeCodecBoolBit},
+		pgTypeMoney:     {8, modeCodecMoney},
 	},
 }
 
@@ -248,6 +252,8 @@ func modeTextValue(codec modeCodec, name string, data []byte) (driver.Value, err
 		if flag, ok := modeBitBool(string(data)); ok {
 			return flag, nil
 		}
+	case modeCodecMoney:
+		return string(data), nil
 	}
 	return nil, textConversionError(name, data)
 }
@@ -279,8 +285,26 @@ func modeBinaryValue(codec modeCodec, data []byte) (driver.Value, bool) {
 		return string(data), true
 	case modeCodecBoolBit:
 		return boolBinaryValue(data)
+	case modeCodecMoney:
+		if len(data) == 8 {
+			return moneyValue(binary.BigEndian.Uint64(data)), true
+		}
 	}
 	return nil, false
+}
+
+// moneyValue renders the SQLServer money scale (10^-4) as exact decimal text,
+// using the unsigned magnitude so the full int64 scale stays exact.
+func moneyValue(bits uint64) string {
+	negative := bits&(1<<63) != 0
+	if negative {
+		bits = ^bits + 1
+	}
+	sign := ""
+	if negative {
+		sign = "-"
+	}
+	return sign + strconv.FormatUint(bits/10000, 10) + "." + fmt.Sprintf("%04d", bits%10000)
 }
 
 // modeScanType is the Go type modeTextValue/modeBinaryValue produce.
@@ -294,6 +318,8 @@ func modeScanType(codec modeCodec, format int16) reflect.Type {
 		return reflect.TypeOf([]byte(nil))
 	case modeCodecBoolBit:
 		return reflect.TypeOf(true)
+	case modeCodecMoney:
+		return reflect.TypeOf("")
 	case modeCodecDatetime:
 		if format == 1 {
 			return reflect.TypeOf([]byte(nil))

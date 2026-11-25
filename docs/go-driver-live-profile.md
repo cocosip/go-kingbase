@@ -128,7 +128,7 @@ Binary result payloads were captured for these types: `tinyint` is one signed or
 unsigned byte, `uint4` four bytes, `uint8` eight bytes, `binary`/`varbinary` the
 raw bytes, `bit` one byte, and `datetime` an eight-byte PostgreSQL-epoch
 timestamp that carries the wall-clock text as a session-timezone instant (so the
-driver keeps it opaque); `year` resolves through `int4`. These are profile-behaviour observations, not an
+driver keeps it opaque); `year` resolves through `int4`, and `money` is 4-decimal text with a 10^4-scaled int64 binary payload. These are profile-behaviour observations, not an
 accepted profile.
 
 Still missing for acceptance: the raw catalog query/shape/error capture as an

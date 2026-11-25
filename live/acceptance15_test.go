@@ -113,6 +113,12 @@ func TestLiveModeTypeCodecs(t *testing.T) {
 			got.Format("2006-01-02 15:04:05") != "2024-01-02 03:04:05" {
 			t.Errorf("sqlserver datetime text = %#v, want that wall clock", got)
 		}
+		if got := queryOne("SELECT CAST(1234.56 AS money)"); got != "1234.5600" {
+			t.Errorf("sqlserver money text = %#v, want 1234.5600", got)
+		}
+		if got := preparedOne("SELECT CAST(1234.56 AS money)"); got != "1234.5600" {
+			t.Errorf("sqlserver money binary = %#v, want 1234.5600", got)
+		}
 		if got, ok := queryOne("SELECT CAST('2024-01-02 03:04:05' AS smalldatetime)").(time.Time); !ok ||
 			got.Format("2006-01-02 15:04:05") != "2024-01-02 03:04:00" {
 			t.Errorf("sqlserver smalldatetime = %#v, want minute precision", got)
