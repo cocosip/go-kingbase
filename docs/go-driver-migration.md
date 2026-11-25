@@ -28,7 +28,7 @@ promise parity.
 | `Array` / typed arrays | replace | Use the generic `kingbase.Array[T]` Scanner/Valuer for rectangular text arrays; default results stay opaque text. |
 | `VarChar`, `VarCharMax`, `NVarCharMax`, `NChar` | keep | Compatibility wrappers implement `driver.Valuer`/`sql.Scanner` and keep their text intent through Bind. |
 | `DateTime1` | keep | Wraps `time.Time`; binary/text temporal policy follows the driver's `time.Time` contract. |
-| `CursorString` and refcursor helper | defer | F-506/T-047; no cursor ownership or FETCH/CLOSE promise yet. |
+| `CursorString` and refcursor helper | replace | `kingbase.NewCursor(*sql.Tx, name)` keeps the owning transaction and exposes explicit `Fetch`/`FetchAll`/`Close`; the name is one quoted identifier and never transfers ownership. Automatic routine OUT cursor creation remains deferred with T-037. |
 | `sql.Out`, `ReturnStatus`, routine conveniences | defer | F-501–F-505/T-036/T-037; unsupported forms must return a clear error. |
 | `GetSchema` / DataAdapter-style metadata | not provided | No portable schema-discovery promise; use explicit catalog queries and `ConnectionMetadata`. |
 | Numeric/decimal object | replace | Results are exact decimal `string`; use the caller's decimal Scanner. No hidden float conversion. |
