@@ -13,9 +13,14 @@ import (
 
 const (
 	schemaPGCatalog = "pg_catalog"
+	// schemaSys holds the compatibility-mode types the live V009R001C010
+	// MySQL and SQLServer listeners expose (tinyint, uint4, datetime, binary
+	// and friends). Their codecs are selected by mode, never by bare name.
+	schemaSys = "sys"
 	// Common catalog names are single-sourced because decode, encode, metadata
 	// and target-binding paths all switch on them.
 	pgTypeBool        = "bool"
+	pgTypeTinyint     = "tinyint"
 	pgTypeInt2        = "int2"
 	pgTypeInt4        = "int4"
 	pgTypeInt8        = "int8"
@@ -64,11 +69,85 @@ var (
 	}
 )
 
-// textValue decodes one text-format result value for a catalog type. The
-// boolean reports whether a codec exists; callers fall back to string for
+// modeCodec identifies the verified decode family of one compatibility-mode
+// type. The families come from the live V009R001C010 four-mode run and are
+// selected only by mode plus a verified sys base shape.
+type modeCodec uint8
+
+const (
+	// modeCodecTinyint is a signed 1-byte integer decoded as int64.
+	modeCodecTinyint modeCodec = iota
+	// modeCodecUTinyint is SQLServer's unsigned 1-byte integer decoded as int64.
+	modeCodecUTinyint
+	// modeCodecUint4 is MySQL's unsigned 4-byte integer decoded as int64.
+	modeCodecUint4
+	// modeCodecUint8 is MySQL's unsigned 8-byte integer kept as exact decimal
+	// text so the full uint64 range survives.
+	modeCodecUint8
+	// modeCodecDatetime is a wall-clock datetime decoded as time.Time in the
+	// text format only; its binary payload is session-timezone dependent.
+	modeCodecDatetime
+	// modeCodecBytes is binary/varbinary decoded as []byte.
+	modeCodecBytes
+	// modeCodecNString is nchar/nvarchar decoded as string.
+	modeCodecNString
+	// modeCodecBoolBit is SQLServer's boolean bit decoded as bool.
+	modeCodecBoolBit
+)
+
+// modeTypeSpec pins the required base length and decode family of a sys type.
+type modeTypeSpec struct {
+	length int16
+	codec  modeCodec
+}
+
+var modeTypeSpecs = map[CompatibilityMode]map[string]modeTypeSpec{
+	ModeMySQL: {
+		"tinyint":   {1, modeCodecTinyint},
+		"uint4":     {4, modeCodecUint4},
+		"uint8":     {8, modeCodecUint8},
+		"datetime":  {8, modeCodecDatetime},
+		"binary":    {-1, modeCodecBytes},
+		"varbinary": {-1, modeCodecBytes},
+	},
+	ModeSQLServer: {
+		"tinyint":       {1, modeCodecUTinyint},
+		"datetime":      {8, modeCodecDatetime},
+		"smalldatetime": {8, modeCodecDatetime},
+		"binary":        {-1, modeCodecBytes},
+		"varbinary":     {-1, modeCodecBytes},
+		"nchar":         {-1, modeCodecNString},
+		"nvarchar":      {-1, modeCodecNString},
+		"bit":           {1, modeCodecBoolBit},
+	},
+}
+
+// modeTypeSpecFor returns the verified spec for a sys type in this mode.
+func modeTypeSpecFor(mode CompatibilityMode, schema, name string) (modeTypeSpec, bool) {
+	if schema != schemaSys {
+		return modeTypeSpec{}, false
+	}
+	specs, ok := modeTypeSpecs[mode]
+	if !ok {
+		return modeTypeSpec{}, false
+	}
+	spec, ok := specs[name]
+	return spec, ok
+}
+
+// textValue decodes one text-format result value for a verified catalog type.
+// The boolean reports whether a codec exists; callers fall back to string for
 // unknown types so unknown OIDs never fail a query. A known type whose value
 // cannot be represented returns ErrValueConversion.
-func textValue(schema, name string, data []byte) (driver.Value, bool, error) {
+func textValue(mode CompatibilityMode, schema, name string, data []byte) (driver.Value, bool, error) {
+	if schema == schemaSys {
+		spec, ok := modeTypeSpecFor(mode, schema, name)
+		if !ok {
+			return nil, false, nil
+		}
+		value, err := modeTextValue(spec.codec, name, data)
+		return value, true, err
+	}
 	if schema != schemaPGCatalog {
 		return nil, false, nil
 	}
@@ -80,6 +159,11 @@ func textValue(schema, name string, data []byte) (driver.Value, bool, error) {
 		return nil, true, textConversionError(name, data)
 	case pgTypeInt2, pgTypeInt4, pgTypeInt8, pgTypeOid, pgTypeXid, pgTypeCid:
 		if value, err := strconv.ParseInt(string(data), 10, 64); err == nil {
+			return value, true, nil
+		}
+		return nil, true, textConversionError(name, data)
+	case pgTypeTinyint:
+		if value, ok := parseSignedText(data, math.MinInt8, math.MaxInt8); ok {
 			return value, true, nil
 		}
 		return nil, true, textConversionError(name, data)
@@ -127,10 +211,131 @@ func opaqueScanType(format int16) reflect.Type {
 	return reflect.TypeOf("")
 }
 
+// modeTextValue decodes a verified sys-type text value. A malformed value is a
+// typed conversion error, never a silent zero or a fabricated instant.
+func modeTextValue(codec modeCodec, name string, data []byte) (driver.Value, error) {
+	switch codec {
+	case modeCodecTinyint:
+		if value, ok := parseSignedText(data, math.MinInt8, math.MaxInt8); ok {
+			return value, nil
+		}
+	case modeCodecUTinyint:
+		if value, ok := parseSignedText(data, 0, math.MaxUint8); ok {
+			return value, nil
+		}
+	case modeCodecUint4:
+		if value, ok := parseSignedText(data, 0, math.MaxUint32); ok {
+			return value, nil
+		}
+	case modeCodecUint8:
+		if _, err := strconv.ParseUint(string(data), 10, 64); err == nil {
+			return string(data), nil
+		}
+	case modeCodecDatetime:
+		if value, err := parseTimestamp(string(data)); err == nil {
+			return value, nil
+		}
+	case modeCodecBytes:
+		if len(data) >= 2 && data[0] == '0' && (data[1] == 'x' || data[1] == 'X') {
+			decoded := make([]byte, hex.DecodedLen(len(data)-2))
+			if _, err := hex.Decode(decoded, data[2:]); err == nil {
+				return decoded, nil
+			}
+		}
+	case modeCodecNString:
+		return string(data), nil
+	case modeCodecBoolBit:
+		if flag, ok := modeBitBool(string(data)); ok {
+			return flag, nil
+		}
+	}
+	return nil, textConversionError(name, data)
+}
+
+// modeBinaryValue decodes a verified sys-type binary payload. The datetime
+// layout is deliberately absent: the listeners encode a wall-clock datetime as
+// a session-timezone instant, so it stays raw bytes.
+func modeBinaryValue(codec modeCodec, data []byte) (driver.Value, bool) {
+	switch codec {
+	case modeCodecTinyint:
+		if len(data) == 1 {
+			return int64(int8(data[0])), true
+		}
+	case modeCodecUTinyint:
+		if len(data) == 1 {
+			return int64(data[0]), true
+		}
+	case modeCodecUint4:
+		if len(data) == 4 {
+			return int64(binary.BigEndian.Uint32(data)), true
+		}
+	case modeCodecUint8:
+		if len(data) == 8 {
+			return strconv.FormatUint(binary.BigEndian.Uint64(data), 10), true
+		}
+	case modeCodecBytes:
+		return append([]byte(nil), data...), true
+	case modeCodecNString:
+		return string(data), true
+	case modeCodecBoolBit:
+		return boolBinaryValue(data)
+	}
+	return nil, false
+}
+
+// modeScanType is the Go type modeTextValue/modeBinaryValue produce.
+func modeScanType(codec modeCodec, format int16) reflect.Type {
+	switch codec {
+	case modeCodecTinyint, modeCodecUTinyint, modeCodecUint4:
+		return reflect.TypeOf(int64(0))
+	case modeCodecUint8, modeCodecNString:
+		return reflect.TypeOf("")
+	case modeCodecBytes:
+		return reflect.TypeOf([]byte(nil))
+	case modeCodecBoolBit:
+		return reflect.TypeOf(true)
+	case modeCodecDatetime:
+		if format == 1 {
+			return reflect.TypeOf([]byte(nil))
+		}
+		return reflect.TypeOf(time.Time{})
+	default:
+		return opaqueScanType(format)
+	}
+}
+
+// parseSignedText parses a strict decimal integer within [low, high].
+func parseSignedText(data []byte, low, high int64) (int64, bool) {
+	value, err := strconv.ParseInt(string(data), 10, 64)
+	if err != nil || value < low || value > high {
+		return 0, false
+	}
+	return value, true
+}
+
+// modeBitBool accepts the SQLServer bit text spelling only.
+func modeBitBool(value string) (bool, bool) {
+	switch value {
+	case "0":
+		return false, true
+	case "1":
+		return true, true
+	default:
+		return false, false
+	}
+}
+
 // scanType reports the Go type the decoder produces for a verified type and
 // wire format. Unsupported binary layouts stay opaque bytes, never the text
 // scan type.
-func scanType(schema, name string, format int16) reflect.Type {
+func scanType(mode CompatibilityMode, schema, name string, format int16) reflect.Type {
+	if schema == schemaSys {
+		spec, ok := modeTypeSpecFor(mode, schema, name)
+		if !ok {
+			return opaqueScanType(format)
+		}
+		return modeScanType(spec.codec, format)
+	}
 	if schema != schemaPGCatalog {
 		return opaqueScanType(format)
 	}
@@ -138,7 +343,7 @@ func scanType(schema, name string, format int16) reflect.Type {
 		switch name {
 		case pgTypeBool:
 			return reflect.TypeOf(true)
-		case pgTypeInt2, pgTypeInt4, pgTypeInt8, pgTypeOid, pgTypeXid, pgTypeCid:
+		case pgTypeInt2, pgTypeInt4, pgTypeInt8, pgTypeOid, pgTypeXid, pgTypeCid, pgTypeTinyint:
 			return reflect.TypeOf(int64(0))
 		case pgTypeFloat4, pgTypeFloat8:
 			return reflect.TypeOf(float64(0))
@@ -156,7 +361,7 @@ func scanType(schema, name string, format int16) reflect.Type {
 	switch name {
 	case pgTypeBool:
 		return reflect.TypeOf(true)
-	case pgTypeInt2, pgTypeInt4, pgTypeInt8, pgTypeOid, pgTypeXid, pgTypeCid:
+	case pgTypeInt2, pgTypeInt4, pgTypeInt8, pgTypeOid, pgTypeXid, pgTypeCid, pgTypeTinyint:
 		return reflect.TypeOf(int64(0))
 	case pgTypeFloat4, pgTypeFloat8:
 		return reflect.TypeOf(float64(0))
@@ -239,13 +444,23 @@ func textConversionError(name string, data []byte) error {
 
 // binaryLayoutKnown reports whether the driver implements this builtin's
 // binary layout. A false decode for a known layout is malformed input, not an
-// unsupported type that may fall back to opaque bytes.
-func binaryLayoutKnown(name string) bool {
+// unsupported type that may fall back to opaque bytes. The compatibility-mode
+// datetime binary payload is session-timezone dependent (the live V009R001C010
+// listeners encode the wall-clock text as a UTC instant), so its layout stays
+// unverified and falls back to raw bytes.
+func binaryLayoutKnown(mode CompatibilityMode, schema, name string) bool {
+	if schema == schemaSys {
+		spec, ok := modeTypeSpecFor(mode, schema, name)
+		return ok && spec.codec != modeCodecDatetime
+	}
+	if schema != schemaPGCatalog {
+		return false
+	}
 	switch name {
-	case pgTypeBool, pgTypeInt2, pgTypeInt4, pgTypeInt8, pgTypeOid, pgTypeXid, pgTypeCid, pgTypeFloat4, pgTypeFloat8,
-		pgTypeText, pgTypeVarchar, pgTypeBpchar, pgTypeChar, pgTypeName, pgTypeUnknown, pgTypeBytea, pgTypeJSON,
-		pgTypeJSONB, pgTypeUUID, pgTypeDate, pgTypeTimestamp, pgTypeTimestamptz, pgTypeNumeric, pgTypeTime, pgTypeTimetz,
-		pgTypeInet, pgTypeCidr, pgTypeInterval, pgTypeXML, pgTypeBit, pgTypeVarbit:
+	case pgTypeBool, pgTypeInt2, pgTypeInt4, pgTypeInt8, pgTypeTinyint, pgTypeOid, pgTypeXid, pgTypeCid, pgTypeFloat4,
+		pgTypeFloat8, pgTypeText, pgTypeVarchar, pgTypeBpchar, pgTypeChar, pgTypeName, pgTypeUnknown, pgTypeBytea,
+		pgTypeJSON, pgTypeJSONB, pgTypeUUID, pgTypeDate, pgTypeTimestamp, pgTypeTimestamptz, pgTypeNumeric, pgTypeTime,
+		pgTypeTimetz, pgTypeInet, pgTypeCidr, pgTypeInterval, pgTypeXML, pgTypeBit, pgTypeVarbit:
 		return true
 	default:
 		return false
@@ -296,13 +511,30 @@ func textBinaryValue(name string, data []byte) (driver.Value, bool) {
 // binaryValue decodes one binary-format result value for a catalog type. The
 // boolean reports whether a codec exists; callers fall back to the raw bytes so
 // an unverified binary layout is never misparsed.
-func binaryValue(schema, name string, data []byte) (driver.Value, bool) {
+func binaryValue(mode CompatibilityMode, schema, name string, data []byte) (driver.Value, bool) {
+	if schema == schemaSys {
+		spec, ok := modeTypeSpecFor(mode, schema, name)
+		if !ok {
+			return nil, false
+		}
+		return modeBinaryValue(spec.codec, data)
+	}
 	if schema != schemaPGCatalog {
 		return nil, false
 	}
+	return binaryPGValue(name, data)
+}
+
+// binaryPGValue decodes a pg_catalog binary layout. The compatibility-mode
+// layouts live in modeBinaryValue.
+func binaryPGValue(name string, data []byte) (driver.Value, bool) {
 	switch name {
 	case pgTypeBool:
 		return boolBinaryValue(data)
+	case pgTypeTinyint:
+		if len(data) == 1 {
+			return int64(int8(data[0])), true
+		}
 	case pgTypeInt2:
 		if len(data) == 2 {
 			return int64(int16(binary.BigEndian.Uint16(data))), true
@@ -410,6 +642,7 @@ var builtinShapes = map[string]struct {
 	length int16
 }{
 	"bool":         {'b', 1},
+	pgTypeTinyint:  {'b', 1},
 	"bytea":        {'b', -1},
 	"char":         {'b', 1},
 	pgTypeName:     {'b', 64},
@@ -451,19 +684,26 @@ func validBuiltinShape(info typeInfo) bool {
 	return ok && info.kind == shape.kind && info.length == shape.length
 }
 
-// codecName returns the qualified builtin identity that may select a codec:
-// the pg_catalog namespace plus a verified base shape. Same-named user types,
-// non-base entries and mismatched lengths stay opaque even when their bare
-// names match a builtin.
+// codecName returns the qualified identity that may select a codec: the
+// pg_catalog namespace plus a verified base shape, or a sys identity verified
+// for this compatibility mode. Same-named user types, non-base entries and
+// mismatched lengths stay opaque even when their bare names match a builtin.
 func (c *conn) codecName(oid uint32) (schema, name string, ok bool) {
 	info, found := c.catalogIdentity(oid)
-	if !found || info.kind != 'b' || info.schema != schemaPGCatalog || info.name == "" {
-		return "", "", false
-	}
-	if !validBuiltinShape(info) {
+	if !found || info.kind != 'b' || info.name == "" {
 		return "", "", false
 	}
 	if c.catalog.ambiguousIdentity(info) {
+		return "", "", false
+	}
+	if info.schema != schemaPGCatalog {
+		spec, verified := modeTypeSpecFor(c.mode, info.schema, info.name)
+		if !verified || info.length != spec.length {
+			return "", "", false
+		}
+		return info.schema, info.name, true
+	}
+	if !validBuiltinShape(info) {
 		return "", "", false
 	}
 	return info.schema, info.name, true

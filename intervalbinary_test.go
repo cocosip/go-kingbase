@@ -57,10 +57,10 @@ func TestIntervalBinaryRejectsMalformedLayout(t *testing.T) {
 }
 
 func TestIntervalBinaryMetadata(t *testing.T) {
-	if !binaryLayoutKnown(pgTypeInterval) {
+	if !binaryLayoutKnown(ModePG, schemaPGCatalog, pgTypeInterval) {
 		t.Fatal("interval binary layout is not known")
 	}
-	if got := scanType(schemaPGCatalog, pgTypeInterval, 1); got != reflect.TypeOf("") {
+	if got := scanType(ModePG, schemaPGCatalog, pgTypeInterval, 1); got != reflect.TypeOf("") {
 		t.Errorf("interval binary scan type = %v, want string", got)
 	}
 }

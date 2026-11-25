@@ -195,3 +195,76 @@ func TestCommitOnRetiredConnection(t *testing.T) {
 		t.Fatalf("Commit error = %v, want driver.ErrBadConn", err)
 	}
 }
+
+func TestTransactionVerbFollowsMode(t *testing.T) {
+	for _, mode := range []CompatibilityMode{ModeAuto, ModePG, ModeOracle, ModeMySQL} {
+		if got := transactionVerb(mode, "COMMIT"); got != "COMMIT" {
+			t.Errorf("%s commit verb = %q, want COMMIT", mode, got)
+		}
+	}
+	if got := transactionVerb(ModeSQLServer, "COMMIT"); got != "COMMIT TRANSACTION" {
+		t.Errorf("SQLServer commit verb = %q", got)
+	}
+	if got := transactionVerb(ModeSQLServer, "ROLLBACK"); got != "ROLLBACK TRANSACTION" {
+		t.Errorf("SQLServer rollback verb = %q", got)
+	}
+}
+
+// TestSQLServerTransactionVerbs pins the mode-specific terminal verbs on the
+// wire; the live listener rejects a bare COMMIT/ROLLBACK in this mode.
+func TestSQLServerTransactionVerbs(t *testing.T) {
+	want := []string{"BEGIN TRANSACTION", "COMMIT TRANSACTION", "BEGIN TRANSACTION", "ROLLBACK TRANSACTION"}
+	tags := []string{"BEGIN", "COMMIT", "BEGIN", "ROLLBACK"}
+	srv := testpeer.Start(t, func(peer *testpeer.Conn) {
+		peer.SetModeReport(ModeSQLServer.String())
+		if !startupOK(peer) {
+			return
+		}
+		for i, statement := range want {
+			payload, ok := expectMessage(peer, wire.MsgQuery)
+			if !ok {
+				return
+			}
+			sql, err := wire.DecodeQuery(payload)
+			if err != nil || sql != statement {
+				peer.Errorf("statement %d = %q, err %v, want %q", i, sql, err, statement)
+				return
+			}
+			status := byte(wire.StatusInTransaction)
+			if i%2 == 1 {
+				status = byte(wire.StatusIdle)
+			}
+			if err := peer.CommandComplete(tags[i]); err != nil {
+				peer.Errorf("CommandComplete: %v", err)
+				return
+			}
+			if err := peer.ReadyForQuery(status); err != nil {
+				peer.Errorf("ReadyForQuery: %v", err)
+				return
+			}
+		}
+		waitTerminate(peer)
+	})
+	physical, err := connectPeer(t, srv, "")
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	defer func() { _ = physical.Close() }()
+	if physical.mode != ModeSQLServer {
+		t.Fatalf("mode = %s, want sqlserver", physical.mode)
+	}
+	txn, err := physical.BeginTx(context.Background(), driver.TxOptions{})
+	if err != nil {
+		t.Fatalf("BeginTx: %v", err)
+	}
+	if err := txn.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+	txn, err = physical.BeginTx(context.Background(), driver.TxOptions{})
+	if err != nil {
+		t.Fatalf("BeginTx 2: %v", err)
+	}
+	if err := txn.Rollback(); err != nil {
+		t.Fatalf("Rollback: %v", err)
+	}
+}

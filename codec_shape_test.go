@@ -14,7 +14,7 @@ func TestBuiltinShapeMismatchDisablesCodec(t *testing.T) {
 		{"unknown name", typeInfo{schema: schemaPGCatalog, name: "not_builtin", kind: 'b', length: 4}, false},
 		{"varchar variable length", typeInfo{schema: schemaPGCatalog, name: "varchar", kind: 'b', length: -1}, true},
 		{"varchar fixed length", typeInfo{schema: schemaPGCatalog, name: "varchar", kind: 'b', length: 4}, false},
-		{"bit variable length", typeInfo{schema: schemaPGCatalog, name: "bit", kind: 'b', length: -1}, true},
+		{"bit variable length", typeInfo{schema: schemaPGCatalog, name: pgTypeBit, kind: 'b', length: -1}, true},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {

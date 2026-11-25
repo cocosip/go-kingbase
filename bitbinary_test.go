@@ -38,13 +38,13 @@ func TestBitBinaryMatchesText(t *testing.T) {
 		}
 	}
 	for _, name := range []string{pgTypeBit, pgTypeVarbit} {
-		if text, ok, err := textValue(schemaPGCatalog, name, []byte("10101")); err != nil || !ok || text != "10101" {
+		if text, ok, err := textValue(ModePG, schemaPGCatalog, name, []byte("10101")); err != nil || !ok || text != "10101" {
 			t.Errorf("%s text = %#v, %v, %v", name, text, ok, err)
 		}
-		if !binaryLayoutKnown(name) {
+		if !binaryLayoutKnown(ModePG, schemaPGCatalog, name) {
 			t.Errorf("%s binary layout is not known", name)
 		}
-		if got := scanType(schemaPGCatalog, name, 1); got != reflect.TypeOf("") {
+		if got := scanType(ModePG, schemaPGCatalog, name, 1); got != reflect.TypeOf("") {
 			t.Errorf("%s binary scan type = %v, want string", name, got)
 		}
 	}

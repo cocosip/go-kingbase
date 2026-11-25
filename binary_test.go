@@ -67,7 +67,7 @@ func TestBinaryValueCodecs(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.typ, func(t *testing.T) {
-			got, ok := binaryValue(schemaPGCatalog, tc.typ, tc.data)
+			got, ok := binaryValue(ModePG, schemaPGCatalog, tc.typ, tc.data)
 			if ok != tc.exists {
 				t.Fatalf("binaryValue(%s) exists = %v, want %v", tc.typ, ok, tc.exists)
 			}

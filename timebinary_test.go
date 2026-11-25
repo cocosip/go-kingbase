@@ -80,10 +80,10 @@ func TestTimeBinaryMalformedAndMetadata(t *testing.T) {
 		t.Error("short timetz accepted")
 	}
 	for _, name := range []string{pgTypeTime, pgTypeTimetz} {
-		if !binaryLayoutKnown(name) {
+		if !binaryLayoutKnown(ModePG, schemaPGCatalog, name) {
 			t.Errorf("%s binary layout is not known", name)
 		}
-		if got := scanType(schemaPGCatalog, name, 1); got != reflect.TypeOf("") {
+		if got := scanType(ModePG, schemaPGCatalog, name, 1); got != reflect.TypeOf("") {
 			t.Errorf("%s binary scan type = %v, want string", name, got)
 		}
 	}

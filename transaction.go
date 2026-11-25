@@ -74,15 +74,25 @@ type tx struct {
 
 var _ driver.Tx = (*tx)(nil)
 
+// transactionVerb renders a terminal transaction word for the mode. The live
+// V009R001C010 SQLServer-mode listener rejects a bare COMMIT/ROLLBACK, so that
+// profile uses the TRANSACTION form.
+func transactionVerb(mode CompatibilityMode, verb string) string {
+	if mode == ModeSQLServer {
+		return verb + " TRANSACTION"
+	}
+	return verb
+}
+
 // Commit commits the transaction. A retired connection is reported as
 // ErrBadConn without replaying the COMMIT, since no statement was attempted.
 func (t *tx) Commit() error {
-	return t.conn.finishTransaction("COMMIT")
+	return t.conn.finishTransaction(transactionVerb(t.conn.mode, "COMMIT"))
 }
 
 // Rollback rolls the transaction back.
 func (t *tx) Rollback() error {
-	return t.conn.finishTransaction("ROLLBACK")
+	return t.conn.finishTransaction(transactionVerb(t.conn.mode, "ROLLBACK"))
 }
 
 func (c *conn) finishTransaction(command string) error {

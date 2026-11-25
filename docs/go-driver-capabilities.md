@@ -65,15 +65,15 @@ DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup excha
 | ID | Capability | Priority | Verification | Notes | Impl | Offline | Live |
 |---|---|---|---|---|---|---|---|
 | F-301 | Core scalar types | P0 | both | bool/int/float/numeric/text/bytea/date/time/timestamp/interval/uuid/json/xml/inet; standard driver values; text/binary parity for implemented formats; unknown binary remains bytes | done | done | pending |
-| F-302 | Mode-specific codecs | P0 | both | tinyint/smallint/int/bigint/real/float/bit/datetime/year/money/binary/varbinary/nchar/nvarchar/longtext family/blob/uint4/uint8; verified qualified identity/range; standard values per Architecture 7.1 | todo | pending | pending |
-| F-303 | Mode semantics at standard value boundary | P0 | both | tinyint range checked then int64; boolean BIT bool/nil; date time.Time, time text, datetime time.Time | wip | pending | pending |
+| F-302 | Mode-specific codecs | P0 | both | tinyint/smallint/int/bigint/real/float/bit/datetime/year/money/binary/varbinary/nchar/nvarchar/longtext family/blob/uint4/uint8; verified qualified identity/range; standard values per Architecture 7.1. MySQL tinyint int64 text/binary, uint4 int64, uint8 exact decimal text/binary, datetime wall-clock time.Time text, binary/varbinary []byte, nchar/nvarchar string, SQLServer bit bool; remaining MySQL bit stays opaque | wip | wip | pending |
+| F-303 | Mode semantics at standard value boundary | P0 | both | tinyint range checked then int64 (signed Oracle/MySQL, unsigned SQLServer); SQLServer boolean BIT bool; date time.Time, time text, datetime time.Time in text; datetime binary stays opaque because the listener encodes a session-timezone instant | wip | pending | pending |
 | F-304 | Array/domain/composite contracts | P1 | both | Validated links; opaque default text; explicit Array Scanner/Valuer for rectangular 1-D/multi-D, empty/NULL arrays and NULL elements; dimensions/lower bounds preserved; bounded recursion | done | done | pending |
 | F-305 | Binary parameters/results and text option | P1 | both | Verified type/format only; disable_prepared_binary_result parity; no unconditional bytea target | done | done | pending |
 | F-306 | Timezone and temporal meaning | P0 | both | Date/wall time distinct from instants; session zone/DST/precision; no implicit shift | wip | pending | pending |
 | F-307 | Actual uppercase DatabaseTypeName | P1 | both | Backend/catalog name without length; no unified PG relabel; absent OID empty | done | done | pending |
 | F-308 | Honest column metadata | P1 | both | Nullable known/unknown ok flags; outer joins/expressions; real ScanType, byte/character lengths and precision | done | done | pending |
-| F-309 | YEAR standard value | P1 | both | int64 for validated live forms; reject malformed/truncated/overflow input | todo | pending | pending |
-| F-310 | Numeric/temporal conversion boundaries | P0 | both | Full uint64/decimal/NaN/infinity/zero/BC/precision/negative-time/DST/locale cases; no truncation | wip | pending | pending |
+| F-309 | YEAR standard value | P1 | both | int64 for validated live forms; malformed/truncated/overflow input rejected by the server domain; MySQL-mode live YYYY/YYYY-MM-DD forms pass through the validated int4 domain link | done | done | pending |
+| F-310 | Numeric/temporal conversion boundaries | P0 | both | Full uint64/decimal/NaN/infinity/zero/BC/precision/negative-time/DST/locale cases; no truncation. MySQL uint4 checks the 32-bit bound and uint8 stays exact text up to 2^64-1 | wip | pending | pending |
 
 ## 5. Execution and Binding
 
@@ -113,7 +113,7 @@ DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup excha
 
 | ID | Capability | Priority | Verification | Notes | Impl | Offline | Live |
 |---|---|---|---|---|---|---|---|
-| F-701 | TxOptions and transaction lifecycle | P0 | both | LevelDefault, four explicit levels, unsupported error, ReadOnly, commit/rollback/cancel recovery | done | done | pending |
+| F-701 | TxOptions and transaction lifecycle | P0 | both | LevelDefault, four explicit levels, unsupported error, ReadOnly, commit/rollback/cancel recovery; SQLServer mode uses BEGIN/COMMIT/ROLLBACK TRANSACTION because the live listener rejects the bare verbs | done | done | pending |
 | F-702 | CopyIn/CopyInSchema text import | P1 | both | Statement-string helpers; Tx.Prepare/Exec/flush/Close; identifiers, NULL/escaping, completion/trailing errors | done | done | pending |
 | F-703 | LISTEN/NOTIFY | P2 | both | Async parsing; bounded 256-message queue, overflow gap/reconnect, no replay, nil gap marker | done | done | pending |
 | F-704 | NOTICE/WARNING callbacks | P2 | both | Default discard; no stderr, same-connection reentrancy forbidden | done | done | pending |

@@ -51,7 +51,7 @@ func TestNumericBinaryMatchesText(t *testing.T) {
 		if !ok || got != testCase.want {
 			t.Errorf("%s: numericBinaryValue = %q, %v, want %q", testCase.name, got, ok, testCase.want)
 		}
-		value, ok := binaryValue(schemaPGCatalog, pgTypeNumeric, data)
+		value, ok := binaryValue(ModePG, schemaPGCatalog, pgTypeNumeric, data)
 		if !ok || value != testCase.want {
 			t.Errorf("%s: binaryValue = %#v, %v, want %q", testCase.name, value, ok, testCase.want)
 		}
@@ -72,7 +72,7 @@ func TestNumericBinaryRejectsMalformedLayout(t *testing.T) {
 		if value, ok := numericBinaryValue(data); ok {
 			t.Errorf("%s: numericBinaryValue = %q, true, want false", name, value)
 		}
-		decoder := typeDecoder(schemaPGCatalog, pgTypeNumeric, 1)
+		decoder := typeDecoder(ModePG, schemaPGCatalog, pgTypeNumeric, 1)
 		if _, err := decoder(data); !errors.Is(err, ErrValueConversion) {
 			t.Errorf("%s: typeDecoder error = %v, want ErrValueConversion", name, err)
 		}
@@ -80,10 +80,10 @@ func TestNumericBinaryRejectsMalformedLayout(t *testing.T) {
 }
 
 func TestNumericBinaryMetadata(t *testing.T) {
-	if !binaryLayoutKnown(pgTypeNumeric) {
+	if !binaryLayoutKnown(ModePG, schemaPGCatalog, pgTypeNumeric) {
 		t.Fatal("numeric binary layout is not known")
 	}
-	if got := scanType(schemaPGCatalog, pgTypeNumeric, 1); got != reflect.TypeOf("") {
+	if got := scanType(ModePG, schemaPGCatalog, pgTypeNumeric, 1); got != reflect.TypeOf("") {
 		t.Errorf("numeric binary scan type = %v, want string", got)
 	}
 }

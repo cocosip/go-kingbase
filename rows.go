@@ -73,8 +73,8 @@ func (r *rows) resetColumns(columns []wire.ColumnDescription) {
 			r.decoders[i] = unknownTypeDecoder(column.Format)
 			continue
 		}
-		r.scanTypes[i] = scanType(schema, name, column.Format)
-		r.decoders[i] = typeDecoder(schema, name, column.Format)
+		r.scanTypes[i] = scanType(r.conn.mode, schema, name, column.Format)
+		r.decoders[i] = typeDecoder(r.conn.mode, schema, name, column.Format)
 	}
 }
 
@@ -85,18 +85,18 @@ func unknownTypeDecoder(format int16) func([]byte) (driver.Value, error) {
 }
 
 // typeDecoder builds the per-column decoder for a verified catalog type.
-func typeDecoder(schema, name string, format int16) func([]byte) (driver.Value, error) {
+func typeDecoder(mode CompatibilityMode, schema, name string, format int16) func([]byte) (driver.Value, error) {
 	if format == 1 {
 		return func(data []byte) (driver.Value, error) {
-			if value, ok := binaryValue(schema, name, data); ok {
+			if value, ok := binaryValue(mode, schema, name, data); ok {
 				return value, nil
 			}
-			if binaryLayoutKnown(name) {
+			if binaryLayoutKnown(mode, schema, name) {
 				return nil, fmt.Errorf("%w: malformed %s binary value", ErrValueConversion, name)
 			}
-			// Unverified binary layouts (macaddr, xml, ...) stay raw bytes;
-			// ponytail: add codecs when their wire layout is proven, and never
-			// guess a layout from the type name alone.
+			// Unverified binary layouts (macaddr, xml, mode datetime, ...) stay
+			// raw bytes; ponytail: add codecs when their wire layout is proven,
+			// and never guess a layout from the type name alone.
 			return append([]byte(nil), data...), nil
 		}
 	}
@@ -104,7 +104,7 @@ func typeDecoder(schema, name string, format int16) func([]byte) (driver.Value, 
 		return unknownTypeDecoder(format)
 	}
 	return func(data []byte) (driver.Value, error) {
-		if value, ok, err := textValue(schema, name, data); ok {
+		if value, ok, err := textValue(mode, schema, name, data); ok {
 			return value, err
 		}
 		return string(data), nil

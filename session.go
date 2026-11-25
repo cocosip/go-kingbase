@@ -22,7 +22,7 @@ func (c *conn) ResetSession(ctx context.Context) error {
 	if c.txStatus == wire.StatusIdle {
 		return nil
 	}
-	if _, err := c.ExecContext(ctx, "ROLLBACK", nil); err != nil {
+	if _, err := c.ExecContext(ctx, transactionVerb(c.mode, "ROLLBACK"), nil); err != nil {
 		// A refusal from a notice handler happened before anything was sent and
 		// leaves the connection untouched; retiring it would lose a healthy
 		// session the handler was only inspecting.

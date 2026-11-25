@@ -186,7 +186,7 @@ func TestCatalogBrokenDomainLinksStayOpaque(t *testing.T) {
 		{Name: "missing", TypeOID: 70032, TypeLen: 4, TypeMod: -1, Format: 0},
 		{Name: "int", TypeOID: 70033, TypeLen: 4, TypeMod: -1, Format: 0},
 		{Name: "year", TypeOID: 70034, TypeLen: 2, TypeMod: -1, Format: 0},
-		{Name: "bit", TypeOID: 70035, TypeLen: 1, TypeMod: -1, Format: 0},
+		{Name: pgTypeBit, TypeOID: 70035, TypeLen: 1, TypeMod: -1, Format: 0},
 	}
 	row := [][]byte{[]byte("5"), []byte("5"), []byte("5"), []byte("5"), []byte("5")}
 	srv := testpeer.Start(t, func(peer *testpeer.Conn) {
