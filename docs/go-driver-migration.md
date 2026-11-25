@@ -59,6 +59,7 @@ The examples compile with the module and show the supported surface:
 | [`examples/basic`](../examples/basic/main.go) | open/ping, qualified int8 parameter, text-array scan |
 | [`examples/transaction`](../examples/transaction/main.go) | explicit transaction, Exec, RowsAffected, rollback |
 | [`examples/copyin`](../examples/copyin/main.go) | statement-shaped COPY IN on a pinned transaction |
+| [`examples/cursor`](../examples/cursor/main.go) | explicit refcursor fetch/close on its owning transaction |
 | [`examples/listener`](../examples/listener/main.go) | pull-driven LISTEN/NOTIFY and gap handling |
 | [`examples/metadata`](../examples/metadata/main.go) | per-connection `ServerMetadata` |
 
