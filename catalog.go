@@ -68,16 +68,21 @@ type typeCatalog struct {
 	// names holds unqualified identities from a two-column fallback; codecs and
 	// metadata must not consume them as verified builtin identities.
 	names map[uint32]string
+	// ambiguous holds qualified identities that appeared more than once, so no
+	// single OID may claim a builtin codec or verified shape for that name.
+	ambiguous map[string]struct{}
 }
 
-// nameOnly returns an unqualified name from a two-column fallback catalog.
-func (c *typeCatalog) nameOnly(oid uint32) (string, bool) {
-	name, ok := c.names[oid]
-	return name, ok
-}
+const (
+	maxCatalogOID    = int64(^uint32(0))
+	minCatalogLength = -1 << 15 // int16 representability; shape is not interpreted
+	maxCatalogLength = int64(^uint16(0) >> 1)
+)
 
 // resolve returns the catalog entry for a type OID, following domains to their
-// base type so callers also see its length and kind.
+// base type so callers also see its length and kind. Broken or cyclic domain
+// links resolve to nothing so codecs fall back to the safe opaque
+// representation instead of guessing; display identity is still available.
 func (c *typeCatalog) resolve(oid uint32) (typeInfo, bool) {
 	for depth := 0; depth < maxDomainDepth; depth++ {
 		info, found := c.byOID[oid]
@@ -90,6 +95,39 @@ func (c *typeCatalog) resolve(oid uint32) (typeInfo, bool) {
 		oid = info.baseOID
 	}
 	return typeInfo{}, false
+}
+
+func catalogNameKey(info typeInfo) string {
+	return info.schema + "\x00" + info.name
+}
+
+// ambiguousIdentity reports whether more than one OID claimed this qualified
+// name. The name is still honest for display, but no shape or codec may be
+// selected from it.
+func (c *typeCatalog) ambiguousIdentity(info typeInfo) bool {
+	_, ambiguous := c.ambiguous[catalogNameKey(info)]
+	return ambiguous
+}
+
+// nameOnly returns an unqualified name from a two-column fallback catalog.
+func (c *typeCatalog) nameOnly(oid uint32) (string, bool) {
+	name, ok := c.names[oid]
+	return name, ok
+}
+
+// markAmbiguousNames records duplicate qualified identities. A catalog that
+// names two OIDs the same way cannot prove which one owns a builtin codec.
+func (c *typeCatalog) markAmbiguousNames() {
+	c.ambiguous = make(map[string]struct{})
+	seen := make(map[string]uint32, len(c.byOID))
+	for oid, info := range c.byOID {
+		key := catalogNameKey(info)
+		if _, duplicate := seen[key]; duplicate {
+			c.ambiguous[key] = struct{}{}
+			continue
+		}
+		seen[key] = oid
+	}
 }
 
 // loadCatalog reads the server type namespace inside the connection budget.
@@ -136,6 +174,7 @@ func (c *conn) loadCatalog(ctx context.Context) error {
 // useCatalog publishes the catalog together with its shape, so callers can tell
 // a verified full catalog from a diagnostic names-only one.
 func (c *conn) useCatalog(catalog *typeCatalog, status CatalogStatus, cause string) error {
+	catalog.markAmbiguousNames()
 	c.catalog = catalog
 	c.catalogStatus = status
 	c.catalogCause = cause
@@ -161,6 +200,9 @@ func (c *conn) probeCatalog(ctx context.Context, catalog *typeCatalog, candidate
 	}
 	if closeErr != nil {
 		return false, false, fmt.Errorf("kingbase: load type catalog: %w", closeErr)
+	}
+	if candidate.full && len(catalog.byOID) == 0 {
+		return false, false, fmt.Errorf("kingbase: load type catalog: %s returned no type rows", candidate.label)
 	}
 	return true, false, nil
 }
@@ -207,35 +249,120 @@ func (c *typeCatalog) fill(rows driver.Rows, full bool) error {
 		if len(c.byOID)+len(c.names) >= maxCatalogTypes {
 			return fmt.Errorf("type catalog exceeds %d entries", maxCatalogTypes)
 		}
-		oid, err := catalogInt(dest[0])
+		oid, err := catalogOID(dest[0])
 		if err != nil {
-			return fmt.Errorf("type catalog has a non-numeric OID: %w", err)
+			return err
 		}
 		if !full {
-			if dest[1] == nil {
-				return fmt.Errorf("type catalog has a NULL type name")
+			if err := c.fillName(dest, oid); err != nil {
+				return err
 			}
-			c.names[uint32(oid)] = catalogString(dest[1])
 			continue
 		}
-		if dest[1] == nil || dest[2] == nil {
-			return fmt.Errorf("type catalog has a NULL namespace or type name")
-		}
-		length, _ := catalogInt(dest[4])
-		base, _ := catalogInt(dest[5])
-		element, _ := catalogInt(dest[6])
-		relation, _ := catalogInt(dest[7])
-		c.byOID[uint32(oid)] = typeInfo{
-			schema:      catalogString(dest[1]),
-			name:        catalogString(dest[2]),
-			kind:        kindByte(catalogString(dest[3])),
-			length:      int16(length),
-			baseOID:     uint32(base),
-			elementOID:  uint32(element),
-			relationOID: uint32(relation),
-			delimiter:   kindByte(catalogString(dest[8])),
+		if err := c.fillType(dest, oid); err != nil {
+			return err
 		}
 	}
+}
+
+// catalogOID parses and range-checks a positive uint32 catalog OID.
+func catalogOID(value driver.Value) (uint32, error) {
+	oid, err := catalogFieldInt(value, "OID")
+	if err != nil {
+		return 0, fmt.Errorf("type catalog has a malformed OID: %w", err)
+	}
+	if oid <= 0 || oid > maxCatalogOID {
+		return 0, fmt.Errorf("type catalog OID %d is outside the uint32 range", oid)
+	}
+	return uint32(oid), nil
+}
+
+// fillName records one unqualified name from the diagnostic-only fallback.
+func (c *typeCatalog) fillName(dest []driver.Value, oid uint32) error {
+	if dest[1] == nil {
+		return fmt.Errorf("type catalog has a NULL type name")
+	}
+	name := catalogString(dest[1])
+	if name == "" {
+		return fmt.Errorf("type catalog has an empty type name")
+	}
+	if _, duplicate := c.names[oid]; duplicate {
+		return fmt.Errorf("type catalog repeats OID %d", oid)
+	}
+	c.names[oid] = name
+	return nil
+}
+
+// fillType validates and records one full-shape catalog row. Structural
+// inconsistencies are rejected instead of truncating a field into a plausible
+// but wrong shape; type-specific required shapes remain live-evidence work.
+func (c *typeCatalog) fillType(dest []driver.Value, oid uint32) error {
+	if dest[1] == nil || dest[2] == nil || dest[3] == nil || dest[8] == nil {
+		return fmt.Errorf("type catalog has a NULL namespace, name, kind or delimiter")
+	}
+	schema, name := catalogString(dest[1]), catalogString(dest[2])
+	kind, delimiter := catalogString(dest[3]), catalogString(dest[8])
+	if schema == "" || name == "" {
+		return fmt.Errorf("type catalog OID %d has an empty namespace or name", oid)
+	}
+	if len(kind) != 1 {
+		return fmt.Errorf("type catalog OID %d has a malformed kind %s", oid, boundedValue(kind))
+	}
+	if len(delimiter) != 1 {
+		return fmt.Errorf("type catalog OID %d has a malformed delimiter %s", oid, boundedValue(delimiter))
+	}
+	length, err := catalogFieldInt(dest[4], "length")
+	if err != nil {
+		return fmt.Errorf("type catalog OID %d: %w", oid, err)
+	}
+	if length < minCatalogLength || length > maxCatalogLength {
+		return fmt.Errorf("type catalog OID %d has an out-of-range length %d", oid, length)
+	}
+	base, err := catalogFieldInt(dest[5], "base type")
+	if err != nil {
+		return fmt.Errorf("type catalog OID %d: %w", oid, err)
+	}
+	element, err := catalogFieldInt(dest[6], "element type")
+	if err != nil {
+		return fmt.Errorf("type catalog OID %d: %w", oid, err)
+	}
+	relation, err := catalogFieldInt(dest[7], "relation")
+	if err != nil {
+		return fmt.Errorf("type catalog OID %d: %w", oid, err)
+	}
+	if base < 0 || base > maxCatalogOID ||
+		element < 0 || element > maxCatalogOID ||
+		relation < 0 || relation > maxCatalogOID {
+		return fmt.Errorf("type catalog OID %d has an out-of-range link (base %d, element %d, relation %d)",
+			oid, base, element, relation)
+	}
+	if _, duplicate := c.byOID[oid]; duplicate {
+		return fmt.Errorf("type catalog repeats OID %d", oid)
+	}
+	c.byOID[oid] = typeInfo{
+		schema:      schema,
+		name:        name,
+		kind:        kind[0],
+		length:      int16(length),
+		baseOID:     uint32(base),
+		elementOID:  uint32(element),
+		relationOID: uint32(relation),
+		delimiter:   delimiter[0],
+	}
+	return nil
+}
+
+// catalogFieldInt parses a required numeric catalog field and reports NULL
+// instead of silently defaulting it to zero.
+func catalogFieldInt(value driver.Value, field string) (int64, error) {
+	if value == nil {
+		return 0, fmt.Errorf("%s is NULL", field)
+	}
+	parsed, err := catalogInt(value)
+	if err != nil {
+		return 0, fmt.Errorf("%s is not a valid integer", field)
+	}
+	return parsed, nil
 }
 
 // catalogInt accepts both the bootstrap text decoding and typed decoding.
@@ -261,11 +388,4 @@ func catalogString(value driver.Value) string {
 	default:
 		return fmt.Sprint(typed)
 	}
-}
-
-func kindByte(kind string) byte {
-	if kind == "" {
-		return 0
-	}
-	return kind[0]
 }

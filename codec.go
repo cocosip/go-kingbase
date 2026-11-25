@@ -250,6 +250,9 @@ func (c *conn) codecName(oid uint32) (schema, name string, ok bool) {
 	if !found || info.kind != 'b' || info.schema != schemaPGCatalog || info.name == "" {
 		return "", "", false
 	}
+	if c.catalog.ambiguousIdentity(info) {
+		return "", "", false
+	}
 	return info.schema, info.name, true
 }
 
@@ -263,12 +266,16 @@ func (c *conn) partialTypeName(oid uint32) (string, bool) {
 }
 
 // typeMetadata returns the resolved catalog entry for a result type, or false
-// when the server did not identify it.
+// when the server did not identify it or its shape is ambiguous.
 func (c *conn) typeMetadata(oid uint32) (typeInfo, bool) {
 	if c.catalog == nil {
 		return typeInfo{}, false
 	}
-	return c.catalog.resolve(oid)
+	info, found := c.catalog.resolve(oid)
+	if !found || c.catalog.ambiguousIdentity(info) {
+		return typeInfo{}, false
+	}
+	return info, true
 }
 
 // typeLabels is the catalog view used by tests and diagnostics.

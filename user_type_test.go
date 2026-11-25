@@ -143,14 +143,14 @@ func TestUserTypesNeverUseBuiltinCodecs(t *testing.T) {
 
 func TestBuiltinIdentityRequiresQualifiedBaseShape(t *testing.T) {
 	extra := [][][]byte{
-		userCatalogRow(70010, "app", testTypeInt4, 'b', 4, 0),
-		userCatalogRow(70011, "pg_catalog", testTypeInt4, 'c', 4, 0),
+		userCatalogRow(70020, "app", testTypeInt4, 'b', 4, 0),
+		userCatalogRow(70011, "pg_catalog", "int4_other", 'c', 4, 0),
 		userCatalogRow(70012, "app", "int4_domain", 'd', 4, 23),
-		userCatalogRow(70013, "app", "user_domain", 'd', 4, 70010),
+		userCatalogRow(70013, "app", "user_domain", 'd', 4, 70020),
 	}
 	columns := []wire.ColumnDescription{
 		{Name: "builtin", TypeOID: 23, TypeLen: 4, TypeMod: -1, Format: 0},
-		{Name: "user", TypeOID: 70010, TypeLen: 4, TypeMod: -1, Format: 0},
+		{Name: "user", TypeOID: 70020, TypeLen: 4, TypeMod: -1, Format: 0},
 		{Name: "wrong_shape", TypeOID: 70011, TypeLen: 4, TypeMod: -1, Format: 0},
 		{Name: "domain", TypeOID: 70012, TypeLen: 4, TypeMod: -1, Format: 0},
 		{Name: "user_domain", TypeOID: 70013, TypeLen: 4, TypeMod: -1, Format: 0},
@@ -173,7 +173,7 @@ func TestBuiltinIdentityRequiresQualifiedBaseShape(t *testing.T) {
 		t.Errorf("app.int4 = %T(%v), want an opaque string", dest[1], dest[1])
 	}
 	if got, ok := dest[2].(string); !ok || got != "7" {
-		t.Errorf("composite pg_catalog.int4 = %T(%v), want an opaque string", dest[2], dest[2])
+		t.Errorf("composite pg_catalog.int4_other = %T(%v), want an opaque string", dest[2], dest[2])
 	}
 	if got, ok := dest[3].(int64); !ok || got != 7 {
 		t.Errorf("domain over int4 = %T(%v), want the verified base decoding", dest[3], dest[3])
@@ -184,7 +184,7 @@ func TestBuiltinIdentityRequiresQualifiedBaseShape(t *testing.T) {
 	if got, ok := dest[5].([]byte); !ok || len(got) != 2 {
 		t.Errorf("pseudo unknown = %T(%v), want opaque bytes", dest[5], dest[5])
 	}
-	wantNames := []string{testTypeInt4, testTypeInt4, testTypeInt4, testTypeInt4, testTypeInt4, "unknown"}
+	wantNames := []string{testTypeInt4, testTypeInt4, "int4_other", testTypeInt4, testTypeInt4, "unknown"}
 	for i, want := range wantNames {
 		if name := typed.ColumnTypeDatabaseTypeName(i); !strings.EqualFold(name, want) {
 			t.Errorf("column %d DatabaseTypeName = %q, want the actual catalog name %q", i, name, want)
@@ -200,14 +200,14 @@ func TestBuiltinIdentityRequiresQualifiedBaseShape(t *testing.T) {
 
 func TestOpaqueScanTypesFollowWireFormat(t *testing.T) {
 	extra := [][][]byte{
-		userCatalogRow(70010, "app", testTypeInt4, 'b', 4, 0),
+		userCatalogRow(70020, "app", testTypeInt4, 'b', 4, 0),
 	}
 	columns := []wire.ColumnDescription{
 		{Name: "unknown_text", TypeOID: 999998, TypeLen: -1, TypeMod: -1, Format: 0},
 		{Name: "unknown_binary", TypeOID: 999999, TypeLen: -1, TypeMod: -1, Format: 1},
 		{Name: "numeric_binary", TypeOID: 1700, TypeLen: -1, TypeMod: -1, Format: 1},
 		{Name: "date_binary", TypeOID: 1082, TypeLen: 4, TypeMod: -1, Format: 1},
-		{Name: "user_binary", TypeOID: 70010, TypeLen: 4, TypeMod: -1, Format: 1},
+		{Name: "user_binary", TypeOID: 70020, TypeLen: 4, TypeMod: -1, Format: 1},
 	}
 	row := [][]byte{
 		[]byte("raw"), {1, 2}, {0, 0, 0, 0}, {0, 0, 0, 1}, {0, 0, 0, 5},
