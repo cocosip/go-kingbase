@@ -147,7 +147,11 @@ func TestModeTypeCodecs(t *testing.T) {
 		{mode: ModeSQLServer, oid: 75020, schema: schemaSys, name: pgTypeBit, length: 1, format: 1, row: []byte{1}, want: true, wantType: boolean},
 		{mode: ModeSQLServer, oid: 75021, schema: schemaSys, name: "nchar", length: -1, row: []byte("ab "), want: "ab ", wantType: text},
 		{mode: ModeSQLServer, oid: 75022, schema: schemaSys, name: "nvarchar", length: -1, format: 1, row: []byte("ab "), want: "ab ", wantType: text},
-		// SQLServer money keeps the text scale and renders the binary scale
+		// MySQL BIT is a bit string, never a boolean: without a verified layout
+		// it stays the exact hex text or raw binary value, so NullBool can never
+		// silently accept it as a boolean.
+		{mode: ModeMySQL, oid: 75040, schema: schemaSys, name: pgTypeBit, length: -1, row: []byte("0x41"), want: "0x41", wantType: text},
+		{mode: ModeMySQL, oid: 75041, schema: schemaSys, name: pgTypeBit, length: -1, format: 1, row: []byte{0x41}, want: []byte{0x41}, wantType: bytesType}, // SQLServer money keeps the text scale and renders the binary scale
 		// exactly as decimal text.
 		{mode: ModeSQLServer, oid: 75030, schema: schemaSys, name: pgTypeMoney, length: 8, row: []byte("1234.5600"), want: "1234.5600", wantType: text},
 		{mode: ModeSQLServer, oid: 75031, schema: schemaSys, name: pgTypeMoney, length: 8, format: 1,
