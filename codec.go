@@ -37,6 +37,8 @@ const (
 	pgTypeTimetz      = "timetz"
 	pgTypeInet        = "inet"
 	pgTypeCidr        = "cidr"
+	pgTypeInterval    = "interval"
+	pgTypeXML         = "xml"
 )
 
 var (
@@ -96,8 +98,8 @@ func textValue(schema, name string, data []byte) (driver.Value, bool, error) {
 			return nil, true, err
 		}
 		return value, true, nil
-	case pgTypeNumeric, "money", pgTypeTime, pgTypeTimetz, "interval", "uuid", "json", "jsonb",
-		"xml", pgTypeInet, pgTypeCidr, "macaddr", "macaddr8", pgTypeText, pgTypeVarchar, pgTypeBpchar,
+	case pgTypeNumeric, "money", pgTypeTime, pgTypeTimetz, pgTypeInterval, "uuid", "json", "jsonb",
+		pgTypeXML, pgTypeInet, pgTypeCidr, "macaddr", "macaddr8", pgTypeText, pgTypeVarchar, pgTypeBpchar,
 		pgTypeChar, "name", "unknown":
 		return string(data), true, nil
 	default:
@@ -131,7 +133,7 @@ func scanType(schema, name string, format int16) reflect.Type {
 		case pgTypeFloat4, pgTypeFloat8:
 			return reflect.TypeOf(float64(0))
 		case pgTypeText, pgTypeVarchar, pgTypeBpchar, pgTypeChar, "name", "unknown", "json", "jsonb", "uuid", pgTypeNumeric,
-			pgTypeTime, pgTypeTimetz, pgTypeInet, pgTypeCidr:
+			pgTypeTime, pgTypeTimetz, pgTypeInet, pgTypeCidr, pgTypeInterval, pgTypeXML:
 			return reflect.TypeOf("")
 		case pgTypeBytea:
 			return reflect.TypeOf([]byte(nil))
@@ -233,7 +235,7 @@ func binaryLayoutKnown(name string) bool {
 	case pgTypeBool, pgTypeInt2, pgTypeInt4, pgTypeInt8, pgTypeOid, pgTypeXid, pgTypeCid, pgTypeFloat4, pgTypeFloat8,
 		pgTypeText, pgTypeVarchar, pgTypeBpchar, pgTypeChar, "name", "unknown", pgTypeBytea, "json",
 		"jsonb", "uuid", pgTypeDate, pgTypeTimestamp, pgTypeTimestamptz, pgTypeNumeric, pgTypeTime, pgTypeTimetz,
-		pgTypeInet, pgTypeCidr:
+		pgTypeInet, pgTypeCidr, pgTypeInterval, pgTypeXML:
 		return true
 	default:
 		return false
@@ -299,7 +301,7 @@ func binaryValue(schema, name string, data []byte) (driver.Value, bool) {
 		return string(data), true
 	case pgTypeBytea:
 		return append([]byte(nil), data...), true
-	case "json":
+	case "json", pgTypeXML:
 		return string(data), true
 	case "jsonb":
 		// A jsonb payload carries a one-byte format version before the text.
@@ -324,6 +326,8 @@ func binaryValue(schema, name string, data []byte) (driver.Value, bool) {
 		return timeOrTimetzValue(name, data)
 	case pgTypeInet, pgTypeCidr:
 		return inetValue(name, data)
+	case pgTypeInterval:
+		return intervalValue(data)
 	case "uuid":
 		return uuidValue(data)
 	}

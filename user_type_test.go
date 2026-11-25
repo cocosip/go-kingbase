@@ -205,7 +205,7 @@ func TestOpaqueScanTypesFollowWireFormat(t *testing.T) {
 	columns := []wire.ColumnDescription{
 		{Name: "unknown_text", TypeOID: 999998, TypeLen: -1, TypeMod: -1, Format: 0},
 		{Name: "unknown_binary", TypeOID: 999999, TypeLen: -1, TypeMod: -1, Format: 1},
-		{Name: "interval_binary", TypeOID: 1186, TypeLen: 16, TypeMod: -1, Format: 1},
+		{Name: "array_binary", TypeOID: 1007, TypeLen: -1, TypeMod: -1, Format: 1},
 		{Name: "date_binary", TypeOID: 1082, TypeLen: 4, TypeMod: -1, Format: 1},
 		{Name: "user_binary", TypeOID: 70020, TypeLen: 4, TypeMod: -1, Format: 1},
 	}
@@ -228,7 +228,7 @@ func TestOpaqueScanTypesFollowWireFormat(t *testing.T) {
 		t.Errorf("unknown binary = %T(%v), want bytes", dest[1], dest[1])
 	}
 	if got, ok := dest[2].([]byte); !ok || len(got) != 4 {
-		t.Errorf("interval binary = %T(%v), want opaque bytes", dest[2], dest[2])
+		t.Errorf("array binary = %T(%v), want opaque bytes", dest[2], dest[2])
 	}
 	if _, ok := dest[3].(time.Time); !ok {
 		t.Errorf("date binary = %T(%v), want time.Time", dest[3], dest[3])
@@ -240,7 +240,7 @@ func TestOpaqueScanTypesFollowWireFormat(t *testing.T) {
 		reflect.TypeOf(""), reflect.TypeOf([]byte(nil)), reflect.TypeOf([]byte(nil)),
 		reflect.TypeOf(time.Time{}), reflect.TypeOf([]byte(nil)),
 	}
-	wantNames := []string{"", "", "interval", pgTypeDate, testTypeInt4}
+	wantNames := []string{"", "", "_int4", pgTypeDate, testTypeInt4}
 	for i := range dest {
 		if got := typed.ColumnTypeScanType(i); got != wantScan[i] {
 			t.Errorf("column %d ScanType = %v, want %v", i, got, wantScan[i])
