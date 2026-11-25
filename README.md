@@ -21,6 +21,7 @@ source of truth for scope and acceptance:
 - [Architecture design](docs/go-driver-architecture-design.md)
 - [Capability matrix](docs/go-driver-capabilities.md)
 - [Development plan and progress](docs/go-driver-development.md)
+- [API migration ledger and examples](docs/go-driver-migration.md)
 
 ## Contract notes
 
