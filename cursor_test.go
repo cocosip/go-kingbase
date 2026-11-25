@@ -144,6 +144,51 @@ func TestCursorFetchCloseAndOwnerEnd(t *testing.T) {
 	}
 }
 
+func TestCursorMultipleOnOwner(t *testing.T) {
+	srv := beginCursorPeer(t, func(peer *testpeer.Conn) bool {
+		return serveCursorFetch(peer, `FETCH FORWARD 1 FROM "a"`, []byte("1")) &&
+			serveCursorFetch(peer, `FETCH FORWARD 1 FROM "b"`, []byte("2")) &&
+			serveCursorClose(peer, `CLOSE "a"`) &&
+			serveCursorClose(peer, `CLOSE "b"`)
+	})
+	db := sql.OpenDB(newConnector(peerConfig(t, srv, "")))
+	defer func() { _ = db.Close() }()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("BeginTx: %v", err)
+	}
+	first, err := NewCursor(tx, "a")
+	if err != nil {
+		t.Fatalf("NewCursor(a): %v", err)
+	}
+	second, err := NewCursor(tx, "b")
+	if err != nil {
+		t.Fatalf("NewCursor(b): %v", err)
+	}
+	for _, cursor := range []*Cursor{first, second} {
+		rows, err := cursor.Fetch(ctx, 1)
+		if err != nil {
+			t.Fatalf("%s Fetch: %v", cursor.Name(), err)
+		}
+		if !rows.Next() {
+			t.Fatalf("%s rows: %v", cursor.Name(), rows.Err())
+		}
+		if err := rows.Close(); err != nil {
+			t.Fatalf("%s rows.Close: %v", cursor.Name(), err)
+		}
+	}
+	for _, cursor := range []*Cursor{first, second} {
+		if err := cursor.Close(ctx); err != nil {
+			t.Fatalf("%s Close: %v", cursor.Name(), err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+}
+
 func TestCursorRejectsInvalidHandlesAndCounts(t *testing.T) {
 	if _, err := NewCursor(nil, "c"); err == nil {
 		t.Error("NewCursor(nil) succeeded")
