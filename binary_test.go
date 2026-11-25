@@ -5,6 +5,7 @@ import (
 	"database/sql/driver"
 	"encoding/binary"
 	"math"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -230,4 +231,18 @@ func TestBinaryParameterOverflow(t *testing.T) {
 		t.Fatalf("statement.Close: %v", err)
 	}
 	_ = physical.Close()
+}
+
+func TestXMLBinaryIsText(t *testing.T) {
+	const document = `<root attr="v">text</root>`
+	value, ok := binaryValue(ModePG, schemaPGCatalog, pgTypeXML, []byte(document))
+	if !ok || value != document {
+		t.Errorf("binaryValue(xml) = %#v, %v, want the exact text", value, ok)
+	}
+	if !binaryLayoutKnown(ModePG, schemaPGCatalog, pgTypeXML) {
+		t.Fatal("xml binary layout is not known")
+	}
+	if got := scanType(ModePG, schemaPGCatalog, pgTypeXML, 1); got != reflect.TypeOf("") {
+		t.Errorf("xml binary scan type = %v, want string", got)
+	}
 }
