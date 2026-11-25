@@ -39,6 +39,8 @@ const (
 	pgTypeCidr        = "cidr"
 	pgTypeInterval    = "interval"
 	pgTypeXML         = "xml"
+	pgTypeBit         = "bit"
+	pgTypeVarbit      = "varbit"
 )
 
 var (
@@ -100,7 +102,7 @@ func textValue(schema, name string, data []byte) (driver.Value, bool, error) {
 		return value, true, nil
 	case pgTypeNumeric, "money", pgTypeTime, pgTypeTimetz, pgTypeInterval, "uuid", "json", "jsonb",
 		pgTypeXML, pgTypeInet, pgTypeCidr, "macaddr", "macaddr8", pgTypeText, pgTypeVarchar, pgTypeBpchar,
-		pgTypeChar, "name", "unknown":
+		pgTypeChar, "name", "unknown", pgTypeBit, pgTypeVarbit:
 		return string(data), true, nil
 	default:
 		return nil, false, nil
@@ -133,7 +135,7 @@ func scanType(schema, name string, format int16) reflect.Type {
 		case pgTypeFloat4, pgTypeFloat8:
 			return reflect.TypeOf(float64(0))
 		case pgTypeText, pgTypeVarchar, pgTypeBpchar, pgTypeChar, "name", "unknown", "json", "jsonb", "uuid", pgTypeNumeric,
-			pgTypeTime, pgTypeTimetz, pgTypeInet, pgTypeCidr, pgTypeInterval, pgTypeXML:
+			pgTypeTime, pgTypeTimetz, pgTypeInet, pgTypeCidr, pgTypeInterval, pgTypeXML, pgTypeBit, pgTypeVarbit:
 			return reflect.TypeOf("")
 		case pgTypeBytea:
 			return reflect.TypeOf([]byte(nil))
@@ -235,7 +237,7 @@ func binaryLayoutKnown(name string) bool {
 	case pgTypeBool, pgTypeInt2, pgTypeInt4, pgTypeInt8, pgTypeOid, pgTypeXid, pgTypeCid, pgTypeFloat4, pgTypeFloat8,
 		pgTypeText, pgTypeVarchar, pgTypeBpchar, pgTypeChar, "name", "unknown", pgTypeBytea, "json",
 		"jsonb", "uuid", pgTypeDate, pgTypeTimestamp, pgTypeTimestamptz, pgTypeNumeric, pgTypeTime, pgTypeTimetz,
-		pgTypeInet, pgTypeCidr, pgTypeInterval, pgTypeXML:
+		pgTypeInet, pgTypeCidr, pgTypeInterval, pgTypeXML, pgTypeBit, pgTypeVarbit:
 		return true
 	default:
 		return false
@@ -265,6 +267,22 @@ func uuidValue(data []byte) (driver.Value, bool) {
 		return formatUUID(data), true
 	}
 	return nil, false
+}
+
+// textBinaryValue dispatches binary layouts whose driver value is text.
+func textBinaryValue(name string, data []byte) (driver.Value, bool) {
+	switch name {
+	case pgTypeTime, pgTypeTimetz:
+		return timeOrTimetzValue(name, data)
+	case pgTypeInet, pgTypeCidr:
+		return inetValue(name, data)
+	case pgTypeInterval:
+		return intervalValue(data)
+	case pgTypeBit, pgTypeVarbit:
+		return bitBinaryValue(data)
+	default:
+		return nil, false
+	}
 }
 
 // binaryValue decodes one binary-format result value for a catalog type. The
@@ -322,12 +340,8 @@ func binaryValue(schema, name string, data []byte) (driver.Value, bool) {
 		}
 	case pgTypeNumeric:
 		return numericValue(data)
-	case pgTypeTime, pgTypeTimetz:
-		return timeOrTimetzValue(name, data)
-	case pgTypeInet, pgTypeCidr:
-		return inetValue(name, data)
-	case pgTypeInterval:
-		return intervalValue(data)
+	case pgTypeTime, pgTypeTimetz, pgTypeInet, pgTypeCidr, pgTypeInterval, pgTypeBit, pgTypeVarbit:
+		return textBinaryValue(name, data)
 	case "uuid":
 		return uuidValue(data)
 	}

@@ -27,6 +27,8 @@ const scriptedSchema = "pg_catalog"
 // offline. OIDs are test data, not built into the driver.
 var scriptedTypes = []scriptedType{
 	{16, scriptedSchema, "bool", 'b', 1, 0, 0, 0, ','},
+	{1560, scriptedSchema, "bit", 'b', -1, 0, 0, 0, ','},
+	{1562, scriptedSchema, "varbit", 'b', -1, 0, 0, 0, ','},
 	{17, scriptedSchema, "bytea", 'b', -1, 0, 0, 0, ','},
 	{18, scriptedSchema, "char", 'b', 1, 0, 0, 0, ','},
 	{19, scriptedSchema, "name", 'b', 64, 0, 0, 0, ','},
