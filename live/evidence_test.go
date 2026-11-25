@@ -284,11 +284,9 @@ func captureTransactions(ctx context.Context, conn *sql.Conn) map[string]string 
 	if err != nil {
 		out["read_only_begin"] = "error: " + err.Error()
 	} else {
-		_, execErr := readOnly.ExecContext(ctx, "CREATE TABLE live_ro_forbidden (id int)")
-		switch {
-		case execErr == nil:
+		if _, execErr := readOnly.ExecContext(ctx, "CREATE TABLE live_ro_forbidden (id int)"); execErr == nil {
 			out["read_only_write"] = "accepted"
-		default:
+		} else {
 			out["read_only_write"] = "rejected: " + execErr.Error()
 		}
 		_ = readOnly.Rollback()

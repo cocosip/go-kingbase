@@ -152,7 +152,7 @@ DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup excha
 | F-1104 | Concurrency tests | P0 | both | multiple modes interleaved + `-race` | done | done | pending |
 | F-1105 | Performance baseline | P2 | live | Actual single-row/COPY workloads measured on the deployment (`TestLivePerformanceBaseline`, opt-in `KINGBASE_TEST_PERF=1`, log-only with `perf-<mode>.json`); explicitly deferrable outside release blockers | done | done | pending |
 | F-1106 | Repository lint rules | P0 | offline | Run existing .golangci.yml once product module exists | done | done | n/a |
-| F-1107 | Toolchain/platform/package release contract | P0 | offline | Go 1.26.0; module github.com/cocosip/go-kingbase from Git origin; Apache-2.0; linux/windows/darwin amd64+arm64; stdlib-only core; CI pinned; package smoke checks at T-051/T-053 | done | done | n/a |
+| F-1107 | Toolchain/platform/package release contract | P0 | offline | Go 1.26.0; module github.com/cocosip/go-kingbase from Git origin; Apache-2.0; linux/windows/darwin amd64+arm64; stdlib-only core; CI runs Go 1.26.x; package smoke checks at T-051/T-053 | done | done | n/a |
 
 ## 12. MySQL Transport Backend (conditional)
 

@@ -50,13 +50,16 @@ Requires Go 1.26.0 or newer, and golangci-lint v2.14.0.
 go build ./...
 go test ./...
 go test -race ./...
-golangci-lint run ./...
+go test -tags=live ./... -run '^$'
+golangci-lint run --build-tags=live ./...
 gofmt -l .
 go mod tidy && git diff --exit-code
 ```
 
-CI (`.github/workflows/ci-cd.yml`) runs the same commands on linux/windows/darwin
-amd64/arm64 with the Go version pinned by `go.mod`.
+CI (`.github/workflows/ci.yml`) runs the same commands on linux/windows/darwin
+amd64/arm64 with Go 1.26.x, uploads the Linux coverage profile and enforces its
+70% floor. Tag pushes publish a GitHub release (`release.yml`); CodeQL and
+Dependabot run on their own schedules.
 
 ## Dependency policy
 

@@ -417,7 +417,7 @@ T-001 created go.mod, the license/dependency/CI contract and this skeleton packa
 
 ### 13.1 Confirmed module and Go baseline
 
-Use Go **1.26.0** for development and the baseline CI build/test/lint jobs. The product module path is **github.com/cocosip/go-kingbase**, derived from the configured Git origin, git@github.com:cocosip/go-kingbase.git. Package name is kingbase and database/sql driver registration remains kingbase. The vendor sample package name gokb is not reused, so imports cannot be confused with the official sample tree.
+Use Go **1.26.0** for development and the baseline CI build/test/lint jobs, which install Go 1.26.x. The product module path is **github.com/cocosip/go-kingbase**, derived from the configured Git origin, git@github.com:cocosip/go-kingbase.git. Package name is kingbase and database/sql driver registration remains kingbase. The vendor sample package name gokb is not reused, so imports cannot be confused with the official sample tree.
 
 When T-001 creates the root go.mod, it must begin with:
 
@@ -427,7 +427,7 @@ module github.com/cocosip/go-kingbase
 go 1.26.0
 ```
 
-Use github.com/cocosip/go-kingbase in imports, examples and package-release checks. T-001 created the module, license (Apache-2.0 with NOTICE), dependency policy (standard library only for the core driver), support matrix (linux/windows/darwin on amd64/arm64) and CI contract (Go pinned by go.mod, golangci-lint v2.14.0). O7 is therefore resolved; package smoke checks remain part of T-051/T-053.
+Use github.com/cocosip/go-kingbase in imports, examples and package-release checks. T-001 created the module, license (Apache-2.0 with NOTICE), dependency policy (standard library only for the core driver), support matrix (linux/windows/darwin on amd64/arm64) and CI contract (Go 1.26.x, golangci-lint v2.14.0). O7 is therefore resolved; package smoke checks remain part of T-051/T-053.
 
 ## 14. API and Migration Compatibility
 
@@ -476,7 +476,7 @@ Implementation, offline proof and live acceptance are separate [progress](go-dri
 | O4 | V8 support | later scope, V11/V13 before enabling; no universal no-special-code assertion |
 | O5 | live-profile availability | pending; required V9 evidence blocks M3, not offline work |
 | O6 | MySQL backend release | conditional M5 after V12/V15/native-bootstrap/reset evidence; excluded from initial PG claims |
-| O7 | minimum Go/platform/license/toolchain | resolved: Go 1.26.0; Apache-2.0 with NOTICE; stdlib-only core; linux/windows/darwin amd64+arm64; CI pinned with golangci-lint v2.14.0 (§13.1) |
+| O7 | minimum Go/platform/license/toolchain | resolved: Go 1.26.0; Apache-2.0 with NOTICE; stdlib-only core; linux/windows/darwin amd64+arm64; CI runs Go 1.26.x with golangci-lint v2.14.0 (§13.1) |
 
 ## Appendix A: Snapshot Comparison
 
