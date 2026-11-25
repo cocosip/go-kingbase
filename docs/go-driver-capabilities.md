@@ -140,7 +140,7 @@ DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup excha
 | F-902 | Error/operation classification | P1 | offline | Execution uncertainty separate from retry safety; redacted config/protocol/catalog/cancel errors | done | done | n/a |
 | F-903 | Safe retirement without duplicate execution | P0 | both | After possible execution mark invalid without ErrBadConn matching; only retry-safe boundaries may signal ErrBadConn | done | done | pending |
 | F-1001 | Verified connection diagnostics | P1 | both | Configured/observed mode/protocol, source/verification, raw kernel/product release and capability profile; documented accessor | done | done | pending |
-| F-1002 | Public API migration ledger/examples | P1 | offline | Keep/replace/defer official helpers and options; compiling examples required after implementation | todo | pending | n/a |
+| F-1002 | Public API migration ledger/examples | P1 | offline | Keep/replace/defer official helpers and options; compiling examples required after implementation | done | done | n/a |
 
 ## 11. Quality Assurance
 
