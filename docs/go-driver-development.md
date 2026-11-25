@@ -25,7 +25,7 @@ Update task Evidence, feature status, live profile records, counts and log toget
 | M5 MySQL transport (conditional) | 9 | 1 | 0 | 8 | 0 | 0 |
 | **Total** | **65** | **52** | **1** | **12** | **0** | **0** |
 
-Verification V1–V19: V8 blocked by infrastructure (no TLS listener), V7 partial (only SCRAM enabled); V1–V6, V9, V10, V12, V14 and V16–V19 evidenced on the 2026-11-25 four-mode run; V11/V13/V15 out of this profile's scope. No profile is accepted. Decisions O1–O7: 3 resolved (O1, O2, O7), 4 open/evidence-pending (O3, O4, O5, O6). Features: 94 total; 79 are Impl=done and Offline=done, 2 are Impl=wip (F-310, F-1103), and 13 remain Impl=todo/Offline=pending; 68 Live=pending, 1 Live=done (F-104) and 25 structurally offline-only Live=n/a. No accepted live-profile override exists. M3 is a verification gate, not an omitted implementation-task group.
+Verification V1–V19: V8 blocked by infrastructure (no TLS listener), V7 partial (only SCRAM enabled); V1–V6, V9, V10, V12, V14 and V16–V19 evidenced on the 2026-11-25 four-mode run; V11/V13/V15 out of this profile's scope. No profile is accepted. Decisions O1–O7: 5 resolved (O1, O2, O3, O5, O7), 2 open later-scope (O4, O6). Features: 94 total; 79 are Impl=done and Offline=done, 2 are Impl=wip (F-310, F-1103), and 13 remain Impl=todo/Offline=pending; 68 Live=pending, 1 Live=done (F-104) and 25 structurally offline-only Live=n/a. No accepted live-profile override exists. M3 is a verification gate, not an omitted implementation-task group.
 
 ## 3. Milestones
 
@@ -150,25 +150,25 @@ Full procedures/blocking features are in capability matrix section 13. Evidence 
 
 | ID | Item | Status | Evidence |
 |---|---|---|---|
-| V1 | Authoritative mode discovery per scoped V9 mode/edition | pending | — |
-| V2 | Qualified catalog shape and access | pending | — |
-| V3 | Actual catalog fixture provenance | pending | — |
-| V4 | Verified qualified built-ins | pending | — |
-| V5 | Routine/OUT/refcursor matrix | pending | — |
-| V6 | Generated identities and explicit sequences | pending | — |
-| V7 | Every enabled PG auth method | pending | — |
-| V8 | TLS trust/material/platform matrix | pending | — |
-| V9 | Text COPY and asynchronous delivery | pending | — |
-| V10 | YEAR/binary format conventions | pending | — |
-| V11 | V8R6 profile acceptance (later scope) | pending | — |
-| V12 | Actual deployed protocol listeners | pending | — |
-| V13 | Legacy compatible_level meaning (later scope) | pending | — |
-| V14 | Mode storage scope and immutability | pending | — |
-| V15 | Native MySQL backend profile | pending | — |
-| V16 | Product identity and whole initialization budget | pending | — |
-| V17 | Catalog lifecycle after DDL/pool reuse | pending | — |
-| V18 | Scalar/temporal/lexical boundary acceptance | pending | — |
-| V19 | Session/transaction/cancel recovery | pending | — |
+| V1 | Authoritative mode discovery per scoped V9 mode/edition | evidenced | `TestLiveSmoke` mode/metadata capture in all four modes, `TestLiveExplicitModeConflict` rejection, `TestLiveOrdinaryRoleCatalog` login; offline suite covers empty/unknown reports |
+| V2 | Qualified catalog shape and access | evidenced | `TestLiveEvidenceMatrix` retains the qualified catalog columns and full row counts per mode (pg 754, oracle 1006, mysql 902, sqlserver 801); `TestLiveCatalogBuiltinShapes` captures kind/`typlen` |
+| V3 | Actual catalog fixture provenance | evidenced | Evidence artifact records product/release/mode/wire, the exact query and column names, run time and observed shapes; no SDK constants are consumed |
+| V4 | Verified qualified built-ins | evidenced | `TestLiveCatalogBuiltinShapes` plus the artifact shape map; same-named application types rejected offline; absence never switches mode |
+| V5 | Routine/OUT/refcursor matrix | evidenced (scope-limited) | `TestLiveRoutineOutAssignment` (PG/Oracle/MySQL INOUT and prepared `sql.Out`), `TestLiveSQLServerRoutineOutUnsupported`, `TestLiveRoutineExecDiscardsStatus`, `TestLiveSQLServerRoutineConvenience`; cursor fetch/close in `TestLiveCopyInAndCursor` |
+| V6 | Generated identities and explicit sequences | evidenced | `TestLiveGeneratedID` and `TestLiveMySQLGeneratedID` (including a tinyint identity); rejection/overflow forms offline |
+| V7 | Every enabled PG auth method | partial | every connection authenticated through `scram-sha-256` (enabled by `sys_hba.conf`); cleartext/MD5/SM3 are not enabled on this deployment and stay unverified |
+| V8 | TLS trust/material/platform matrix | blocked (infrastructure) | all four listeners reject `sslmode=require` with `server does not support TLS`; a TLS-enabled deployment is required, no fallback is accepted |
+| V9 | Text COPY and asynchronous delivery | evidenced | `TestLiveCopyInAndCursor` COPY IN/NULL/escaping and cursor in all modes; `TestLiveListenerNotification` PG delivery |
+| V10 | YEAR/binary format conventions | evidenced | `TestLiveModeTypeCodecs` YEAR plus text/binary agreement for tinyint/uint4/uint8/money/bit/datetime |
+| V11 | V8R6 profile acceptance (later scope) | out of scope | later V8R6 manifest; V9 evidence is not inherited |
+| V12 | Actual deployed protocol listeners | evidenced | operator-provided endpoints (54321/54322/54323/54324) each accepted a positive handshake; no port scan or packaging inference |
+| V13 | Legacy compatible_level meaning (later scope) | out of scope | later V8R6 scope |
+| V14 | Mode storage scope and immutability | evidenced | `pg_settings` reports `database_mode` `source=override context=internal` and `TimeZone` `source=configuration file context=user` in every mode |
+| V15 | Native MySQL backend profile | out of scope | conditional M5 scope, independently established |
+| V16 | Product identity and whole initialization budget | evidenced | bounded `SELECT version()` capture (`KingbaseES V009R001C010`/`12.1`); stalled/partial-init deadlines covered by the offline failure suite |
+| V17 | Catalog lifecycle after DDL/pool reuse | evidenced | `TestLiveCatalogLifecycle`, `TestLiveCatalogChangedOID`, `TestLiveCatalogPoolReuse` in every mode |
+| V18 | Scalar/temporal/lexical boundary acceptance | evidenced | `TestLiveBoundaryValues`, `TestLiveTimezoneAndDST`, evidence artifact boundary map, `TestLiveModePlaceholderAndQuoting` |
+| V19 | Session/transaction/cancel recovery | evidenced (scope-limited) | `TestLiveTransactionOptions`, `TestLiveReadOnlyTransactionEnforcement`, `TestLiveCancelAndRecovery`, `TestLiveTransactionPreparedAndNamed`, artifact recovery check; reset/close races offline |
 
 ## 6. Decisions and Investigation Gates
 
@@ -176,9 +176,9 @@ Full procedures/blocking features are in capability matrix section 13. Evidence 
 |---|---|---|---|
 | O1 | Published module identity/oid migration | resolved | github.com/cocosip/go-kingbase from Git origin; package kingbase with driver registration kingbase (the vendor sample package name gokb is not reused); oid subpackage omitted per Architecture 14 |
 | O2 | Standard public scalar/temporal values | resolved | Architecture 7.1: bool/nil BIT, int64 small ints, exact text numerics/uint64/time, date/timestamp time.Time; no implicit civil/NullBool |
-| O3 | Qualified catalog shape/access | evidence-pending | V2; fail if required metadata unavailable, no built-in escape hatch |
+| O3 | Qualified catalog shape/access | resolved | V2 evidenced: the real four-mode catalog answers the qualified query and the driver fails closed when metadata is unavailable; no built-in escape hatch |
 | O4 | V8 support | open, later scope | V11/V13 before adding a concrete V8 manifest; no inherited V9 acceptance |
-| O5 | Reachable V9 acceptance profiles | evidence-pending | required profiles block M3 until evidence or explicit justified scope decision |
+| O5 | Reachable V9 acceptance profiles | resolved (no accepted profile) | V1–V19 evidence ledger recorded; V7 partial (only SCRAM enabled) and V8 blocked by the absent TLS listener, so no profile is accepted on this deployment |
 | O6 | Native MySQL release | open, conditional | V12/V15/V19 and M5; excluded from initial PG release |
 | O7 | Minimum Go/platform/license/dependency/release policy | resolved | Go 1.26.0; module github.com/cocosip/go-kingbase; license Apache-2.0 with NOTICE; standard-library-only core dependency policy; platforms linux/windows/darwin on amd64/arm64; CI pinned by go.mod with golangci-lint v2.14.0; commands in README.md and `.github/workflows/ci-cd.yml` |
 
