@@ -134,11 +134,44 @@ func TestLiveCopyInAndCursor(t *testing.T) {
 	}
 }
 
-func TestLiveCancelAndRecovery(t *testing.T) {
-	_, conn, meta := liveDB(t)
-	if meta.Mode != kingbase.ModePG {
-		t.Skip("pg_sleep cancellation is scoped to the PG profile")
+func TestLiveTransactionOptions(t *testing.T) {
+	_, conn, _ := liveDB(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	cases := []struct {
+		name string
+		opts sql.TxOptions
+	}{
+		{"default", sql.TxOptions{}},
+		{"read committed", sql.TxOptions{Isolation: sql.LevelReadCommitted}},
+		{"repeatable read", sql.TxOptions{Isolation: sql.LevelRepeatableRead}},
+		{"serializable", sql.TxOptions{Isolation: sql.LevelSerializable}},
+		{"read only", sql.TxOptions{ReadOnly: true}},
 	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			tx, err := conn.BeginTx(ctx, &testCase.opts)
+			if err != nil {
+				t.Fatalf("BeginTx: %v", err)
+			}
+			var value int64
+			if err := tx.QueryRowContext(ctx, "SELECT 1").Scan(&value); err != nil {
+				_ = tx.Rollback()
+				t.Fatalf("query in transaction: %v", err)
+			}
+			if value != 1 {
+				_ = tx.Rollback()
+				t.Errorf("transaction value = %d", value)
+			}
+			if err := tx.Commit(); err != nil {
+				t.Fatalf("Commit: %v", err)
+			}
+		})
+	}
+}
+
+func TestLiveCancelAndRecovery(t *testing.T) {
+	_, conn, _ := liveDB(t)
 	started := time.Now()
 	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
 	_, err := conn.QueryContext(ctx, "SELECT pg_sleep(5)")
