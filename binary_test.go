@@ -63,7 +63,7 @@ func TestBinaryValueCodecs(t *testing.T) {
 			want:   "deadbeef-0001-0002-0003-000400050607",
 			exists: true,
 		},
-		{typ: "numeric", data: encodeInt4(42), exists: false},
+		{typ: pgTypeNumeric, data: encodeInt4(42), exists: false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.typ, func(t *testing.T) {

@@ -162,7 +162,7 @@ func (r *rows) ColumnTypeLength(index int) (int64, bool) {
 func (r *rows) ColumnTypePrecisionScale(index int) (int64, int64, bool) {
 	column := r.columns[index]
 	info, known := r.conn.typeMetadata(column.TypeOID)
-	if !known || info.kind != 'b' || info.schema != schemaPGCatalog || info.name != "numeric" || column.TypeMod < 4 {
+	if !known || info.kind != 'b' || info.schema != schemaPGCatalog || info.name != pgTypeNumeric || column.TypeMod < 4 {
 		return 0, 0, false
 	}
 	typmod := column.TypeMod - 4

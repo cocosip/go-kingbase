@@ -32,12 +32,15 @@ const (
 	pgTypeDate        = "date"
 	pgTypeTimestamp   = "timestamp"
 	pgTypeTimestamptz = "timestamptz"
+	pgTypeNumeric     = "numeric"
 )
 
 var (
 	dateLayouts        = []string{"2006-01-02"}
 	timestampLayouts   = []string{"2006-01-02 15:04:05.999999999", "2006-01-02 15:04:05"}
 	timestamptzLayouts = []string{
+		"2006-01-02 15:04:05.999999999Z07:00:00",
+		"2006-01-02 15:04:05Z07:00:00",
 		"2006-01-02 15:04:05.999999999Z07:00",
 		"2006-01-02 15:04:05Z07:00",
 		"2006-01-02 15:04:05.999999999Z07",
@@ -89,7 +92,7 @@ func textValue(schema, name string, data []byte) (driver.Value, bool, error) {
 			return nil, true, err
 		}
 		return value, true, nil
-	case "numeric", "money", "time", "timetz", "interval", "uuid", "json", "jsonb",
+	case pgTypeNumeric, "money", "time", "timetz", "interval", "uuid", "json", "jsonb",
 		"xml", "inet", "cidr", "macaddr", "macaddr8", pgTypeText, pgTypeVarchar, pgTypeBpchar,
 		pgTypeChar, "name", "unknown":
 		return string(data), true, nil

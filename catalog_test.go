@@ -140,7 +140,7 @@ func TestRowsCoreTextCodecs(t *testing.T) {
 		{16, "t", true, testTypeBool, reflect.TypeOf(true)},
 		{20, "42", int64(42), "int8", reflect.TypeOf(int64(0))},
 		{701, "1.5", float64(1.5), "float8", reflect.TypeOf(float64(0))},
-		{1700, "1.25", "1.25", "numeric", reflect.TypeOf("")},
+		{1700, "1.25", "1.25", pgTypeNumeric, reflect.TypeOf("")},
 		{25, testHello, testHello, "text", reflect.TypeOf("")},
 		{17, `\x48656c6c6f`, []byte("Hello"), "bytea", reflect.TypeOf([]byte(nil))},
 		{1082, "2024-01-02", time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC), "date", reflect.TypeOf(time.Time{})},

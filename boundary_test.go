@@ -110,6 +110,80 @@ func TestConversionErrorDrainsAndReusesConnection(t *testing.T) {
 	}
 }
 
+func TestExactDecimalAndTextBoundaries(t *testing.T) {
+	cases := []struct {
+		typ   string
+		value string
+	}{
+		{pgTypeNumeric, "123456789012345678901234567890.12345678901234567890"},
+		{pgTypeNumeric, "NaN"},
+		{pgTypeNumeric, "Infinity"},
+		{pgTypeNumeric, "-Infinity"},
+		{"money", "$1,234.56"},
+		{"money", "($1,234.56)"},
+		{"interval", "1 year 2 mons 3 days 04:05:06.789"},
+		{"interval", "-00:00:01"},
+		{"time", "24:00:00.123456"},
+		{"time", "-01:02:03"},
+		{"timetz", "23:59:59.999999+05:30"},
+	}
+	for _, testCase := range cases {
+		got, ok, err := textValue(schemaPGCatalog, testCase.typ, []byte(testCase.value))
+		if err != nil || !ok || got != testCase.value {
+			t.Errorf("textValue(%s, %q) = %#v, %v, %v, want exact text", testCase.typ, testCase.value, got, ok, err)
+		}
+	}
+	for _, value := range []string{"NaN", "Infinity", "-Infinity"} {
+		got, ok, err := textValue(schemaPGCatalog, "float8", []byte(value))
+		if err != nil || !ok {
+			t.Errorf("float8 %q = %#v, %v, %v", value, got, ok, err)
+			continue
+		}
+		number := got.(float64)
+		if value == "NaN" && !math.IsNaN(number) {
+			t.Errorf("float8 NaN = %v", number)
+		}
+		if value == "Infinity" && !math.IsInf(number, 1) {
+			t.Errorf("float8 Infinity = %v", number)
+		}
+		if value == "-Infinity" && !math.IsInf(number, -1) {
+			t.Errorf("float8 -Infinity = %v", number)
+		}
+	}
+}
+
+func TestTimestamptzOffsetsAndPrecision(t *testing.T) {
+	moment, err := parseTimestamptz("2024-03-10 03:30:00.123456789-04:00")
+	if err != nil {
+		t.Fatalf("timestamptz: %v", err)
+	}
+	_, offset := moment.Zone()
+	if offset != -4*60*60 || moment.Nanosecond() != 123456789 {
+		t.Errorf("timestamptz = %v offset %d nanos %d", moment, offset, moment.Nanosecond())
+	}
+
+	seconds, err := parseTimestamptz("2024-03-10 03:30:00+05:30:45")
+	if err != nil {
+		t.Fatalf("seconds-offset timestamptz: %v", err)
+	}
+	_, secondsOffset := seconds.Zone()
+	if secondsOffset != 5*60*60+30*60+45 {
+		t.Errorf("seconds offset = %d, want 19845", secondsOffset)
+	}
+
+	before, err := parseTimestamptz("2024-03-10 01:30:00-05:00")
+	if err != nil {
+		t.Fatalf("before DST: %v", err)
+	}
+	after, err := parseTimestamptz("2024-03-10 03:30:00-04:00")
+	if err != nil {
+		t.Fatalf("after DST: %v", err)
+	}
+	if after.Sub(before) != time.Hour {
+		t.Errorf("DST instants differ by %v, want one hour", after.Sub(before))
+	}
+}
+
 func TestTextTemporalPolicy(t *testing.T) {
 	if _, err := parseDate("2024-02-29"); err != nil {
 		t.Errorf("valid date: %v", err)

@@ -240,7 +240,7 @@ func TestOpaqueScanTypesFollowWireFormat(t *testing.T) {
 		reflect.TypeOf(""), reflect.TypeOf([]byte(nil)), reflect.TypeOf([]byte(nil)),
 		reflect.TypeOf(time.Time{}), reflect.TypeOf([]byte(nil)),
 	}
-	wantNames := []string{"", "", "numeric", "date", testTypeInt4}
+	wantNames := []string{"", "", pgTypeNumeric, "date", testTypeInt4}
 	for i := range dest {
 		if got := typed.ColumnTypeScanType(i); got != wantScan[i] {
 			t.Errorf("column %d ScanType = %v, want %v", i, got, wantScan[i])
