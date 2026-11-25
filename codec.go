@@ -35,6 +35,8 @@ const (
 	pgTypeNumeric     = "numeric"
 	pgTypeTime        = "time"
 	pgTypeTimetz      = "timetz"
+	pgTypeInet        = "inet"
+	pgTypeCidr        = "cidr"
 )
 
 var (
@@ -95,7 +97,7 @@ func textValue(schema, name string, data []byte) (driver.Value, bool, error) {
 		}
 		return value, true, nil
 	case pgTypeNumeric, "money", pgTypeTime, pgTypeTimetz, "interval", "uuid", "json", "jsonb",
-		"xml", "inet", "cidr", "macaddr", "macaddr8", pgTypeText, pgTypeVarchar, pgTypeBpchar,
+		"xml", pgTypeInet, pgTypeCidr, "macaddr", "macaddr8", pgTypeText, pgTypeVarchar, pgTypeBpchar,
 		pgTypeChar, "name", "unknown":
 		return string(data), true, nil
 	default:
@@ -129,7 +131,7 @@ func scanType(schema, name string, format int16) reflect.Type {
 		case pgTypeFloat4, pgTypeFloat8:
 			return reflect.TypeOf(float64(0))
 		case pgTypeText, pgTypeVarchar, pgTypeBpchar, pgTypeChar, "name", "unknown", "json", "jsonb", "uuid", pgTypeNumeric,
-			pgTypeTime, pgTypeTimetz:
+			pgTypeTime, pgTypeTimetz, pgTypeInet, pgTypeCidr:
 			return reflect.TypeOf("")
 		case pgTypeBytea:
 			return reflect.TypeOf([]byte(nil))
@@ -230,7 +232,8 @@ func binaryLayoutKnown(name string) bool {
 	switch name {
 	case pgTypeBool, pgTypeInt2, pgTypeInt4, pgTypeInt8, pgTypeOid, pgTypeXid, pgTypeCid, pgTypeFloat4, pgTypeFloat8,
 		pgTypeText, pgTypeVarchar, pgTypeBpchar, pgTypeChar, "name", "unknown", pgTypeBytea, "json",
-		"jsonb", "uuid", pgTypeDate, pgTypeTimestamp, pgTypeTimestamptz, pgTypeNumeric, pgTypeTime, pgTypeTimetz:
+		"jsonb", "uuid", pgTypeDate, pgTypeTimestamp, pgTypeTimestamptz, pgTypeNumeric, pgTypeTime, pgTypeTimetz,
+		pgTypeInet, pgTypeCidr:
 		return true
 	default:
 		return false
@@ -319,6 +322,8 @@ func binaryValue(schema, name string, data []byte) (driver.Value, bool) {
 		return numericValue(data)
 	case pgTypeTime, pgTypeTimetz:
 		return timeOrTimetzValue(name, data)
+	case pgTypeInet, pgTypeCidr:
+		return inetValue(name, data)
 	case "uuid":
 		return uuidValue(data)
 	}
