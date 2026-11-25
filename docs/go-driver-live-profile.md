@@ -73,18 +73,21 @@ PG metadata reported uppercase `INT4`/`VARCHAR`/`DATE`, real scan types and the
 varchar length. The PG catalog
 lifecycle check created an enum, read it on a fresh connection, dropped it and
 confirmed that the stale catalog reports an error instead of scanning a stale
-OID. A temporary ordinary login role was also created per mode; it connected with
-its own credentials and completed catalog initialization plus a builtin query,
-which is ordinary-role access evidence but not the raw catalog-shape capture V2
-requires. `sslmode=require` was rejected by all four listeners of this deployment
-because they did not offer TLS; V8 remains unverified and requires a TLS-enabled
-deployment, not a fallback.
+OID. An explicit mode that contradicted the server-reported mode was rejected with
+a `conflicts with server database_mode` error in every mode. A pooled connection
+kept its stale catalog and rejected a dropped type; after dropping idle
+connections, a fresh catalog also rejected it, and recreating the type made it
+visible again. A temporary ordinary login role was also created per mode; it
+connected with its own credentials and completed catalog initialization plus a
+builtin query, which is ordinary-role access evidence but not the raw
+catalog-shape capture V2 requires. `sslmode=require` was rejected by all four
+listeners of this deployment because they did not offer TLS; V8 remains
+unverified and requires a TLS-enabled deployment, not a fallback.
 
 Still missing for acceptance: the raw catalog query/shape/error capture as an
-ordinary role, V1 fallback/conflict cases, V5 routine/OUT/status forms, auth/TLS
-matrix, V12 deployment confirmation, V14 storage scope, V16 initialization
-budget, the stale-pooled-snapshot and explicit reopen parts of V17, and the full
-V19 session/reset matrix.
+ordinary role, V1 fallback cases, V5 routine/OUT/status forms, auth/TLS matrix,
+V12 deployment confirmation, V14 storage scope, V16 initialization budget, the
+changed-OID/mid-reader parts of V17, and the full V19 session/reset matrix.
 
 ## Acceptance ledger
 
