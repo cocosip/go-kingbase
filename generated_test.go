@@ -1017,3 +1017,47 @@ func TestLastInsertIDMySQLPreparedExec(t *testing.T) { //nolint:gocyclo // testp
 		t.Errorf("LastInsertId = %d, %v, want 42", id, err)
 	}
 }
+
+// TestGeneratedTinyintConversion pins the generated tinyint contract measured on
+// the live listeners: the MySQL form reads LAST_INSERT_ID() as a UINT8 text
+// value (exact decimal to int64), while a tinyint generated column value is
+// decoded through the mode tinyint codec, which applies the accepted signed
+// (Oracle/MySQL) or unsigned (SQLServer) 8-bit range.
+func TestGeneratedTinyintConversion(t *testing.T) {
+	for _, text := range []string{"1", "127", "255", "9223372036854775807"} {
+		id, err := parseExactLastInsertID(text)
+		if err != nil {
+			t.Fatalf("parseExactLastInsertID(%q): %v", text, err)
+		}
+		if got := strconv.FormatInt(id, 10); got != text {
+			t.Errorf("parseExactLastInsertID(%q) = %q", text, got)
+		}
+	}
+	if _, err := parseExactLastInsertID("9223372036854775808"); !errors.Is(err, ErrLastInsertIDOverflow) {
+		t.Errorf("uint64 above MaxInt64 error = %v, want overflow", err)
+	}
+	for _, testCase := range []struct {
+		mode   CompatibilityMode
+		text   string
+		want   int64
+		reject bool
+	}{
+		{mode: ModeMySQL, text: "127", want: 127},
+		{mode: ModeMySQL, text: "128", reject: true},
+		{mode: ModeMySQL, text: "-128", want: -128},
+		{mode: ModeSQLServer, text: "255", want: 255},
+		{mode: ModeSQLServer, text: "256", reject: true},
+		{mode: ModeSQLServer, text: "-1", reject: true},
+	} {
+		value, _, err := textValue(testCase.mode, schemaSys, pgTypeTinyint, []byte(testCase.text))
+		if testCase.reject {
+			if !errors.Is(err, ErrValueConversion) {
+				t.Errorf("%s tinyint %q error = %v, want conversion error", testCase.mode, testCase.text, err)
+			}
+			continue
+		}
+		if err != nil || value != testCase.want {
+			t.Errorf("%s tinyint %q = %v, %v; want %d", testCase.mode, testCase.text, value, err, testCase.want)
+		}
+	}
+}

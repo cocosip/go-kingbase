@@ -105,7 +105,7 @@ DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup excha
 |---|---|---|---|---|---|---|---|
 | F-601 | Safe opt-in PG generated identity | P0 | both | Verified one generated integral column on supported single-row INSERT; never RETURNING * or column-one guess; MySQL form remains F-603 | done | done | pending |
 | F-602 | Generated-ID type/range coverage | P0 | both | Checked exact int64 only; unsigned high-bit/float/nonintegral/ambiguous IDs unavailable or overflow; explicit Query for other values | done | done | pending |
-| F-603 | Generated tinyint conversion | P0 | offline | Apply accepted mode range and exact int64 conversion | todo | pending | n/a |
+| F-603 | Generated tinyint conversion | P0 | offline | Apply accepted mode range and exact int64 conversion; the live MySQL listener types LAST_INSERT_ID() as UINT8 (measured), so its exact decimal text converts to int64 with overflow rejection, while a tinyint generated column value is decoded by the mode codec with the signed (Oracle/MySQL) or unsigned (SQLServer) 8-bit range | done | done | n/a |
 | F-604 | Unavailable/overflow LastInsertId | P0 | offline | Typed error, not zero; preserve RowsAffected; reject unsafe requested rewrite before executing | done | done | n/a |
 | F-605 | Sequence access boundaries | P1 | both | Explicit verified SQL on owning connection; no MAX/last-sequence identity guess; no portable GetSchema promise | done | done | pending |
 
