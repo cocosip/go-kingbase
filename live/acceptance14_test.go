@@ -4,8 +4,11 @@ package live_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/cocosip/go-kingbase"
 )
 
 // TestLiveModePlaceholderAndQuoting verifies the verified non-PG profile
@@ -83,5 +86,36 @@ func TestLiveSQLServerRoutineConvenience(t *testing.T) {
 	}
 	if number != 1 {
 		t.Errorf("bare procedure result = %d, want 1", number)
+	}
+}
+
+// TestLiveNumInputSQLServer pins the logical NumInput rule end to end: SQLServer
+// mode reports -1 so database/sql passes arguments through, and the driver's own
+// binding plan still rejects a wrong count; other modes keep the server count.
+func TestLiveNumInputSQLServer(t *testing.T) {
+	_, conn, meta := liveDB(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	prepared, err := conn.PrepareContext(ctx, "SELECT $1::int4")
+	if err != nil {
+		t.Fatalf("PrepareContext: %v", err)
+	}
+	defer func() { _ = prepared.Close() }()
+	rows, err := prepared.QueryContext(ctx, int64(1), int64(2))
+	if meta.Mode == kingbase.ModeSQLServer {
+		if err == nil || !strings.Contains(err.Error(), "statement expects 1 arguments, got 2") {
+			t.Fatalf("SQLServer mismatch error = %v, want the driver binding-plan error", err)
+		}
+	} else {
+		if err == nil || !strings.Contains(err.Error(), "sql: expected 1 arguments, got 2") {
+			t.Fatalf("%s mismatch error = %v, want database/sql's count check", meta.Mode, err)
+		}
+	}
+	if rows != nil {
+		_ = rows.Close()
+	}
+	var value int64
+	if err := prepared.QueryRowContext(ctx, int64(7)).Scan(&value); err != nil || value != 7 {
+		t.Fatalf("correctly bound query = %d, %v; want 7", value, err)
 	}
 }

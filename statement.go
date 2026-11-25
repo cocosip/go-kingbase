@@ -160,8 +160,14 @@ func (c *conn) readPrepared() ([]uint32, error) {
 	}
 }
 
-// NumInput returns the server-reported parameter count.
+// NumInput returns the server-reported parameter count, except in SQLServer
+// mode where the profile's procedure/EXEC forms make the server count an
+// unreliable contract; -1 disables database/sql's pre-check and bindValues still
+// enforces the binding plan before anything is sent.
 func (s *stmt) NumInput() int {
+	if s.conn != nil && s.conn.mode == ModeSQLServer {
+		return -1
+	}
 	return len(s.paramOIDs)
 }
 

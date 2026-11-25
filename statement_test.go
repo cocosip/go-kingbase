@@ -453,3 +453,32 @@ func TestCheckNamedValue(t *testing.T) {
 		})
 	}
 }
+
+// TestNumInputPerMode pins the logical NumInput contract: the server count is
+// authoritative everywhere except SQLServer mode, where the statement profile
+// reports -1 and bindValues keeps validating the binding plan.
+func TestNumInputPerMode(t *testing.T) {
+	paramOIDs := []uint32{23}
+	for _, mode := range []CompatibilityMode{ModePG, ModeOracle, ModeMySQL} {
+		prepared := &stmt{conn: &conn{mode: mode}, paramOIDs: paramOIDs}
+		if got := prepared.NumInput(); got != 1 {
+			t.Errorf("%s NumInput = %d, want 1", mode, got)
+		}
+	}
+	prepared := &stmt{conn: &conn{mode: ModeSQLServer}, paramOIDs: paramOIDs}
+	if got := prepared.NumInput(); got != -1 {
+		t.Errorf("SQLServer NumInput = %d, want -1", got)
+	}
+	values := []driver.NamedValue{{Ordinal: 1, Value: int64(1)}, {Ordinal: 2, Value: int64(2)}}
+	for _, mode := range []CompatibilityMode{ModePG, ModeSQLServer} {
+		prepared := &stmt{
+			conn:      &conn{mode: mode},
+			paramOIDs: paramOIDs,
+			plan:      placeholderPlan{args: 1},
+		}
+		if _, err := prepared.bindValues(values); err == nil ||
+			!strings.Contains(err.Error(), "statement expects 1 arguments, got 2") {
+			t.Errorf("%s mismatch error = %v, want the binding-plan error", mode, err)
+		}
+	}
+}
