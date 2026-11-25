@@ -70,8 +70,10 @@ func TestRewriteRoutineRequiresAcceptedProfile(t *testing.T) {
 		if got := disabled.rewriteRoutine(query); got != query {
 			t.Errorf("disabled rewriteRoutine(%q) = %q, want unchanged", query, got)
 		}
-		if got := (&conn{mode: ModeSQLServer}).rewriteRoutine(query); got != query {
-			t.Errorf("SQLServer rewriteRoutine(%q) = %q, want unchanged", query, got)
+		// The live V009R001C010 SQLServer-mode listener rejects a bare procedure
+		// path, so the verified SQLServer profile enables the rewrite.
+		if got := (&conn{mode: ModeSQLServer}).rewriteRoutine(query); got != "EXEC "+query {
+			t.Errorf("SQLServer rewriteRoutine(%q) = %q, want EXEC prefix", query, got)
 		}
 		if got := (&conn{mode: ModePG}).rewriteRoutine(query); got != query {
 			t.Errorf("PG rewriteRoutine(%q) = %q, want unchanged", query, got)

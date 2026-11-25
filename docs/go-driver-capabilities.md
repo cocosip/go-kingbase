@@ -1,6 +1,6 @@
 # KingbaseES Go Driver — Capability Matrix
 
-> Status: corrected requirements; M0 core in progress, no live acceptance yet
+> Status: initial PG-wire scope implemented and tested offline; live acceptance in progress on a V009R001C010 four-mode deployment, no accepted profile yet
 > Date: 2026-11-25
 > Companion documents: [Architecture Design](go-driver-architecture-design.md) · [Development Plan and Progress](go-driver-development.md)
 
@@ -13,7 +13,7 @@
 - offline = unit/replay; live = actual server; both = both required. Impl/offline/live statuses below are independent: todo/pending/pending initially. n/a live means the requirement is offline-only, not that a missing server passed.
 - Aggregate live accepted requires all applicable profiles in the release manifest. A blocked/unavailable profile stays pending and cannot be advertised. Tests/provenance live in the progress tracker, with per-profile records in section 17.
 
-DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup exchange with cleartext/MD5/SM3/SCRAM authentication, TLS trust-policy negotiation, simple/extended query-or-exec, server-side prepared statement reuse with drain/retire semantics, type-catalog codecs, transactions, cancel-channel delivery with bounded synchronization, liveness/reset hooks, explicit array scanning and PG-mode generated-ID capture are implemented and tested offline. No live acceptance exists yet; documentation correction does not change implementation status.
+DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup exchange with cleartext/MD5/SM3/SCRAM authentication, TLS trust-policy negotiation, simple/extended query-or-exec, server-side prepared statement reuse with drain/retire semantics, type-catalog codecs, transactions, cancel-channel delivery with bounded synchronization, liveness/reset hooks, explicit array scanning and PG-mode generated-ID capture are implemented and tested offline. Live evidence is now collected against one operator V009R001C010 four-mode deployment, but no profile is accepted and every per-pair live state stays pending until its command and artifact are recorded.
 
 ## 1. Connection and Configuration
 
@@ -80,7 +80,7 @@ DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup excha
 | ID | Capability | Priority | Verification | Notes | Impl | Offline | Live |
 |---|---|---|---|---|---|---|---|
 | F-401 | Simple query and extended protocol | P0 | both | prepared-statement reuse; one-shot extended and server-side prepare with reuse | done | done | pending |
-| F-402 | Placeholder lexer and binding plan | P0 | offline | One style; quotes/backticks/brackets/dollar/comments/operators/settings; repeated/reversed names/indexes expand correctly | wip | pending | n/a |
+| F-402 | Placeholder lexer and binding plan | P0 | offline | One style; quotes/backticks/brackets/dollar/comments/operators/settings; repeated/reversed names/indexes expand correctly; native `:n`/`@var` pass through per mode | done | done | n/a |
 | F-403 | Logical NumInput and call validation | P0 | both | Unique names/max contiguous dollar index; SQLServer -1 still validates bindings | todo | pending | pending |
 | F-404 | NamedValue/Valuer/NULL conversion | P1 | both | Preserve wrapper target metadata; nil/Null validity, full uint64 range, Valuer once per logical argument | wip | pending | pending |
 | F-405 | Qualified target OID inference | P0 | both | Explicit verified target or inference; byte/bool/bytes wrappers cannot hardcode same-named user targets | done | done | pending |

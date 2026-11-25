@@ -56,6 +56,10 @@ func (c *targetCollector) add(query string, index, start int) {
 // errMixedPlaceholders rejects a statement that mixes ? with $n.
 var errMixedPlaceholders = errors.New("kingbase: mixed ? and $n placeholders in one statement")
 
+// errMixedNativePlaceholders rejects a statement that mixes the driver's ?
+// rewriting with a compatibility mode's native :n/@var binds.
+var errMixedNativePlaceholders = errors.New("kingbase: mixed ? and native :n/@name binds in one statement")
+
 // namedPlaceholders assigns stable ordinals to :name/@name bindings. One
 // prefix style is accepted per statement; repeated names reuse one ordinal.
 type namedPlaceholders struct {
@@ -85,10 +89,16 @@ func (n *namedPlaceholders) rewrite(query string, start int, out *strings.Builde
 // planPlaceholders applies the profile's verified identifier quoting and the
 // driver's placeholder rules to a statement: ? placeholders become sequential
 // $n, explicit $n passes through, :name/@name bind by name and are rewritten to
-// $n, and quoted strings, E-strings, quoted identifiers, dollar-quoted bodies,
-// comments and the ?|, ?& and @? operators stay untouched. One style per
-// statement is enforced. A bare ? is always a placeholder, so the jsonb ?
-// operator must be written as jsonb_exists() or with ?|/?&.
+// $n under the PG profile, and quoted strings, E-strings, quoted identifiers
+// (including backtick and bracket forms when the mode accepts them),
+// dollar-quoted bodies, comments and the ?|, ?& and @? operators stay
+// untouched. One style per statement is enforced. A bare ? is always a
+// placeholder, so the jsonb ? operator must be written as jsonb_exists() or
+// with ?|/?&.
+//
+// A compatibility-mode statement that contains the server's own :n or @var
+// bind syntax is passed through unchanged with -1 (the server owns the count);
+// mixing that syntax with ? is rejected before sending.
 //
 //nolint:gocyclo // One pass over mutually exclusive literal/operator/placeholder states.
 func planPlaceholders(profile modeProfile, query string) (placeholderPlan, error) {
@@ -98,6 +108,7 @@ func planPlaceholders(profile modeProfile, query string) (placeholderPlan, error
 	explicitMax := 0 // largest explicit $n index
 	sawQuestion := false
 	sawExplicit := false
+	sawNative := false
 	named := namedPlaceholders{names: map[string]int{}}
 	collector := targetCollector{}
 	for i := 0; i < len(query); {
@@ -153,7 +164,7 @@ func planPlaceholders(profile modeProfile, query string) (placeholderPlan, error
 				i += 2
 				continue
 			}
-			if i+1 < len(query) && isIdentifierStart(query[i+1]) && namedPlaceholderStart(query, i) {
+			if profile.namedPlaceholders && i+1 < len(query) && isIdentifierStart(query[i+1]) && namedPlaceholderStart(query, i) {
 				if sawQuestion || sawExplicit {
 					return placeholderPlan{}, errMixedPlaceholders
 				}
@@ -163,6 +174,10 @@ func planPlaceholders(profile modeProfile, query string) (placeholderPlan, error
 				}
 				i = end
 				continue
+			}
+			if !profile.namedPlaceholders && i+1 < len(query) &&
+				(isIdentifierStart(query[i+1]) || isASCIIDigit(query[i+1])) && namedPlaceholderStart(query, i) {
+				sawNative = true
 			}
 			out.WriteByte(char)
 			i++
@@ -173,7 +188,7 @@ func planPlaceholders(profile modeProfile, query string) (placeholderPlan, error
 				i += 2
 				continue
 			}
-			if i+1 < len(query) && isIdentifierStart(query[i+1]) && namedPlaceholderStart(query, i) {
+			if profile.namedPlaceholders && i+1 < len(query) && isIdentifierStart(query[i+1]) && namedPlaceholderStart(query, i) {
 				if sawQuestion || sawExplicit {
 					return placeholderPlan{}, errMixedPlaceholders
 				}
@@ -184,6 +199,9 @@ func planPlaceholders(profile modeProfile, query string) (placeholderPlan, error
 				i = end
 				continue
 			}
+			if !profile.namedPlaceholders && i+1 < len(query) && isIdentifierStart(query[i+1]) && namedPlaceholderStart(query, i) {
+				sawNative = true
+			}
 			out.WriteByte(char)
 			i++
 		default:
@@ -193,6 +211,11 @@ func planPlaceholders(profile modeProfile, query string) (placeholderPlan, error
 	}
 	plan := placeholderPlan{query: out.String(), targets: collector.refs}
 	switch {
+	case sawNative:
+		if sawQuestion || sawExplicit || len(named.names) != 0 {
+			return placeholderPlan{}, errMixedNativePlaceholders
+		}
+		return placeholderPlan{query: query, args: -1}, nil
 	case sawQuestion:
 		plan.args = next
 	case sawExplicit:
@@ -308,12 +331,36 @@ func literalSpan(profile modeProfile, query string, i int) (int, bool) {
 				return end, true
 			}
 		}
+	case '`':
+		if profile.quotesIdentifier('`') {
+			return skipQuoted(query, i, false), true
+		}
+	case '[':
+		if profile.bracketQuotes {
+			return skipBracket(query, i), true
+		}
 	default:
 		if profile.quotesIdentifier(query[i]) {
 			return skipQuoted(query, i, false), true
 		}
 	}
 	return 0, false
+}
+
+// skipBracket returns the end of a SQLServer [identifier] starting at open; a
+// doubled ]] is an escaped closing bracket.
+func skipBracket(query string, open int) int {
+	for i := open + 1; i < len(query); i++ {
+		if query[i] != ']' {
+			continue
+		}
+		if i+1 < len(query) && query[i+1] == ']' {
+			i++
+			continue
+		}
+		return i + 1
+	}
+	return len(query)
 }
 
 // skipQuoted returns the end of a quoted literal or identifier starting at the

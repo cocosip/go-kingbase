@@ -11,8 +11,8 @@ import (
 
 // modeProfile is the verified semantic contract for one compatibility mode.
 // Wire framing, server identity and session lexical settings stay in the
-// connection context; only behaviour with offline-verified evidence is
-// represented here, so an unverified mode never fabricates semantics.
+// connection context; only behaviour with verified evidence is represented
+// here, so an unverified mode never fabricates semantics.
 type modeProfile struct {
 	// name is the verified profile name reported in diagnostics.
 	name string
@@ -22,6 +22,9 @@ type modeProfile struct {
 	identifierQuotes string
 	// bracketQuotes enables SQLServer-style [identifier] components.
 	bracketQuotes bool
+	// namedPlaceholders enables the driver's :name/@name binding convention.
+	// Modes where the server owns :n/@var syntax keep them as native binds.
+	namedPlaceholders bool
 	// routineConvenience enables the profile-gated bare-procedure rewrite.
 	routineConvenience bool
 }
@@ -29,20 +32,37 @@ type modeProfile struct {
 // pgIdentifierQuotes is the PostgreSQL baseline: only double-quoted identifiers.
 const pgIdentifierQuotes = `"`
 
-// pgModeProfile carries the verified PG quoting rules; positional placeholders
-// stay the driver's own documented rules ($n native, ? convenience) whenever a
-// profile is present.
-var pgModeProfile = modeProfile{name: "pg", identifierQuotes: pgIdentifierQuotes}
+// mysqlIdentifierQuotes accepts the MySQL backtick form; the live V009R001C010
+// MySQL-mode listener also accepts double-quoted identifiers.
+const mysqlIdentifierQuotes = "`" + pgIdentifierQuotes
+
+// Verified profiles: ? placeholders are rewritten to $n for every mode because
+// the live PG-wire listeners reject a bare ? (V009R001C010, four modes). Only
+// the PG profile treats :name/@name as the driver's named bindings; the
+// compatibility modes own :n and @var syntax, so those statements pass through
+// with their native parameter count left to the server.
+var (
+	pgModeProfile        = modeProfile{name: "pg", identifierQuotes: pgIdentifierQuotes, namedPlaceholders: true}
+	oracleModeProfile    = modeProfile{name: "oracle", identifierQuotes: pgIdentifierQuotes}
+	mysqlModeProfile     = modeProfile{name: "mysql", identifierQuotes: mysqlIdentifierQuotes}
+	sqlserverModeProfile = modeProfile{name: "sqlserver", identifierQuotes: pgIdentifierQuotes, bracketQuotes: true, routineConvenience: true}
+)
 
 // profile returns the profile in force for the configured mode. ModeAuto is a
 // bootstrap baseline: the transport is configured as PG and no authoritative
 // server mode evidence exists yet, so it uses the PG profile instead of
-// guessing another mode. ModePG is verified; every other mode is unverified and
-// returns no profile, so callers must not rewrite or reinterpret its statements.
+// guessing another mode. Every concrete mode carries only behaviour that live
+// V009R001C010 evidence supports.
 func (m CompatibilityMode) profile() (modeProfile, bool) {
 	switch m {
 	case ModeAuto, ModePG:
 		return pgModeProfile, true
+	case ModeOracle:
+		return oracleModeProfile, true
+	case ModeMySQL:
+		return mysqlModeProfile, true
+	case ModeSQLServer:
+		return sqlserverModeProfile, true
 	default:
 		return modeProfile{}, false
 	}

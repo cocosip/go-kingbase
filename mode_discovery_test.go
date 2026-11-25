@@ -16,7 +16,7 @@ func TestModeDiscoveryFromStartup(t *testing.T) {
 			peer.Errorf("ReadStartup: %v", err)
 			return
 		}
-		if err := peer.StartupOK([][2]string{{testDatabaseMode, "mysql"}}); err != nil {
+		if err := peer.StartupOK([][2]string{{testDatabaseMode, modeMySQLName}}); err != nil {
 			peer.Errorf("StartupOK: %v", err)
 			return
 		}
@@ -24,11 +24,11 @@ func TestModeDiscoveryFromStartup(t *testing.T) {
 		if !ok {
 			return
 		}
-		// The discovered mysql mode has no verified profile, so the statement and
-		// both arguments reach the server untouched.
+		// The discovered mysql mode applies the verified mysql profile: the
+		// question placeholders are rewritten to $n before sending.
 		_, sql, _, err := wire.DecodeParse(payload)
-		if err != nil || sql != "SELECT ?, ?" {
-			peer.Errorf("parse sql = %q err %v, want the untouched statement", sql, err)
+		if err != nil || sql != testRewrittenTwoArgs {
+			peer.Errorf("parse sql = %q err %v, want the profile rewrite", sql, err)
 			return
 		}
 		payload, ok = expectMessage(peer, wire.MsgBind)
@@ -79,7 +79,7 @@ func TestModeDiscoveryStartupConflictsWithExplicitDeclaration(t *testing.T) {
 		if _, err := peer.ReadStartup(); err != nil {
 			return
 		}
-		_ = peer.StartupOK([][2]string{{testDatabaseMode, "mysql"}})
+		_ = peer.StartupOK([][2]string{{testDatabaseMode, modeMySQLName}})
 		_, _, _ = peer.ReadMessage()
 	})
 	cfg := peerConfig(t, srv, "")
@@ -218,8 +218,8 @@ func TestModeDiscoveryExplicitModeIsUnverifiedFallback(t *testing.T) {
 	}
 	meta := connection.serverMetadata()
 	if meta.ConfiguredMode != ModeMySQL || meta.ModeSource != ModeSourceExplicit || meta.ModeVerified ||
-		meta.IdentityStatus != IdentityCaptured || meta.Profile != "" {
-		t.Fatalf("metadata = %+v, want an unverified explicit mysql with a captured identity", meta)
+		meta.IdentityStatus != IdentityCaptured || meta.Profile != modeMySQLName {
+		t.Fatalf("metadata = %+v, want an unverified explicit mysql with its profile applied", meta)
 	}
 }
 
@@ -293,7 +293,7 @@ func TestModeDiscoveryVersionOnlyFallsThrough(t *testing.T) {
 		_ = peer.RowDescription([]wire.ColumnDescription{
 			{Name: testDatabaseMode, TypeOID: 25, TypeLen: -1, TypeMod: -1, Format: 0},
 		})
-		_ = peer.DataRow([][]byte{[]byte("mysql")})
+		_ = peer.DataRow([][]byte{[]byte(modeMySQLName)})
 		_ = peer.CommandComplete("SHOW")
 		_ = peer.ReadyForQuery(wire.StatusIdle)
 		waitTerminate(peer)
@@ -308,7 +308,7 @@ func TestModeDiscoveryVersionOnlyFallsThrough(t *testing.T) {
 	}
 }
 
-func TestModeDiscoveryQueryProvenancePassthrough(t *testing.T) {
+func TestModeDiscoveryQueryProvenanceProfile(t *testing.T) {
 	srv := testpeer.Start(t, func(peer *testpeer.Conn) {
 		peer.SetModeReport("")
 		if _, err := peer.ReadStartup(); err != nil {
@@ -324,24 +324,22 @@ func TestModeDiscoveryQueryProvenancePassthrough(t *testing.T) {
 			{Name: testColumnName, TypeOID: 25, TypeLen: -1, TypeMod: -1, Format: 0},
 			{Name: "setting", TypeOID: 25, TypeLen: -1, TypeMod: -1, Format: 0},
 		})
-		_ = peer.DataRow([][]byte{[]byte(testDatabaseMode), []byte("mysql")})
+		_ = peer.DataRow([][]byte{[]byte(testDatabaseMode), []byte(modeMySQLName)})
 		_ = peer.CommandComplete("SELECT 1")
 		_ = peer.ReadyForQuery(wire.StatusIdle)
 		payload, ok := expectMessage(peer, wire.MsgParse)
 		if !ok {
 			return
 		}
-		if _, sql, _, err := wire.DecodeParse(payload); err != nil || sql != "SELECT ?" {
-			peer.Errorf("parse sql = %q err %v, want the untouched statement", sql, err)
+		if _, sql, _, err := wire.DecodeParse(payload); err != nil || sql != "SELECT $1" {
+			peer.Errorf("parse sql = %q err %v, want the mysql profile rewrite", sql, err)
 			return
 		}
 		payload, ok = expectMessage(peer, wire.MsgBind)
 		if !ok {
 			return
 		}
-		// Two arguments for one placeholder: an unverified mode does not
-		// enforce the client-side count.
-		if _, _, _, params, _, err := wire.DecodeBind(payload); err != nil || len(params) != 2 {
+		if _, _, _, params, _, err := wire.DecodeBind(payload); err != nil || len(params) != 1 {
 			peer.Errorf("bind params = %q err %v", params, err)
 			return
 		}
@@ -371,7 +369,6 @@ func TestModeDiscoveryQueryProvenancePassthrough(t *testing.T) {
 	}
 	rows, err := connection.QueryContext(context.Background(), "SELECT ?", []driver.NamedValue{
 		{Ordinal: 1, Value: int64(7)},
-		{Ordinal: 2, Value: int64(8)},
 	})
 	if err != nil {
 		t.Fatalf("QueryContext: %v", err)

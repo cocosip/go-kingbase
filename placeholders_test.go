@@ -127,7 +127,7 @@ func TestQueryRewritesQuestionPlaceholders(t *testing.T) {
 			return
 		}
 		_, sql, _, err := wire.DecodeParse(payload)
-		if err != nil || sql != "SELECT $1, $2" {
+		if err != nil || sql != testRewrittenTwoArgs {
 			peer.Errorf("parse sql = %q err %v", sql, err)
 			return
 		}
@@ -248,7 +248,7 @@ func TestPrepareRewritesQuestionPlaceholders(t *testing.T) {
 	_ = physical.Close()
 }
 
-func TestNonPGModeLeavesPlaceholdersUntouched(t *testing.T) {
+func TestNonPGModeRewritesQuestionPlaceholders(t *testing.T) {
 	for _, mode := range []CompatibilityMode{ModeOracle, ModeMySQL, ModeSQLServer} {
 		t.Run(mode.String(), func(t *testing.T) {
 			srv := testpeer.Start(t, func(peer *testpeer.Conn) {
@@ -260,15 +260,14 @@ func TestNonPGModeLeavesPlaceholdersUntouched(t *testing.T) {
 					return
 				}
 				_, sql, _, err := wire.DecodeParse(payload)
-				if err != nil || sql != "SELECT ?, ?" {
-					peer.Errorf("parse sql = %q err %v, want the statement unchanged", sql, err)
+				if err != nil || sql != testRewrittenTwoArgs {
+					peer.Errorf("parse sql = %q err %v, want ? rewritten to $n", sql, err)
 					return
 				}
 				payload, ok = expectMessage(peer, wire.MsgBind)
 				if !ok {
 					return
 				}
-				// An unverified mode skips the client-side count check too.
 				if _, _, _, params, _, err := wire.DecodeBind(payload); err != nil || len(params) != 2 {
 					peer.Errorf("bind params = %q err %v", params, err)
 					return

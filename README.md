@@ -14,9 +14,15 @@ A `database/sql` driver for KingbaseES, implemented independently in Go.
 
 ## Status
 
-Early development. The driver is not usable yet and makes no live-server
-support claim. The specification, feature matrix and delivery plan are the
-source of truth for scope and acceptance:
+Development against KingbaseES V009R001C010 is in progress. The PG-wire
+implementation covers the initial scope (DSN/auth, catalog, query/binding,
+codecs, transactions, COPY IN, cursors, listeners, metadata, generated IDs) and
+passes the offline suite plus a live acceptance harness. No public release or
+production support claim exists yet: M3 live acceptance (V1–V19) is in
+progress, and the reference deployment offers no TLS listener, so TLS stays
+unverified. The native MySQL transport, V8R6, binary COPY and extra auth
+extensions remain out of scope. The specification, feature matrix and delivery
+plan are the source of truth for scope and acceptance:
 
 - [Architecture design](docs/go-driver-architecture-design.md)
 - [Capability matrix](docs/go-driver-capabilities.md)

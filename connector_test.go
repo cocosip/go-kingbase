@@ -71,7 +71,7 @@ func TestConnectorRejectsNonPGWireBeforeDial(t *testing.T) {
 		protocol WireProtocol
 		want     string
 	}{
-		{WireMySQL, "mysql"},
+		{WireMySQL, modeMySQLName},
 		{WireProtocol(2), "unknown(2)"},
 	} {
 		connector := newConnector(&Config{

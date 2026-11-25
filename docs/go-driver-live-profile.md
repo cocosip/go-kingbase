@@ -97,6 +97,25 @@ catalog-shape capture V2 requires. `sslmode=require` was rejected by all four
 listeners of this deployment because they did not offer TLS; V8 remains
 unverified and requires a TLS-enabled deployment, not a fallback.
 
+The same four-listener deployment was re-exercised on 2026-11-25 for profile
+behaviour. `sys_hba.conf` on every instance enables `scram-sha-256` for the
+172.16.2.0/24 client subnet (peer auth stays local-only), so SCRAM is the enabled
+live auth method for this profile; no listener offers TLS, so V8 remains
+unverified by infrastructure rather than by fallback. Observed profile facts that
+drive the mode-specific code: every listener rejects a bare `?` and accepts `$n`;
+double-quoted identifiers work in all modes, MySQL also accepts backticks and
+SQLServer brackets, while Oracle and SQLServer reject backticks and MySQL
+rejects brackets; native `:1` binds server-side in Oracle/MySQL/SQLServer; a bare
+procedure path is rejected by the SQLServer listener while `EXEC <name>` works;
+`tinyint` exists in Oracle/MySQL/SQLServer modes (signed in Oracle/MySQL,
+unsigned 0..255 in SQLServer), `YEAR` exists only in MySQL mode as a domain over
+`int4`, and SQLServer `BIT` is a one-byte base type. INOUT parameters return a
+row when supplied as bound parameters (`CALL proc(1, $1)`) in PG/Oracle/MySQL
+modes; MySQL `@var` user variables and SQLServer `@p OUTPUT` variables are not
+supported by these PG-wire listeners, and `CALL proc(1, :1)` also works through
+the server-native colon bind. These are profile-behaviour observations, not an
+accepted profile.
+
 Still missing for acceptance: the raw catalog query/shape/error capture as an
 ordinary role, V1 fallback cases, V5 routine/OUT/status forms, auth/TLS matrix,
 V12 deployment confirmation, V14 storage scope, V16 initialization budget, the
