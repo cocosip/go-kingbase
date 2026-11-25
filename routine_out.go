@@ -108,6 +108,11 @@ func assignRoutineRows(rows driver.Rows, outputs []outArgument) (driver.Result, 
 	} else if !errors.Is(err, io.EOF) {
 		return nil, err
 	}
+	// Drain through ReadyForQuery before publishing outputs so a trailing
+	// server error can never leave a caller-visible assignment.
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
 	for index, output := range outputs {
 		if err := assignOutValue(output.dest, values[index]); err != nil {
 			return nil, fmt.Errorf("kingbase: assign sql.Out argument %d: %w", index+1, err)
