@@ -83,7 +83,9 @@ OID. An explicit mode that contradicted the server-reported mode was rejected wi
 a `conflicts with server database_mode` error in every mode. A pooled connection
 kept its stale catalog and rejected a dropped type; after dropping idle
 connections, a fresh catalog also rejected it, and recreating the type made it
-visible again. A temporary ordinary login role was also created per mode; it
+visible again. A dropped-and-recreated type with the same name and a new OID was
+read successfully only through a fresh physical connection, not the stale
+catalog. A temporary ordinary login role was also created per mode; it
 connected with its own credentials and completed catalog initialization plus a
 builtin query, which is ordinary-role access evidence but not the raw
 catalog-shape capture V2 requires. `sslmode=require` was rejected by all four
@@ -93,7 +95,7 @@ unverified and requires a TLS-enabled deployment, not a fallback.
 Still missing for acceptance: the raw catalog query/shape/error capture as an
 ordinary role, V1 fallback cases, V5 routine/OUT/status forms, auth/TLS matrix,
 V12 deployment confirmation, V14 storage scope, V16 initialization budget, the
-changed-OID/mid-reader parts of V17, and the full V19 session/reset matrix.
+mid-reader part of V17, and the full V19 session/reset matrix.
 
 ## Acceptance ledger
 
