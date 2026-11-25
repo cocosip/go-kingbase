@@ -56,7 +56,7 @@ DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup excha
 | F-215 | Required connect-time qualified catalog | P0 | both | Namespace names, typtype, element/base/length/delimiter/row links before user SQL; bounded capture; no fixed row-count promise | done | done | pending |
 | F-216 | Ambiguous names and user types | P0 | offline | OID plus qualified identity/shape; app.int/year/bit never acquire built-in codecs or select mode | done | done | n/a |
 | F-217 | Verified alternate catalog queries | P0 | both | PG full-shape then accepted sys equivalent for missing-object cases; two-column fallback cannot enable required codecs | done | done | pending |
-| F-220 | Qualified profile/catalog validation | P0 | both | Only live-verified required shape rules; year/int markers do not determine mode or create arbitrary conflicts | todo | pending | pending |
+| F-220 | Qualified profile/catalog validation | P0 | both | Only live-verified required shape rules; year/int markers do not determine mode or create arbitrary conflicts | wip | pending | pending |
 | F-221 | Bounded protocol/endpoint diagnostics | P0 | offline | Configured transport only; sanitized capped prefix; no zero-wait peek, cross-protocol reconnect, port scan or downgrade | done | done | n/a |
 | F-218 | Catalog refresh boundary | P1 | both | New physical connection after type-changing DDL; stale/unknown OIDs safe; no mid-reader reload | todo | pending | pending |
 
