@@ -113,7 +113,11 @@ unsigned 0..255 in SQLServer), `YEAR` exists only in MySQL mode as a domain over
 row when supplied as bound parameters (`CALL proc(1, $1)`) in PG/Oracle/MySQL
 modes; MySQL `@var` user variables and SQLServer `@p OUTPUT` variables are not
 supported by these PG-wire listeners, and `CALL proc(1, :1)` also works through
-the server-native colon bind. SQLServer mode also rejects bare `COMMIT`/`ROLLBACK` (it requires the
+the server-native colon bind. Routine evidence: a PG-style `CALL p(IN a, INOUT b)` returns one row with the
+INOUT value on the extended protocol in PG, Oracle and MySQL, and no result set
+at all in SQLServer mode (the simple protocol does return it there); MySQL
+`@var` OUT forms are rejected by the listener, while `CALL p(1, :1)` works.
+SQLServer mode also rejects bare `COMMIT`/`ROLLBACK` (it requires the
 `... TRANSACTION` form) and bare `BEGIN` outside the `BEGIN TRANSACTION` form;
 its `sys.bit` is a one-byte boolean while MySQL `sys.bit` stays a bit string.
 Binary result payloads were captured for these types: `tinyint` is one signed or

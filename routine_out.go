@@ -72,13 +72,29 @@ func isCallStatement(query string) bool {
 	return true
 }
 
+// routineOutputsSupported reports whether the mode's PG-wire listener returns
+// the CALL output row while parameters are bound. The live V009R001C010
+// SQLServer-mode listener returns the row only on the simple protocol, which
+// cannot bind parameters, so sql.Out stays an explicit error there.
+func routineOutputsSupported(mode CompatibilityMode) bool {
+	return mode == ModePG || mode == ModeOracle || mode == ModeMySQL
+}
+
+// checkRoutineOutputsMode rejects modes that cannot deliver sql.Out values.
+func checkRoutineOutputsMode(mode CompatibilityMode) error {
+	if routineOutputsSupported(mode) {
+		return nil
+	}
+	return fmt.Errorf("kingbase: sql.Out is unsupported in %s mode: the listener returns no output row for a parameterized CALL", mode)
+}
+
 // execRoutineWithOutputs runs a PG CALL through the normal query path, reads
 // its single output row, and assigns each value only after the command has
 // completed. The connection is drained before the result is returned.
 func (c *conn) execRoutineWithOutputs(ctx context.Context, query string, args []driver.NamedValue,
 	outputs []outArgument) (driver.Result, error) {
-	if c.mode != ModePG {
-		return nil, fmt.Errorf("kingbase: sql.Out is supported only by the verified PG profile")
+	if err := checkRoutineOutputsMode(c.mode); err != nil {
+		return nil, err
 	}
 	if !isCallStatement(query) {
 		return nil, fmt.Errorf("kingbase: sql.Out requires a CALL statement")
@@ -123,8 +139,8 @@ func assignRoutineRows(rows driver.Rows, outputs []outArgument) (driver.Result, 
 
 func (s *stmt) execRoutineWithOutputs(ctx context.Context, args []driver.NamedValue,
 	outputs []outArgument) (driver.Result, error) {
-	if s.conn.mode != ModePG {
-		return nil, fmt.Errorf("kingbase: sql.Out is supported only by the verified PG profile")
+	if err := checkRoutineOutputsMode(s.conn.mode); err != nil {
+		return nil, err
 	}
 	if !isCallStatement(s.query) {
 		return nil, fmt.Errorf("kingbase: sql.Out requires a CALL statement")

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/cocosip/go-kingbase/internal/testpeer"
@@ -161,5 +162,35 @@ func TestAssignOutValueTinyintRanges(t *testing.T) {
 	if err := assignOutValue(reflect.ValueOf(&nullable).Elem(), int64(127)); err != nil ||
 		!nullable.Valid || nullable.Int64 != 127 {
 		t.Errorf("tinyint scanner = %#v, %v", nullable, err)
+	}
+}
+
+// TestRoutineOutputsModeGate pins which profiles can deliver sql.Out values and
+// the explicit SQLServer-mode error instead of a silent empty assignment.
+func TestRoutineOutputsModeGate(t *testing.T) {
+	for _, mode := range []CompatibilityMode{ModePG, ModeOracle, ModeMySQL} {
+		if !routineOutputsSupported(mode) {
+			t.Errorf("%s does not support routine outputs", mode)
+		}
+	}
+	for _, mode := range []CompatibilityMode{ModeAuto, ModeSQLServer} {
+		if routineOutputsSupported(mode) {
+			t.Errorf("%s must not claim routine outputs", mode)
+		}
+	}
+	var value int64 = 2
+	out, err := newOutArgument(sql.Out{Dest: &value, In: true})
+	if err != nil {
+		t.Fatalf("newOutArgument: %v", err)
+	}
+	physical := &conn{mode: ModeSQLServer}
+	_, err = physical.execRoutineWithOutputs(context.Background(), "CALL p($1, $2)", nil, []outArgument{out})
+	if err == nil || !strings.Contains(err.Error(), "no output row for a parameterized CALL") {
+		t.Fatalf("SQLServer error = %v, want the parameterized-CALL limitation", err)
+	}
+	prepared := &stmt{conn: physical, query: "CALL p($1, $2)"}
+	if _, err := prepared.execRoutineWithOutputs(context.Background(), nil, []outArgument{out}); err == nil ||
+		!strings.Contains(err.Error(), "no output row for a parameterized CALL") {
+		t.Fatalf("prepared SQLServer error = %v, want the parameterized-CALL limitation", err)
 	}
 }
