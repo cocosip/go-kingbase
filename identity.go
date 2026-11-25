@@ -56,7 +56,10 @@ type ServerMetadata struct {
 	ServerVersion string
 	// ServerVersionNum is the raw startup server_version_num, when reported.
 	ServerVersionNum string
-	// CatalogStatus reports the shape of the loaded type catalog.
+	// CatalogStatus reports the shape of the type snapshot loaded for this
+	// physical connection. The snapshot is fixed for the connection's lifetime;
+	// after type-changing DDL, typed access requires a new physical connection
+	// because pool reuse does not refresh it.
 	CatalogStatus CatalogStatus
 	// CatalogCause records why a partial catalog was used, when it was.
 	CatalogCause string
