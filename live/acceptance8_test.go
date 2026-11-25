@@ -37,6 +37,48 @@ func TestLiveExplicitModeConflict(t *testing.T) {
 	}
 }
 
+func TestLiveCatalogChangedOID(t *testing.T) {
+	_, admin, _ := liveDB(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	typeName := fmt.Sprintf("live_oid_%d", time.Now().UnixNano())
+	quoted := kingbase.QuoteIdentifier(typeName)
+	if _, err := admin.ExecContext(ctx, `CREATE TYPE `+quoted+` AS ENUM ('a')`); err != nil {
+		t.Fatalf("CREATE TYPE: %v", err)
+	}
+	t.Cleanup(func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cleanupCancel()
+		_, _ = admin.ExecContext(cleanupCtx, `DROP TYPE IF EXISTS `+quoted)
+	})
+	var value string
+	if err := admin.QueryRowContext(ctx, `SELECT 'a'::`+quoted).Scan(&value); err != nil {
+		t.Fatalf("first type value: %v", err)
+	}
+	if _, err := admin.ExecContext(ctx, `DROP TYPE `+quoted); err != nil {
+		t.Fatalf("DROP TYPE: %v", err)
+	}
+	if _, err := admin.ExecContext(ctx, `CREATE TYPE `+quoted+` AS ENUM ('a', 'b')`); err != nil {
+		t.Fatalf("recreate TYPE: %v", err)
+	}
+	secondDB, err := sql.Open("kingbase", os.Getenv("KINGBASE_TEST_DSN"))
+	if err != nil {
+		t.Fatalf("second Open: %v", err)
+	}
+	defer func() { _ = secondDB.Close() }()
+	second, err := secondDB.Conn(ctx)
+	if err != nil {
+		t.Fatalf("second Conn: %v", err)
+	}
+	defer func() { _ = second.Close() }()
+	if err := second.QueryRowContext(ctx, `SELECT 'b'::`+quoted).Scan(&value); err != nil {
+		t.Fatalf("changed-OID value on a fresh catalog: %v", err)
+	}
+	if value != "b" {
+		t.Errorf("changed-OID value = %q", value)
+	}
+}
+
 func TestLiveCatalogPoolReuse(t *testing.T) {
 	_, admin, _ := liveDB(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
