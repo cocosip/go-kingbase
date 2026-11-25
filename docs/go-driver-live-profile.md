@@ -70,7 +70,9 @@ queried and committed in each mode. A scratch-table write inside a read-only
 transaction was rejected with SQLSTATE 25006 in all four modes; this verifies the
 server's enforcement for the tested statements, not every writable path.
 PG metadata reported uppercase `INT4`/`VARCHAR`/`DATE`, real scan types and the
-varchar length. The PG catalog
+varchar length. `TestLiveCatalogBuiltinShapes` captured the required base kind
+and `typlen` for the codec-selecting builtins in all four modes; the driver now
+refuses a codec when a qualified name has a different shape. The PG catalog
 lifecycle check created an enum, read it on a fresh connection, dropped it and
 confirmed that the stale catalog reports an error instead of scanning a stale
 OID. An explicit mode that contradicted the server-reported mode was rejected with
