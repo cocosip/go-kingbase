@@ -828,3 +828,192 @@ func TestLastInsertIDPreparedReturningRejectsExec(t *testing.T) {
 		t.Errorf("statement.Close: %v", err)
 	}
 }
+
+func TestLastInsertIDMySQLCapturesConnectionValue(t *testing.T) {
+	const insertSQL = "INSERT INTO t VALUES (1)"
+	srv := testpeer.Start(t, func(peer *testpeer.Conn) {
+		if !startupOK(peer) {
+			return
+		}
+		payload, ok := expectMessage(peer, wire.MsgQuery)
+		if !ok {
+			return
+		}
+		statement, err := wire.DecodeQuery(payload)
+		if err != nil || statement != insertSQL {
+			peer.Errorf("Query = %q, err %v, want %q", statement, err, insertSQL)
+			return
+		}
+		if err := peer.CommandComplete("INSERT 0 1"); err != nil {
+			peer.Errorf("CommandComplete: %v", err)
+			return
+		}
+		if err := peer.ReadyForQuery(wire.StatusIdle); err != nil {
+			peer.Errorf("ReadyForQuery: %v", err)
+			return
+		}
+		payload, ok = expectMessage(peer, wire.MsgQuery)
+		if !ok {
+			return
+		}
+		statement, err = wire.DecodeQuery(payload)
+		if err != nil || statement != "SELECT LAST_INSERT_ID()" {
+			peer.Errorf("identity query = %q, err %v", statement, err)
+			return
+		}
+		if err := peer.RowDescription([]wire.ColumnDescription{
+			{Name: "last_insert_id", TypeOID: 20, TypeLen: 8, TypeMod: -1, Format: 0},
+		}); err != nil {
+			peer.Errorf("RowDescription: %v", err)
+			return
+		}
+		if err := peer.DataRow([][]byte{[]byte("41")}); err != nil {
+			peer.Errorf("DataRow: %v", err)
+			return
+		}
+		if err := peer.CommandComplete("SELECT 1"); err != nil {
+			peer.Errorf("CommandComplete: %v", err)
+			return
+		}
+		if err := peer.ReadyForQuery(wire.StatusIdle); err != nil {
+			peer.Errorf("ReadyForQuery: %v", err)
+			return
+		}
+		waitTerminate(peer)
+	})
+	physical, err := connectPeer(t, srv, "mode=mysql get_last_insert_id=yes")
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	defer func() { _ = physical.Close() }()
+	result, err := physical.ExecContext(context.Background(), insertSQL, nil)
+	if err != nil {
+		t.Fatalf("ExecContext: %v", err)
+	}
+	if id, err := result.LastInsertId(); err != nil || id != 41 {
+		t.Errorf("LastInsertId = %d, %v, want 41", id, err)
+	}
+	if affected, err := result.RowsAffected(); err != nil || affected != 1 {
+		t.Errorf("RowsAffected = %d, %v, want 1", affected, err)
+	}
+}
+
+func TestExactLastInsertIDOverflow(t *testing.T) {
+	if _, err := exactLastInsertID("9223372036854775808"); !errors.Is(err, ErrLastInsertIDOverflow) {
+		t.Errorf("overflow error = %v, want ErrLastInsertIDOverflow", err)
+	}
+	if id, err := exactLastInsertID("41"); err != nil || id != 41 {
+		t.Errorf("exact ID = %d, %v, want 41", id, err)
+	}
+	if _, err := exactLastInsertID("not-a-number"); !errors.Is(err, ErrLastInsertIDUnavailable) {
+		t.Errorf("malformed error = %v, want ErrLastInsertIDUnavailable", err)
+	}
+}
+
+func TestLastInsertIDMySQLPreparedExec(t *testing.T) { //nolint:gocyclo // testpeer script reads linearly
+	const insertSQL = "INSERT INTO t VALUES ($1)"
+	srv := testpeer.Start(t, func(peer *testpeer.Conn) {
+		if !startupOK(peer) {
+			return
+		}
+		parsePayload, ok := expectMessage(peer, wire.MsgParse)
+		if !ok {
+			return
+		}
+		name, statement, _, err := wire.DecodeParse(parsePayload)
+		if err != nil || name != "kb_stmt_0" || statement != insertSQL {
+			peer.Errorf("Parse = %q (%q), err %v", name, statement, err)
+			return
+		}
+		describePayload, ok := expectMessage(peer, wire.MsgDescribe)
+		if !ok {
+			return
+		}
+		kind, described, err := wire.DecodeDescribe(describePayload)
+		if err != nil || kind != 'S' || described != name {
+			peer.Errorf("Describe = %q/%q, err %v", kind, described, err)
+			return
+		}
+		if _, ok := expectMessage(peer, wire.MsgSync); !ok {
+			return
+		}
+		_ = peer.WriteMessage(wire.MsgParseComplete, nil)
+		_ = peer.WriteMessage(wire.MsgParameterDescription, wire.EncodeParameterDescription([]uint32{23}))
+		_ = peer.WriteMessage(wire.MsgNoData, nil)
+		_ = peer.ReadyForQuery(wire.StatusIdle)
+
+		bindPayload, ok := expectMessage(peer, wire.MsgBind)
+		if !ok {
+			return
+		}
+		_, prepared, _, params, _, err := wire.DecodeBind(bindPayload)
+		if err != nil || prepared != name || len(params) != 1 {
+			peer.Errorf("Bind = %q/%d, err %v", prepared, len(params), err)
+			return
+		}
+		if _, ok := expectMessage(peer, wire.MsgExecute); !ok {
+			return
+		}
+		if _, ok := expectMessage(peer, wire.MsgSync); !ok {
+			return
+		}
+		_ = peer.WriteMessage(wire.MsgBindComplete, nil)
+		if err := peer.CommandComplete("INSERT 0 1"); err != nil {
+			peer.Errorf("CommandComplete: %v", err)
+			return
+		}
+		if err := peer.ReadyForQuery(wire.StatusIdle); err != nil {
+			peer.Errorf("ReadyForQuery: %v", err)
+			return
+		}
+
+		payload, ok := expectMessage(peer, wire.MsgQuery)
+		if !ok {
+			return
+		}
+		statement, err = wire.DecodeQuery(payload)
+		if err != nil || statement != "SELECT LAST_INSERT_ID()" {
+			peer.Errorf("identity query = %q, err %v", statement, err)
+			return
+		}
+		if err := peer.RowDescription([]wire.ColumnDescription{
+			{Name: "last_insert_id", TypeOID: 20, TypeLen: 8, TypeMod: -1, Format: 0},
+		}); err != nil {
+			peer.Errorf("RowDescription: %v", err)
+			return
+		}
+		if err := peer.DataRow([][]byte{[]byte("42")}); err != nil {
+			peer.Errorf("DataRow: %v", err)
+			return
+		}
+		if err := peer.CommandComplete("SELECT 1"); err != nil {
+			peer.Errorf("CommandComplete: %v", err)
+			return
+		}
+		if err := peer.ReadyForQuery(wire.StatusIdle); err != nil {
+			peer.Errorf("ReadyForQuery: %v", err)
+			return
+		}
+		waitTerminate(peer)
+	})
+	physical, err := connectPeer(t, srv, "mode=mysql get_last_insert_id=yes")
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	defer func() { _ = physical.Close() }()
+	prepared, err := physical.PrepareContext(context.Background(), insertSQL)
+	if err != nil {
+		t.Fatalf("PrepareContext: %v", err)
+	}
+	execCtx, ok := prepared.(driver.StmtExecContext)
+	if !ok {
+		t.Fatalf("prepared statement does not implement StmtExecContext")
+	}
+	result, err := execCtx.ExecContext(context.Background(), []driver.NamedValue{{Ordinal: 1, Value: int64(1)}})
+	if err != nil {
+		t.Fatalf("ExecContext: %v", err)
+	}
+	if id, err := result.LastInsertId(); err != nil || id != 42 {
+		t.Errorf("LastInsertId = %d, %v, want 42", id, err)
+	}
+}

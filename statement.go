@@ -22,6 +22,9 @@ type stmt struct {
 	name      string
 	paramOIDs []uint32
 	plan      placeholderPlan
+	// query is the rewritten statement text, used only by mode-specific
+	// generated-ID capture after an Exec.
+	query string
 	// generatedQuery is the safe INSERT with RETURNING appended; Exec uses it
 	// through an unnamed Parse so Query keeps the caller's original statement.
 	generatedQuery string
@@ -88,6 +91,7 @@ func (c *conn) PrepareContext(ctx context.Context, query string) (driver.Stmt, e
 		name:           name,
 		paramOIDs:      paramOIDs,
 		plan:           plan,
+		query:          query,
 		generatedQuery: generatedQuery,
 		autoIDErr:      autoIDErr,
 	}, nil
@@ -231,7 +235,14 @@ func (s *stmt) ExecContext(ctx context.Context, args []driver.NamedValue) (drive
 		s.conn.retire()
 		return nil, s.conn.classifyCommandError(err)
 	}
-	return s.conn.classifyCommandResult(false)
+	commandResult, err := s.conn.classifyCommandResult(false)
+	if err != nil {
+		return nil, err
+	}
+	if res, ok := commandResult.(*result); ok {
+		s.conn.captureMySQLGeneratedID(ctx, s.query, res)
+	}
+	return commandResult, nil
 }
 
 // QueryContext runs the prepared statement and returns rows.

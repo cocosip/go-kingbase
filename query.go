@@ -70,16 +70,73 @@ func (c *conn) ExecContext(ctx context.Context, query string, args []driver.Name
 			capture = true
 		}
 	}
-	var result driver.Result
+	var commandResult driver.Result
 	if len(values) == 0 {
-		result, err = c.execSimple(ctx, query, capture)
+		commandResult, err = c.execSimple(ctx, query, capture)
 	} else {
-		result, err = c.execExtended(ctx, query, values, plan.targets, capture)
+		commandResult, err = c.execExtended(ctx, query, values, plan.targets, capture)
 	}
 	if err != nil {
 		return nil, c.classifyCommandError(err)
 	}
-	return result, nil
+	if res, ok := commandResult.(*result); ok {
+		c.captureMySQLGeneratedID(ctx, query, res)
+	}
+	return commandResult, nil
+}
+
+// captureMySQLGeneratedID reads LAST_INSERT_ID() after a successful INSERT in
+// MySQL compatibility mode. The query is connection-scoped and runs only after
+// the INSERT reached ReadyForQuery, so a failure is reported by LastInsertId
+// without changing the caller's successful result.
+func (c *conn) captureMySQLGeneratedID(ctx context.Context, query string, result *result) {
+	if c.cfg == nil || !c.cfg.GetLastInsertID || c.mode != ModeMySQL {
+		return
+	}
+	if _, isInsert, err := parseGeneratedInsert(query); err != nil || !isInsert {
+		return
+	}
+	rows, err := c.querySimple(ctx, "SELECT LAST_INSERT_ID()")
+	if err != nil {
+		result.lastInsertIDErr = fmt.Errorf("%w: LAST_INSERT_ID: %v", ErrLastInsertIDUnavailable, err)
+		return
+	}
+	defer func() { _ = rows.Close() }()
+	dest := make([]driver.Value, 1)
+	if err := rows.Next(dest); err != nil {
+		result.lastInsertIDErr = fmt.Errorf("%w: LAST_INSERT_ID returned no row", ErrLastInsertIDUnavailable)
+		return
+	}
+	id, err := exactLastInsertID(dest[0])
+	if err != nil {
+		result.lastInsertIDErr = err
+		return
+	}
+	result.lastInsertID, result.lastInsertIDValid = id, true
+}
+
+func exactLastInsertID(value driver.Value) (int64, error) {
+	switch v := value.(type) {
+	case int64:
+		return v, nil
+	case string:
+		return parseExactLastInsertID(v)
+	case []byte:
+		return parseExactLastInsertID(string(v))
+	default:
+		return 0, fmt.Errorf("%w: LAST_INSERT_ID returned %T", ErrLastInsertIDUnavailable, value)
+	}
+}
+
+func parseExactLastInsertID(value string) (int64, error) {
+	id, err := strconv.ParseInt(value, 10, 64)
+	if err == nil {
+		return id, nil
+	}
+	if errors.Is(err, strconv.ErrRange) {
+		return 0, fmt.Errorf("%w: LAST_INSERT_ID %q does not fit int64", ErrLastInsertIDOverflow, value)
+	}
+	return 0, fmt.Errorf("%w: LAST_INSERT_ID %q: %v", ErrLastInsertIDUnavailable, value, err)
 }
 
 // classifyCommandError marks post-send failures as execution-uncertain. A
