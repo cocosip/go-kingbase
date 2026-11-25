@@ -19,6 +19,9 @@ func encodeParameter(value any) ([]byte, error) {
 		return nil, nil
 	case int64:
 		return strconv.AppendInt(nil, typed, 10), nil
+	case uint64:
+		// Full-range unsigned values stay exact decimal text; no int64 cast.
+		return strconv.AppendUint(nil, typed, 10), nil
 	case float64:
 		return strconv.AppendFloat(nil, typed, 'g', -1, 64), nil
 	case bool:
@@ -28,6 +31,16 @@ func encodeParameter(value any) ([]byte, error) {
 		return []byte("false"), nil
 	case string:
 		return []byte(typed), nil
+	case VarChar:
+		return []byte(typed), nil
+	case VarCharMax:
+		return []byte(typed), nil
+	case NVarCharMax:
+		return []byte(typed), nil
+	case NChar:
+		return []byte(typed), nil
+	case DateTime1:
+		return []byte(time.Time(typed).Format("2006-01-02 15:04:05.999999999Z07:00")), nil
 	case []byte:
 		// ponytail: raw bytes go as text; bytea (\x…) and binary formats belong
 		// to the codec task (T-009). Targets that reject the text raise a server

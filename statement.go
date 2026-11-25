@@ -320,6 +320,13 @@ func (c *conn) CheckNamedValue(argument *driver.NamedValue) error {
 	if argument.Name != "" {
 		return fmt.Errorf("kingbase: named parameters are not supported (parameter %q)", argument.Name)
 	}
+	// Keep the compatibility wrappers and the full uint64 range intact until
+	// binding; the default converter would collapse them into string/int64 and
+	// lose the caller's target intent or reject values above MaxInt64.
+	switch argument.Value.(type) {
+	case uint64, VarChar, VarCharMax, NVarCharMax, NChar, DateTime1:
+		return nil
+	}
 	value, err := driver.DefaultParameterConverter.ConvertValue(argument.Value)
 	if err != nil {
 		return fmt.Errorf("kingbase: parameter %d: %w", argument.Ordinal, err)

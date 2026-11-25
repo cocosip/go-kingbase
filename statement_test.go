@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cocosip/go-kingbase/internal/testpeer"
 	"github.com/cocosip/go-kingbase/internal/wire"
@@ -398,14 +399,24 @@ func TestCheckNamedValue(t *testing.T) {
 			wantErr:  "named parameters are not supported",
 		},
 		{
-			name:     "uint64 above int64 rejected",
+			name:     "uint64 above int64 preserved",
 			argument: driver.NamedValue{Ordinal: 1, Value: uint64(1 << 63)},
-			wantErr:  "parameter 1",
+			want:     uint64(1 << 63),
 		},
 		{
-			name:     "uint64 within range converted",
-			argument: driver.NamedValue{Ordinal: 1, Value: uint64(1 << 62)},
-			want:     int64(1 << 62),
+			name:     "uint64 full range preserved",
+			argument: driver.NamedValue{Ordinal: 1, Value: ^uint64(0)},
+			want:     ^uint64(0),
+		},
+		{
+			name:     "varchar wrapper preserved",
+			argument: driver.NamedValue{Ordinal: 1, Value: VarChar("alice")},
+			want:     VarChar("alice"),
+		},
+		{
+			name:     "datetime wrapper preserved",
+			argument: driver.NamedValue{Ordinal: 1, Value: DateTime1(time.Unix(1, 0).UTC())},
+			want:     DateTime1(time.Unix(1, 0).UTC()),
 		},
 		{
 			name:      "valuer resolved once",
