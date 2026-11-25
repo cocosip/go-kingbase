@@ -26,7 +26,7 @@ func (c *conn) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx, e
 	if c.txStatus != wire.StatusIdle {
 		return nil, fmt.Errorf("kingbase: transaction already in progress")
 	}
-	beginSQL, err := beginStatement(opts)
+	beginSQL, err := beginStatement(c.mode, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -41,8 +41,14 @@ func (c *conn) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx, e
 }
 
 // beginStatement renders the BEGIN statement for the requested options.
-func beginStatement(opts driver.TxOptions) (string, error) {
-	parts := []string{"BEGIN"}
+// SQLServer compatibility mode requires BEGIN TRANSACTION; the accepted
+// isolation/read-only suffix is the same as the other modes.
+func beginStatement(mode CompatibilityMode, opts driver.TxOptions) (string, error) {
+	keyword := "BEGIN"
+	if mode == ModeSQLServer {
+		keyword = "BEGIN TRANSACTION"
+	}
+	parts := []string{keyword}
 	switch sql.IsolationLevel(opts.Isolation) {
 	case sql.LevelDefault:
 	case sql.LevelReadUncommitted:

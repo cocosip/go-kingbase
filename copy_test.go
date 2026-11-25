@@ -19,7 +19,7 @@ func peerBegin(peer *testpeer.Conn) bool {
 	if _, ok := expectMessage(peer, wire.MsgQuery); !ok {
 		return false
 	}
-	if err := peer.CommandComplete("BEGIN"); err != nil {
+	if err := peer.CommandComplete(testBeginSQL); err != nil {
 		peer.Errorf("CommandComplete: %v", err)
 		return false
 	}

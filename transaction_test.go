@@ -13,6 +13,8 @@ import (
 	"github.com/cocosip/go-kingbase/internal/wire"
 )
 
+const testBeginSQL = "BEGIN"
+
 func startTransactionPeer(t *testing.T, beginSQL, completeTag string) *testpeer.Server {
 	t.Helper()
 	return testpeer.Start(t, func(peer *testpeer.Conn) {
@@ -28,7 +30,7 @@ func startTransactionPeer(t *testing.T, beginSQL, completeTag string) *testpeer.
 			peer.Errorf("BEGIN statement = %q, err %v, want %q", sql, err, beginSQL)
 			return
 		}
-		if err := peer.CommandComplete("BEGIN"); err != nil {
+		if err := peer.CommandComplete(testBeginSQL); err != nil {
 			peer.Errorf("CommandComplete: %v", err)
 			return
 		}
@@ -51,8 +53,33 @@ func startTransactionPeer(t *testing.T, beginSQL, completeTag string) *testpeer.
 	})
 }
 
+func TestBeginStatementModeKeywords(t *testing.T) {
+	cases := []struct {
+		mode CompatibilityMode
+		want string
+	}{
+		{ModePG, testBeginSQL},
+		{ModeOracle, testBeginSQL},
+		{ModeMySQL, testBeginSQL},
+		{ModeSQLServer, "BEGIN TRANSACTION"},
+	}
+	for _, testCase := range cases {
+		got, err := beginStatement(testCase.mode, driver.TxOptions{})
+		if err != nil || got != testCase.want {
+			t.Errorf("beginStatement(%s) = %q, %v, want %q", testCase.mode, got, err, testCase.want)
+		}
+	}
+	got, err := beginStatement(ModeSQLServer, driver.TxOptions{
+		Isolation: driver.IsolationLevel(sql.LevelSerializable),
+		ReadOnly:  true,
+	})
+	if err != nil || got != "BEGIN TRANSACTION ISOLATION LEVEL SERIALIZABLE READ ONLY" {
+		t.Errorf("SQLServer begin options = %q, %v", got, err)
+	}
+}
+
 func TestBeginCommit(t *testing.T) {
-	srv := startTransactionPeer(t, "BEGIN", "COMMIT")
+	srv := startTransactionPeer(t, testBeginSQL, "COMMIT")
 	physical, err := connectPeer(t, srv, "")
 	if err != nil {
 		t.Fatalf("Connect: %v", err)
@@ -74,7 +101,7 @@ func TestBeginCommit(t *testing.T) {
 }
 
 func TestBeginRollback(t *testing.T) {
-	srv := startTransactionPeer(t, "BEGIN", "ROLLBACK")
+	srv := startTransactionPeer(t, testBeginSQL, "ROLLBACK")
 	physical, err := connectPeer(t, srv, "")
 	if err != nil {
 		t.Fatalf("Connect: %v", err)
@@ -98,7 +125,7 @@ func TestBeginTxOptions(t *testing.T) {
 		opts driver.TxOptions
 		sql  string
 	}{
-		{name: "default", opts: driver.TxOptions{}, sql: "BEGIN"},
+		{name: "default", opts: driver.TxOptions{}, sql: testBeginSQL},
 		{name: "read committed", opts: driver.TxOptions{Isolation: driver.IsolationLevel(sql.LevelReadCommitted)}, sql: "BEGIN ISOLATION LEVEL READ COMMITTED"},
 		{name: "repeatable read", opts: driver.TxOptions{Isolation: driver.IsolationLevel(sql.LevelRepeatableRead)}, sql: "BEGIN ISOLATION LEVEL REPEATABLE READ"},
 		{name: "serializable read only", opts: driver.TxOptions{Isolation: driver.IsolationLevel(sql.LevelSerializable), ReadOnly: true}, sql: "BEGIN ISOLATION LEVEL SERIALIZABLE READ ONLY"},

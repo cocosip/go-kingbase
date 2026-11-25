@@ -51,11 +51,11 @@ func beginCursorPeer(t *testing.T, script func(*testpeer.Conn) bool) *testpeer.S
 		if !ok {
 			return
 		}
-		if got, err := wire.DecodeQuery(payload); err != nil || got != "BEGIN" {
+		if got, err := wire.DecodeQuery(payload); err != nil || got != testBeginSQL {
 			peer.Errorf("BEGIN statement = %q, err %v", got, err)
 			return
 		}
-		_ = peer.CommandComplete("BEGIN")
+		_ = peer.CommandComplete(testBeginSQL)
 		if peer.ReadyForQuery(wire.StatusInTransaction) != nil {
 			return
 		}

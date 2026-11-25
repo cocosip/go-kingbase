@@ -19,7 +19,7 @@ func TestResetSessionRollsBack(t *testing.T) {
 		if _, ok := expectMessage(peer, wire.MsgQuery); !ok {
 			return
 		}
-		if err := peer.CommandComplete("BEGIN"); err != nil {
+		if err := peer.CommandComplete(testBeginSQL); err != nil {
 			peer.Errorf("CommandComplete: %v", err)
 			return
 		}
@@ -51,7 +51,7 @@ func TestResetSessionRollsBack(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Connect: %v", err)
 	}
-	if _, err := physical.ExecContext(context.Background(), "BEGIN", nil); err != nil {
+	if _, err := physical.ExecContext(context.Background(), testBeginSQL, nil); err != nil {
 		t.Fatalf("BEGIN: %v", err)
 	}
 	if physical.txStatus != wire.StatusInTransaction {
@@ -80,11 +80,11 @@ func TestResetSessionKeepsPreparedStatements(t *testing.T) {
 		if !ok {
 			return
 		}
-		if sql, err := wire.DecodeQuery(payload); err != nil || sql != "BEGIN" {
+		if sql, err := wire.DecodeQuery(payload); err != nil || sql != testBeginSQL {
 			peer.Errorf("query = %q, err %v, want BEGIN", sql, err)
 			return
 		}
-		_ = peer.CommandComplete("BEGIN")
+		_ = peer.CommandComplete(testBeginSQL)
 		_ = peer.ReadyForQuery(wire.StatusInTransaction)
 		if !expectSimpleQuery(peer) {
 			return
@@ -111,7 +111,7 @@ func TestResetSessionKeepsPreparedStatements(t *testing.T) {
 		t.Fatalf("PrepareContext: %v", err)
 	}
 	statement := prepared.(*stmt)
-	if _, err := physical.ExecContext(context.Background(), "BEGIN", nil); err != nil {
+	if _, err := physical.ExecContext(context.Background(), testBeginSQL, nil); err != nil {
 		t.Fatalf("BEGIN: %v", err)
 	}
 	if err := physical.ResetSession(context.Background()); err != nil {
