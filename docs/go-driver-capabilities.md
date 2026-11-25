@@ -64,7 +64,7 @@ DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup excha
 
 | ID | Capability | Priority | Verification | Notes | Impl | Offline | Live |
 |---|---|---|---|---|---|---|---|
-| F-301 | Core scalar types | P0 | both | bool/int/float/numeric/text/bytea/date/time/timestamp/interval/uuid/json/xml/inet; standard driver values; text/binary parity for implemented formats; unknown binary remains bytes | wip | pending | pending |
+| F-301 | Core scalar types | P0 | both | bool/int/float/numeric/text/bytea/date/time/timestamp/interval/uuid/json/xml/inet; standard driver values; text/binary parity for implemented formats; unknown binary remains bytes | done | done | pending |
 | F-302 | Mode-specific codecs | P0 | both | tinyint/smallint/int/bigint/real/float/bit/datetime/year/money/binary/varbinary/nchar/nvarchar/longtext family/blob/uint4/uint8; verified qualified identity/range; standard values per Architecture 7.1 | todo | pending | pending |
 | F-303 | Mode semantics at standard value boundary | P0 | both | tinyint range checked then int64; boolean BIT bool/nil; date time.Time, time text, datetime time.Time | wip | pending | pending |
 | F-304 | Array/domain/composite contracts | P1 | both | Validated links; opaque default text; explicit Array Scanner/Valuer for rectangular 1-D/multi-D, empty/NULL arrays and NULL elements; dimensions/lower bounds preserved; bounded recursion | done | done | pending |
