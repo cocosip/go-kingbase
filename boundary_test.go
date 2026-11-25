@@ -184,6 +184,40 @@ func TestTimestamptzOffsetsAndPrecision(t *testing.T) {
 	}
 }
 
+func TestNullBoolStandardScan(t *testing.T) {
+	srv := testpeer.Start(t, func(peer *testpeer.Conn) {
+		if !startupOK(peer) {
+			return
+		}
+		column := wire.ColumnDescription{Name: "b", TypeOID: 16, TypeLen: 1, TypeMod: -1, Format: 0}
+		if !serveUserSelect(peer, "SELECT b", column, nil) {
+			return
+		}
+		if !serveUserSelect(peer, "SELECT b", column, []byte("t")) {
+			return
+		}
+		waitTerminate(peer)
+	})
+	db := sql.OpenDB(newConnector(peerConfig(t, srv, "")))
+	defer func() { _ = db.Close() }()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var missing sql.NullBool
+	if err := db.QueryRowContext(ctx, "SELECT b").Scan(&missing); err != nil {
+		t.Fatalf("NULL scan: %v", err)
+	}
+	if missing.Valid {
+		t.Errorf("NULL bool = %+v, want invalid", missing)
+	}
+	var present sql.NullBool
+	if err := db.QueryRowContext(ctx, "SELECT b").Scan(&present); err != nil {
+		t.Fatalf("true scan: %v", err)
+	}
+	if !present.Valid || !present.Bool {
+		t.Errorf("true bool = %+v, want valid true", present)
+	}
+}
+
 func TestTextTemporalPolicy(t *testing.T) {
 	if _, err := parseDate("2024-02-29"); err != nil {
 		t.Errorf("valid date: %v", err)
