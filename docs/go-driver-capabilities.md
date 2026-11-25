@@ -173,7 +173,7 @@ For deployments whose native MySQL endpoint is established by V12/V15 (Architect
 
 ## 13. Live Verification Requirements
 
-All V-items are pending until the progress tracker records real evidence. Not-applicable is allowed only for a named excluded profile/feature with reason, never lack of infrastructure. V11/V13 apply to later V8 scope; V15 and native cases of V8/V19 apply when M5 enters the release manifest. Authentication/COPY/notification cases follow enabled features; unsupported extensions remain unclaimed.
+The [V1–V19 evidence ledger](go-driver-live-profile.md#v1v19-evidence-ledger-2026-11-25-four-mode-run) records the 2026-11-25 four-mode run: V1–V6, V9, V10, V12, V14 and V16–V19 are evidenced on this deployment, V7 is partial (only SCRAM is enabled), V8 is blocked by infrastructure because no listener offers TLS, and V11/V13/V15 remain later-scope items. No V9 profile is accepted while V7/V8 stay open. Not-applicable is allowed only for a named excluded profile/feature with reason, never lack of infrastructure. V11/V13 apply to later V8 scope; V15 and native cases of V8/V19 apply when M5 enters the release manifest. Authentication/COPY/notification cases follow enabled features; unsupported extensions remain unclaimed.
 
 | ID | Item | Required evidence | Blocks |
 |---|---|---|---|
