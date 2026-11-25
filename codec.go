@@ -33,6 +33,8 @@ const (
 	pgTypeTimestamp   = "timestamp"
 	pgTypeTimestamptz = "timestamptz"
 	pgTypeNumeric     = "numeric"
+	pgTypeTime        = "time"
+	pgTypeTimetz      = "timetz"
 )
 
 var (
@@ -92,7 +94,7 @@ func textValue(schema, name string, data []byte) (driver.Value, bool, error) {
 			return nil, true, err
 		}
 		return value, true, nil
-	case pgTypeNumeric, "money", "time", "timetz", "interval", "uuid", "json", "jsonb",
+	case pgTypeNumeric, "money", pgTypeTime, pgTypeTimetz, "interval", "uuid", "json", "jsonb",
 		"xml", "inet", "cidr", "macaddr", "macaddr8", pgTypeText, pgTypeVarchar, pgTypeBpchar,
 		pgTypeChar, "name", "unknown":
 		return string(data), true, nil
@@ -126,7 +128,8 @@ func scanType(schema, name string, format int16) reflect.Type {
 			return reflect.TypeOf(int64(0))
 		case pgTypeFloat4, pgTypeFloat8:
 			return reflect.TypeOf(float64(0))
-		case pgTypeText, pgTypeVarchar, pgTypeBpchar, pgTypeChar, "name", "unknown", "json", "jsonb", "uuid", pgTypeNumeric:
+		case pgTypeText, pgTypeVarchar, pgTypeBpchar, pgTypeChar, "name", "unknown", "json", "jsonb", "uuid", pgTypeNumeric,
+			pgTypeTime, pgTypeTimetz:
 			return reflect.TypeOf("")
 		case pgTypeBytea:
 			return reflect.TypeOf([]byte(nil))
@@ -227,7 +230,7 @@ func binaryLayoutKnown(name string) bool {
 	switch name {
 	case pgTypeBool, pgTypeInt2, pgTypeInt4, pgTypeInt8, pgTypeOid, pgTypeXid, pgTypeCid, pgTypeFloat4, pgTypeFloat8,
 		pgTypeText, pgTypeVarchar, pgTypeBpchar, pgTypeChar, "name", "unknown", pgTypeBytea, "json",
-		"jsonb", "uuid", pgTypeDate, pgTypeTimestamp, pgTypeTimestamptz, pgTypeNumeric:
+		"jsonb", "uuid", pgTypeDate, pgTypeTimestamp, pgTypeTimestamptz, pgTypeNumeric, pgTypeTime, pgTypeTimetz:
 		return true
 	default:
 		return false
@@ -248,6 +251,13 @@ var pgEpoch = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
 func boolBinaryValue(data []byte) (driver.Value, bool) {
 	if len(data) == 1 && (data[0] == 0 || data[0] == 1) {
 		return data[0] == 1, true
+	}
+	return nil, false
+}
+
+func uuidValue(data []byte) (driver.Value, bool) {
+	if len(data) == 16 {
+		return formatUUID(data), true
 	}
 	return nil, false
 }
@@ -307,10 +317,10 @@ func binaryValue(schema, name string, data []byte) (driver.Value, bool) {
 		}
 	case pgTypeNumeric:
 		return numericValue(data)
+	case pgTypeTime, pgTypeTimetz:
+		return timeOrTimetzValue(name, data)
 	case "uuid":
-		if len(data) == 16 {
-			return formatUUID(data), true
-		}
+		return uuidValue(data)
 	}
 	return nil, false
 }
