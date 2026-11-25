@@ -94,6 +94,12 @@ func TestLiveEvidenceMatrix(t *testing.T) {
 		_ = requireDB.Close()
 	}
 
+	// V14: the compatibility mode is an internal override, not a session GUC.
+	if settings, err := captureSettings(ctx, conn); err != nil {
+		record("settings_error", err.Error())
+	} else {
+		record("settings", settings)
+	}
 	// V18: scalar/temporal boundary values in the mode's own spelling.
 	record("boundaries", captureBoundaries(ctx, conn, meta.Mode))
 
@@ -196,6 +202,25 @@ func builtinShapes(ctx context.Context, conn *sql.Conn) (map[string]string, erro
 		shapes[schema+"."+name] = fmt.Sprintf("kind=%s len=%d base=%d", kind, length, base)
 	}
 	return shapes, rows.Err()
+}
+
+// captureSettings records the source/context of the mode and timezone GUCs.
+func captureSettings(ctx context.Context, conn *sql.Conn) (map[string]string, error) {
+	rows, err := conn.QueryContext(ctx,
+		"SELECT name, setting, source, context FROM pg_catalog.pg_settings WHERE name IN ('database_mode','compatdb_mode','TimeZone')")
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	settings := map[string]string{}
+	for rows.Next() {
+		var name, setting, source, scope string
+		if err := rows.Scan(&name, &setting, &source, &scope); err != nil {
+			return nil, err
+		}
+		settings[name] = fmt.Sprintf("setting=%s source=%s context=%s", setting, source, scope)
+	}
+	return settings, rows.Err()
 }
 
 // captureBoundaries records the mode's scalar/temporal boundary values.

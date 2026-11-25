@@ -150,7 +150,7 @@ DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup excha
 | F-1102 | Fake-server/failure suite | P0 | offline | Fragmentation, sizes/counts/EOF, auth faults, async rows, trailing errors, reset/cancel/retry races | done | done | n/a |
 | F-1103 | Scoped real-server profile matrix | P0 | live | V9 profiles first; exact accepted edition/release/mode/wire; unavailable profile pending, V8 later | wip | wip | pending |
 | F-1104 | Concurrency tests | P0 | both | multiple modes interleaved + `-race` | done | done | pending |
-| F-1105 | Performance baseline | P2 | live | Actual single-row/COPY workloads; explicitly deferrable outside release blockers | todo | pending | pending |
+| F-1105 | Performance baseline | P2 | live | Actual single-row/COPY workloads measured on the deployment (`TestLivePerformanceBaseline`, opt-in `KINGBASE_TEST_PERF=1`, log-only with `perf-<mode>.json`); explicitly deferrable outside release blockers | done | done | pending |
 | F-1106 | Repository lint rules | P0 | offline | Run existing .golangci.yml once product module exists | done | done | n/a |
 | F-1107 | Toolchain/platform/package release contract | P0 | offline | Go 1.26.0; module github.com/cocosip/go-kingbase from Git origin; Apache-2.0; linux/windows/darwin amd64+arm64; stdlib-only core; CI pinned; package smoke checks at T-051/T-053 | done | done | n/a |
 

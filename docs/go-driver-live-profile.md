@@ -77,11 +77,11 @@ of `America/New_York` kept a wall `timestamp` distinct from a DST-normalized
 `timestamptz` instant without a driver-side shift. A PG scalar function returned
 its value through `QueryRow`, and a `CALL` with an INOUT parameter returned the
 updated row; PG `sql.Out` assignment for a direct and a prepared `CALL` also
-returned the INOUT value after completion, while SQLServer status and the
-MySQL-compatible OUT form remain pending. In
+returned the INOUT value after completion; later runs below record the measured
+SQLServer status/limitation and the MySQL-mode OUT behaviour. In
 MySQL mode, opt-in `get_last_insert_id=yes` captured `LAST_INSERT_ID()` after a
 single-row INSERT and returned the generated value without changing
-`RowsAffected`; tinyint range conversion and V6 acceptance remain pending. The PG catalog
+`RowsAffected`;  The PG catalog
 lifecycle check created an enum, read it on a fresh connection, dropped it and
 confirmed that the stale catalog reports an error instead of scanning a stale
 OID. An explicit mode that contradicted the server-reported mode was rejected with
@@ -188,3 +188,36 @@ testpeer replay ran.
 
 This page is intentionally a manifest, not a support statement. M3 remains open
 until every applicable pair is accepted.
+
+## V1–V19 evidence ledger (2026-11-25 four-mode run)
+
+Status words: **evidenced** means the named live run produced the required
+observation on this deployment; **partial** and **blocked** state why the item
+is not closed. No profile is accepted while an applicable item is not
+evidenced.
+
+| Item | Status | Evidence |
+|---|---|---|
+| V1 | evidenced | `TestLiveSmoke` captures startup/reported mode and product identity per mode; `TestLiveExplicitModeConflict` rejects a contradictory declared mode; `TestLiveOrdinaryRoleCatalog` connects a temporary ordinary login. Empty/unknown mode answers are covered by the offline mode-discovery suite. |
+| V2 | evidenced | `TestLiveEvidenceMatrix` runs the driver's qualified `pg_catalog.pg_type`/`pg_namespace` query and retains column names plus the full row counts (pg 754, oracle 1006, mysql 902, sqlserver 801); `TestLiveCatalogBuiltinShapes` captures base kind/`typlen` per builtin. Ordinary-role access is evidenced separately by `TestLiveOrdinaryRoleCatalog`, not by a second raw-shape capture. |
+| V3 | evidenced | The evidence artifact records product/release, mode/source, wire protocol, the exact catalog query and its column names, the run time and the driver's observed shapes; no SDK constants are consumed by the driver. |
+| V4 | evidenced | `TestLiveCatalogBuiltinShapes` plus the artifact's builtin-shape map check qualified namespace/name/shape per mode; same-named application types are rejected by the offline catalog-shape suites, and absence never triggers a mode switch. |
+| V5 | evidenced (scope-limited) | `TestLiveRoutineOutAssignment` passes for PG/Oracle/MySQL direct and prepared `sql.Out`; `TestLiveSQLServerRoutineOutUnsupported` records the measured SQLServer parameterized-CALL limitation; `TestLiveRoutineExecDiscardsStatus` shows the SQLServer status is discarded without failure; `TestLiveSQLServerRoutineConvenience` covers the bare-name `EXEC`; `TestLiveCopyInAndCursor` covers refcursor fetch/close on the PG profile. Non-PG refcursor creation is not offered by these listeners. |
+| V6 | evidenced | `TestLiveGeneratedID` (PG form) and `TestLiveMySQLGeneratedID` (LAST_INSERT_ID form, including a tinyint identity) pass; rejection/overflow forms are covered by the offline generated-ID suite. |
+| V7 | partial | `sys_hba.conf` enables `scram-sha-256` for the client subnet and every connection authenticated; cleartext/MD5/SM3 login transcripts are not enabled on this deployment, so those methods remain unverified. |
+| V8 | blocked (infrastructure) | Every listener rejects `sslmode=require` with `server does not support TLS`; the driver's policy is measured, but a TLS-enabled deployment is required to close this item. No fallback is accepted. |
+| V9 | evidenced | `TestLiveCopyInAndCursor` passes COPY IN escaping/NULL and cursor handling in every mode; `TestLiveListenerNotification` passes PG LISTEN/NOTIFY delivery. |
+| V10 | evidenced | `TestLiveModeTypeCodecs` checks YEAR and the mode-specific text/binary forms in the same run; binary and text values agree for tinyint, uint4, uint8, money, bit and datetime where a codec is claimed. |
+| V11 | out of scope | Later V8R6 profile scope; the driver cannot inherit this V9 evidence for it. |
+| V12 | evidenced | The four endpoints and ports were supplied by the operator (Oracle 54321, MySQL 54322, SQLServer 54323, PostgreSQL 54324) and each accepted a positive PG-wire handshake; no port scan or packaging inference is used. |
+| V13 | out of scope | Legacy `compatible_level` meaning applies to the later V8R6 scope, not this V9 deployment. |
+| V14 | evidenced | `pg_settings` reports `database_mode` as `source=override context=internal` for every mode and `TimeZone` as `source=configuration file context=user`; the mode is fixed per instance and never assumed from DDL. |
+| V15 | out of scope | Native MySQL backend profile is the conditional M5 scope, independently established and not borrowed from this PG-wire evidence. |
+| V16 | evidenced | The bounded `SELECT version()` identity capture records `KingbaseES V009R001C010`/`12.1` per mode; the bounded-init, stalled-identity and deadline-cleanup paths are covered by the offline failure suite. |
+| V17 | evidenced | `TestLiveCatalogLifecycle`, `TestLiveCatalogChangedOID` and `TestLiveCatalogPoolReuse` pass in every mode: new/dropped/recreated OIDs, stale pooled snapshots, opaque fallback and fresh-connection recovery. |
+| V18 | evidenced | `TestLiveBoundaryValues`, `TestLiveTimezoneAndDST` and the artifact's boundary map cover exact numeric/uint64 text, NaN/±Infinity, interval, DST/timezone meaning, and the mode tinyint/year/datetime/money/bit/smalldatetime forms. Session lexical settings are covered by `TestLiveModePlaceholderAndQuoting` and the offline lexical suite. |
+| V19 | evidenced (scope-limited) | `TestLiveTransactionOptions`, `TestLiveReadOnlyTransactionEnforcement`, `TestLiveCancelAndRecovery`, `TestLiveTransactionPreparedAndNamed` and the artifact's transaction/recovery check pass; transaction-state reset and close/drain races are covered by the offline session suite. Backend-handle exposure is not promised by the driver. |
+
+Acceptance decision: **not accepted**. V7 is partial (only SCRAM enabled by the
+deployment) and V8 is blocked by the missing TLS listener; both are
+infrastructure facts recorded as-is, not driver gaps and not fallbacks.

@@ -15,7 +15,7 @@ A `database/sql` driver for KingbaseES, implemented independently in Go.
 ## Status
 
 Development against KingbaseES V009R001C010 is in progress. The PG-wire
-implementation covers the initial scope (DSN/auth, catalog, query/binding,
+implementation covers the initial scope (DSN/auth, catalog, query/binding,\ncodecs including the verified mode-specific types, routine INOUT/`sql.Out`\nwhere the listener returns an output row,
 codecs, transactions, COPY IN, cursors, listeners, metadata, generated IDs) and
 passes the offline suite plus a live acceptance harness. No public release or
 production support claim exists yet: M3 live acceptance (V1–V19) is in
