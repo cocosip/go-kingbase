@@ -41,6 +41,14 @@ const (
 	pgTypeXML         = "xml"
 	pgTypeBit         = "bit"
 	pgTypeVarbit      = "varbit"
+	pgTypeJSON        = "json"
+	pgTypeJSONB       = "jsonb"
+	pgTypeName        = "name"
+	pgTypeMoney       = "money"
+	pgTypeUUID        = "uuid"
+	pgTypeMacaddr     = "macaddr"
+	pgTypeMacaddr8    = "macaddr8"
+	pgTypeUnknown     = "unknown"
 )
 
 var (
@@ -100,9 +108,9 @@ func textValue(schema, name string, data []byte) (driver.Value, bool, error) {
 			return nil, true, err
 		}
 		return value, true, nil
-	case pgTypeNumeric, "money", pgTypeTime, pgTypeTimetz, pgTypeInterval, "uuid", "json", "jsonb",
-		pgTypeXML, pgTypeInet, pgTypeCidr, "macaddr", "macaddr8", pgTypeText, pgTypeVarchar, pgTypeBpchar,
-		pgTypeChar, "name", "unknown", pgTypeBit, pgTypeVarbit:
+	case pgTypeNumeric, pgTypeMoney, pgTypeTime, pgTypeTimetz, pgTypeInterval, pgTypeUUID, pgTypeJSON, pgTypeJSONB,
+		pgTypeXML, pgTypeInet, pgTypeCidr, pgTypeMacaddr, pgTypeMacaddr8, pgTypeText, pgTypeVarchar, pgTypeBpchar,
+		pgTypeChar, pgTypeName, pgTypeUnknown, pgTypeBit, pgTypeVarbit:
 		return string(data), true, nil
 	default:
 		return nil, false, nil
@@ -134,7 +142,7 @@ func scanType(schema, name string, format int16) reflect.Type {
 			return reflect.TypeOf(int64(0))
 		case pgTypeFloat4, pgTypeFloat8:
 			return reflect.TypeOf(float64(0))
-		case pgTypeText, pgTypeVarchar, pgTypeBpchar, pgTypeChar, "name", "unknown", "json", "jsonb", "uuid", pgTypeNumeric,
+		case pgTypeText, pgTypeVarchar, pgTypeBpchar, pgTypeChar, pgTypeName, pgTypeUnknown, pgTypeJSON, pgTypeJSONB, pgTypeUUID, pgTypeNumeric,
 			pgTypeTime, pgTypeTimetz, pgTypeInet, pgTypeCidr, pgTypeInterval, pgTypeXML, pgTypeBit, pgTypeVarbit:
 			return reflect.TypeOf("")
 		case pgTypeBytea:
@@ -235,8 +243,8 @@ func textConversionError(name string, data []byte) error {
 func binaryLayoutKnown(name string) bool {
 	switch name {
 	case pgTypeBool, pgTypeInt2, pgTypeInt4, pgTypeInt8, pgTypeOid, pgTypeXid, pgTypeCid, pgTypeFloat4, pgTypeFloat8,
-		pgTypeText, pgTypeVarchar, pgTypeBpchar, pgTypeChar, "name", "unknown", pgTypeBytea, "json",
-		"jsonb", "uuid", pgTypeDate, pgTypeTimestamp, pgTypeTimestamptz, pgTypeNumeric, pgTypeTime, pgTypeTimetz,
+		pgTypeText, pgTypeVarchar, pgTypeBpchar, pgTypeChar, pgTypeName, pgTypeUnknown, pgTypeBytea, pgTypeJSON,
+		pgTypeJSONB, pgTypeUUID, pgTypeDate, pgTypeTimestamp, pgTypeTimestamptz, pgTypeNumeric, pgTypeTime, pgTypeTimetz,
 		pgTypeInet, pgTypeCidr, pgTypeInterval, pgTypeXML, pgTypeBit, pgTypeVarbit:
 		return true
 	default:
@@ -315,13 +323,13 @@ func binaryValue(schema, name string, data []byte) (driver.Value, bool) {
 		if len(data) == 8 {
 			return math.Float64frombits(binary.BigEndian.Uint64(data)), true
 		}
-	case pgTypeText, pgTypeVarchar, pgTypeBpchar, pgTypeChar, "name", "unknown":
+	case pgTypeText, pgTypeVarchar, pgTypeBpchar, pgTypeChar, pgTypeName, pgTypeUnknown:
 		return string(data), true
 	case pgTypeBytea:
 		return append([]byte(nil), data...), true
-	case "json", pgTypeXML:
+	case pgTypeJSON, pgTypeXML:
 		return string(data), true
-	case "jsonb":
+	case pgTypeJSONB:
 		// A jsonb payload carries a one-byte format version before the text.
 		if len(data) > 0 && data[0] == 1 {
 			return string(data[1:]), true
@@ -342,7 +350,7 @@ func binaryValue(schema, name string, data []byte) (driver.Value, bool) {
 		return numericValue(data)
 	case pgTypeTime, pgTypeTimetz, pgTypeInet, pgTypeCidr, pgTypeInterval, pgTypeBit, pgTypeVarbit:
 		return textBinaryValue(name, data)
-	case "uuid":
+	case pgTypeUUID:
 		return uuidValue(data)
 	}
 	return nil, false
@@ -392,12 +400,67 @@ func (c *conn) catalogIdentity(oid uint32) (typeInfo, bool) {
 	return c.catalog.resolve(oid)
 }
 
+// builtinShapes pins the qualified PG-catalog base shape required before a
+// codec may be selected. A same-named type, domain base or malformed catalog
+// entry with a different kind/length stays opaque instead of decoding with a
+// layout that was never verified for it. Lengths come from the live V9
+// V009R001C010 catalog capture and the standard pg_catalog definitions.
+var builtinShapes = map[string]struct {
+	kind   byte
+	length int16
+}{
+	"bool":         {'b', 1},
+	"bytea":        {'b', -1},
+	"char":         {'b', 1},
+	pgTypeName:     {'b', 64},
+	"int2":         {'b', 2},
+	"int4":         {'b', 4},
+	"int8":         {'b', 8},
+	"oid":          {'b', 4},
+	"xid":          {'b', 4},
+	"cid":          {'b', 4},
+	"text":         {'b', -1},
+	pgTypeJSON:     {'b', -1},
+	pgTypeJSONB:    {'b', -1},
+	"float4":       {'b', 4},
+	"float8":       {'b', 8},
+	pgTypeMoney:    {'b', 8},
+	"bpchar":       {'b', -1},
+	"varchar":      {'b', -1},
+	"date":         {'b', 4},
+	"time":         {'b', 8},
+	"timetz":       {'b', 12},
+	"timestamp":    {'b', 8},
+	"timestamptz":  {'b', 8},
+	"interval":     {'b', 16},
+	"bit":          {'b', -1},
+	"varbit":       {'b', -1},
+	"numeric":      {'b', -1},
+	pgTypeUUID:     {'b', 16},
+	"xml":          {'b', -1},
+	"inet":         {'b', -1},
+	"cidr":         {'b', -1},
+	pgTypeMacaddr:  {'b', 6},
+	pgTypeMacaddr8: {'b', 8},
+}
+
+// validBuiltinShape reports whether the catalog entry has the required base
+// kind and length for its qualified builtin name.
+func validBuiltinShape(info typeInfo) bool {
+	shape, ok := builtinShapes[info.name]
+	return ok && info.kind == shape.kind && info.length == shape.length
+}
+
 // codecName returns the qualified builtin identity that may select a codec:
-// the pg_catalog namespace plus a base shape. Same-named user types and
-// non-base entries stay opaque even when their bare names match a builtin.
+// the pg_catalog namespace plus a verified base shape. Same-named user types,
+// non-base entries and mismatched lengths stay opaque even when their bare
+// names match a builtin.
 func (c *conn) codecName(oid uint32) (schema, name string, ok bool) {
 	info, found := c.catalogIdentity(oid)
 	if !found || info.kind != 'b' || info.schema != schemaPGCatalog || info.name == "" {
+		return "", "", false
+	}
+	if !validBuiltinShape(info) {
 		return "", "", false
 	}
 	if c.catalog.ambiguousIdentity(info) {

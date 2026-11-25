@@ -168,13 +168,13 @@ func (c *conn) binaryParameter(oid uint32, value driver.Value) ([]byte, bool, er
 			return nil, false, nil
 		}
 		return binary.BigEndian.AppendUint64(nil, math.Float64bits(number)), true, nil
-	case pgTypeText, pgTypeVarchar, pgTypeBpchar, pgTypeChar, "name", "json":
+	case pgTypeText, pgTypeVarchar, pgTypeBpchar, pgTypeChar, pgTypeName, pgTypeJSON:
 		text, ok := value.(string)
 		if !ok {
 			return nil, false, nil
 		}
 		return []byte(text), true, nil
-	case "jsonb":
+	case pgTypeJSONB:
 		text, ok := value.(string)
 		if !ok {
 			return nil, false, nil
