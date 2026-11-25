@@ -5,7 +5,7 @@ A `database/sql` driver for KingbaseES, implemented independently in Go.
 | Item | Value |
 |---|---|
 | Module | `github.com/cocosip/go-kingbase` |
-| Package | `gokb` |
+| Package | `kingbase` |
 | Driver name | `kingbase` |
 | Go baseline | 1.26.0 |
 | Platforms | linux, windows, darwin on amd64 and arm64 |

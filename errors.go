@@ -1,4 +1,4 @@
-package gokb
+package kingbase
 
 import (
 	"errors"
@@ -12,7 +12,7 @@ import (
 // Error is a server error response, including Kingbase extensions. Use
 // errors.As to inspect it:
 //
-//	var pgErr *gokb.Error
+//	var pgErr *kingbase.Error
 //	if errors.As(err, &pgErr) { ... pgErr.Code ... }
 type Error struct {
 	// Severity is the localized severity from field 'S'.

@@ -1,4 +1,4 @@
-package gokb
+package kingbase
 
 import (
 	"context"
@@ -180,7 +180,7 @@ func TestConnectErrorResponse(t *testing.T) {
 	}
 	var serverErr *Error
 	if !errors.As(err, &serverErr) {
-		t.Fatalf("error %v is not a *gokb.Error", err)
+		t.Fatalf("error %v is not a *kingbase.Error", err)
 	}
 	if serverErr.Code != testSQLStateAuth || serverErr.Severity != testSeverityFatal {
 		t.Errorf("server error = %+v, want SQLSTATE 28P01 severity FATAL", serverErr)
@@ -447,7 +447,7 @@ func TestServerErrorFullFieldMapping(t *testing.T) {
 	_, err := connectPeer(t, srv, "")
 	var serverErr *Error
 	if !errors.As(err, &serverErr) {
-		t.Fatalf("error %v is not a *gokb.Error", err)
+		t.Fatalf("error %v is not a *kingbase.Error", err)
 	}
 	if serverErr.Severity != testSeverity || serverErr.SeverityNonLocal != testSeverity {
 		t.Errorf("severity = %q/%q", serverErr.Severity, serverErr.SeverityNonLocal)
@@ -560,7 +560,7 @@ func TestConnectSCRAMWrongPassword(t *testing.T) {
 	}
 	var serverErr *Error
 	if !errors.As(err, &serverErr) || serverErr.Code != testSQLStateAuth {
-		t.Fatalf("error %v is not a 28P01 *gokb.Error", err)
+		t.Fatalf("error %v is not a 28P01 *kingbase.Error", err)
 	}
 }
 

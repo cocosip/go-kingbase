@@ -417,7 +417,7 @@ T-001 created go.mod, the license/dependency/CI contract and this skeleton packa
 
 ### 13.1 Confirmed module and Go baseline
 
-Use Go **1.26.0** for development and the baseline CI build/test/lint jobs. The product module path is **github.com/cocosip/go-kingbase**, derived from the configured Git origin, git@github.com:cocosip/go-kingbase.git. Package name remains gokb and database/sql driver registration remains kingbase.
+Use Go **1.26.0** for development and the baseline CI build/test/lint jobs. The product module path is **github.com/cocosip/go-kingbase**, derived from the configured Git origin, git@github.com:cocosip/go-kingbase.git. Package name is kingbase and database/sql driver registration remains kingbase. The vendor sample package name gokb is not reused, so imports cannot be confused with the official sample tree.
 
 When T-001 creates the root go.mod, it must begin with:
 
@@ -431,7 +431,7 @@ Use github.com/cocosip/go-kingbase in imports, examples and package-release chec
 
 ## 14. API and Migration Compatibility
 
-Driver registration is kingbase, package is gokb and module is github.com/cocosip/go-kingbase (O1 resolved). The new path requires import migration, not a drop-in claim. T-053 publishes compiling examples after implementation.
+Driver registration is kingbase, package is kingbase and module is github.com/cocosip/go-kingbase (O1 resolved). The new path requires import migration, not a drop-in claim. T-053 publishes compiling examples after implementation.
 
 | Official surface/behaviour | First-release migration decision |
 |---|---|
@@ -470,7 +470,7 @@ Implementation, offline proof and live acceptance are separate [progress](go-dri
 
 | ID | Decision/question | State/effect |
 |---|---|---|
-| O1 | published module identity/oid migration | resolved: github.com/cocosip/go-kingbase from Git origin; package gokb/registration kingbase retained; oid subpackage omitted per §14 |
+| O1 | published module identity/oid migration | resolved: github.com/cocosip/go-kingbase from Git origin; package kingbase with driver registration kingbase (the vendor sample package name gokb is not reused); oid subpackage omitted per §14 |
 | O2 | public scalar/temporal contract | resolved in specification: standard driver values, date time.Time/time text, no implicit civil/sql.NullBool |
 | O3 | qualified catalog access | pending V2; no built-in escape hatch; fail if required metadata unavailable |
 | O4 | V8 support | later scope, V11/V13 before enabling; no universal no-special-code assertion |

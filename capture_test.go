@@ -1,4 +1,4 @@
-package gokb
+package kingbase
 
 import (
 	"testing"

@@ -1,4 +1,4 @@
-package gokb
+package kingbase
 
 import (
 	"context"
@@ -150,7 +150,7 @@ func TestServerErrorIsDefinite(t *testing.T) {
 	_, err = physical.ExecContext(context.Background(), "INSERT INTO t VALUES (1)", nil)
 	var serverErr *Error
 	if !errors.As(err, &serverErr) || serverErr.Code != "23505" {
-		t.Fatalf("error = %v, want definite *gokb.Error", err)
+		t.Fatalf("error = %v, want definite *kingbase.Error", err)
 	}
 	var uncertainErr *UncertainError
 	if errors.As(err, &uncertainErr) {

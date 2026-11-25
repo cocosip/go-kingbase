@@ -53,6 +53,12 @@ var scriptedTypes = []scriptedType{
 	{1700, scriptedSchema, "numeric", 'b', -1, 0, 0, 0, ','},
 	{2950, scriptedSchema, "uuid", 'b', 16, 0, 0, 0, ','},
 	{3802, scriptedSchema, "jsonb", 'b', -1, 0, 0, 0, ','},
+	// Array identities keep their element link. Arrays stay opaque text for
+	// results; the explicit Array Scanner/Valuer consumes that text.
+	{1007, scriptedSchema, "_int4", 'b', -1, 0, 23, 0, ','},
+	// A domain over an array resolves through its validated base link and stays
+	// opaque text for results.
+	{70010, "app", "int4_list", 'd', -1, 1007, 0, 0, ','},
 }
 
 // catalogColumns describes the scripted catalog result.

@@ -1,4 +1,4 @@
-package gokb
+package kingbase
 
 import (
 	"crypto/md5" //nolint:gosec // MD5 is the documented PostgreSQL MD5 auth method.

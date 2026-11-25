@@ -1,4 +1,4 @@
-package gokb
+package kingbase
 
 import (
 	"context"
@@ -151,7 +151,7 @@ func (c *conn) serverMetadata() ServerMetadata {
 // works through database/sql's Raw hook:
 //
 //	sc, err := db.Conn(ctx)
-//	meta, err := gokb.ConnectionMetadata(sc)
+//	meta, err := kingbase.ConnectionMetadata(sc)
 func ConnectionMetadata(c *sql.Conn) (ServerMetadata, error) {
 	if c == nil {
 		return ServerMetadata{}, errors.New("kingbase: nil connection")
