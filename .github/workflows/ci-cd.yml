@@ -53,6 +53,13 @@ jobs:
       - name: Collect coverage
         if: matrix.os == 'ubuntu-latest'
         run: go test -coverprofile=coverage.out -covermode=atomic ./... -count=1 -timeout 10m
+      - name: Enforce coverage floor
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          total=$(go tool cover -func=coverage.out | awk '/^total:/ {gsub(/%/, "", $3); print $3}')
+          echo "total coverage: ${total}%"
+          awk -v got="$total" 'BEGIN { if (got + 0 < 70) { printf "coverage %.1f%% is below the 70%% floor\n", got; exit 1 } }'
       - name: Upload coverage
         if: ${{ !cancelled() && matrix.os == 'ubuntu-latest' }}
         uses: actions/upload-artifact@v7
