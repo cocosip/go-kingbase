@@ -20,7 +20,7 @@ type rows struct {
 	columns    []wire.ColumnDescription
 	names      []string
 	typeNames  []string
-	decoders   []func([]byte) driver.Value
+	decoders   []func([]byte) (driver.Value, error)
 	scanTypes  []reflect.Type
 	finished   bool
 	ready      bool
@@ -54,7 +54,7 @@ func (r *rows) resetColumns(columns []wire.ColumnDescription) {
 	r.columns = columns
 	r.names = make([]string, len(columns))
 	r.typeNames = make([]string, len(columns))
-	r.decoders = make([]func([]byte) driver.Value, len(columns))
+	r.decoders = make([]func([]byte) (driver.Value, error), len(columns))
 	r.scanTypes = make([]reflect.Type, len(columns))
 	for i, column := range columns {
 		r.names[i] = column.Name
@@ -78,33 +78,36 @@ func (r *rows) resetColumns(columns []wire.ColumnDescription) {
 	}
 }
 
-func unknownTypeDecoder(format int16) func([]byte) driver.Value {
-	return func(data []byte) driver.Value {
-		return decodeValue(format, data)
+func unknownTypeDecoder(format int16) func([]byte) (driver.Value, error) {
+	return func(data []byte) (driver.Value, error) {
+		return decodeValue(format, data), nil
 	}
 }
 
 // typeDecoder builds the per-column decoder for a verified catalog type.
-func typeDecoder(schema, name string, format int16) func([]byte) driver.Value {
+func typeDecoder(schema, name string, format int16) func([]byte) (driver.Value, error) {
 	if format == 1 {
-		return func(data []byte) driver.Value {
+		return func(data []byte) (driver.Value, error) {
 			if value, ok := binaryValue(schema, name, data); ok {
-				return value
+				return value, nil
+			}
+			if binaryLayoutKnown(name) {
+				return nil, fmt.Errorf("%w: malformed %s binary value", ErrValueConversion, name)
 			}
 			// Unverified binary layouts (numeric, interval, inet, ...) stay raw
 			// bytes; ponytail: add codecs when their wire layout is proven, and
 			// never guess a layout from the type name alone.
-			return append([]byte(nil), data...)
+			return append([]byte(nil), data...), nil
 		}
 	}
 	if format != 0 {
 		return unknownTypeDecoder(format)
 	}
-	return func(data []byte) driver.Value {
-		if value, ok := textValue(schema, name, data); ok {
-			return value
+	return func(data []byte) (driver.Value, error) {
+		if value, ok, err := textValue(schema, name, data); ok {
+			return value, err
 		}
-		return string(data)
+		return string(data), nil
 	}
 }
 
@@ -141,7 +144,7 @@ func (r *rows) ColumnTypeLength(index int) (int64, bool) {
 		return 0, false
 	}
 	switch info.name {
-	case "varchar", "bpchar", "char":
+	case pgTypeVarchar, pgTypeBpchar, pgTypeChar:
 		if column.TypeMod >= 4 {
 			return int64(column.TypeMod - 4), true
 		}
@@ -205,7 +208,11 @@ func (r *rows) Next(dest []driver.Value) error {
 					dest[i] = nil
 					continue
 				}
-				dest[i] = r.decoders[i](column.Data)
+				value, err := r.decoders[i](column.Data)
+				if err != nil {
+					return err
+				}
+				dest[i] = value
 			}
 			return nil
 		case wire.MsgCommandComplete, wire.MsgEmptyQueryResponse:

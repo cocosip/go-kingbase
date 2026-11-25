@@ -17,6 +17,12 @@ var ErrLastInsertIDUnavailable = errors.New("kingbase: LastInsertId is unavailab
 // ErrLastInsertIDOverflow reports a captured generated ID outside int64.
 var ErrLastInsertIDOverflow = errors.New("kingbase: LastInsertId overflows int64")
 
+// ErrValueConversion reports that a result value with a known type cannot be
+// represented by the driver's standard Go value. It is a client-side
+// conversion error, not a server or protocol error, and leaves the connection
+// usable after the rows are closed/drained.
+var ErrValueConversion = errors.New("kingbase: unsupported result value")
+
 // Error is a server error response, including Kingbase extensions. Use
 // errors.As to inspect it:
 //

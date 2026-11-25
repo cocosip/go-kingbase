@@ -128,7 +128,7 @@ func (c *conn) binaryParameter(oid uint32, value driver.Value) ([]byte, bool, er
 		return nil, false, nil
 	}
 	switch name {
-	case "bool":
+	case pgTypeBool:
 		flag, ok := value.(bool)
 		if !ok {
 			return nil, false, nil
@@ -137,18 +137,18 @@ func (c *conn) binaryParameter(oid uint32, value driver.Value) ([]byte, bool, er
 			return []byte{1}, true, nil
 		}
 		return []byte{0}, true, nil
-	case pgTypeInt2, pgTypeInt4, pgTypeInt8, "oid", "xid", "cid":
+	case pgTypeInt2, pgTypeInt4, pgTypeInt8, pgTypeOid, pgTypeXid, pgTypeCid:
 		number, ok := value.(int64)
 		if !ok {
 			return nil, false, nil
 		}
 		switch name {
-		case "int2":
+		case pgTypeInt2:
 			if number < math.MinInt16 || number > math.MaxInt16 {
 				return nil, false, fmt.Errorf("kingbase: parameter %d overflows int2", number)
 			}
 			return binary.BigEndian.AppendUint16(nil, uint16(number)), true, nil
-		case "int8":
+		case pgTypeInt8:
 			return binary.BigEndian.AppendUint64(nil, uint64(number)), true, nil
 		default:
 			if number < math.MinInt32 || number > math.MaxInt32 {
@@ -156,19 +156,19 @@ func (c *conn) binaryParameter(oid uint32, value driver.Value) ([]byte, bool, er
 			}
 			return binary.BigEndian.AppendUint32(nil, uint32(number)), true, nil
 		}
-	case "float4":
+	case pgTypeFloat4:
 		number, ok := value.(float64)
 		if !ok {
 			return nil, false, nil
 		}
 		return binary.BigEndian.AppendUint32(nil, math.Float32bits(float32(number))), true, nil
-	case "float8":
+	case pgTypeFloat8:
 		number, ok := value.(float64)
 		if !ok {
 			return nil, false, nil
 		}
 		return binary.BigEndian.AppendUint64(nil, math.Float64bits(number)), true, nil
-	case "text", "varchar", "bpchar", "char", "name", "json":
+	case pgTypeText, pgTypeVarchar, pgTypeBpchar, pgTypeChar, "name", "json":
 		text, ok := value.(string)
 		if !ok {
 			return nil, false, nil
@@ -180,20 +180,20 @@ func (c *conn) binaryParameter(oid uint32, value driver.Value) ([]byte, bool, er
 			return nil, false, nil
 		}
 		return append([]byte{1}, text...), true, nil
-	case "bytea":
+	case pgTypeBytea:
 		bytes, ok := value.([]byte)
 		if !ok {
 			return nil, false, nil
 		}
 		return bytes, true, nil
-	case "timestamp", "timestamptz":
+	case pgTypeTimestamp, pgTypeTimestamptz:
 		moment, ok := value.(time.Time)
 		if !ok {
 			return nil, false, nil
 		}
 		micros := moment.UTC().UnixMicro() - pgEpoch.UnixMicro()
 		return binary.BigEndian.AppendUint64(nil, uint64(micros)), true, nil
-	case "date":
+	case pgTypeDate:
 		moment, ok := value.(time.Time)
 		if !ok {
 			return nil, false, nil

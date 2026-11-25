@@ -219,7 +219,7 @@ func TestQueryExtendedBinding(t *testing.T) {
 		_ = peer.WriteMessage(wire.MsgParseComplete, nil)
 		_ = peer.WriteMessage(wire.MsgBindComplete, nil)
 		if err := peer.RowDescription([]wire.ColumnDescription{
-			{Name: "n", TypeOID: 23, TypeLen: 4, TypeMod: -1, Format: 1},
+			{Name: "n", TypeOID: 999999, TypeLen: 4, TypeMod: -1, Format: 1},
 		}); err != nil {
 			peer.Errorf("RowDescription: %v", err)
 			return

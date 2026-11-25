@@ -1,26 +1,32 @@
 package kingbase
 
 import (
+	"context"
+	"database/sql"
 	"encoding/binary"
+	"errors"
 	"math"
 	"testing"
 	"time"
+
+	"github.com/cocosip/go-kingbase/internal/testpeer"
+	"github.com/cocosip/go-kingbase/internal/wire"
 )
 
-func TestTextBooleanPreservesUnexpectedValue(t *testing.T) {
+func TestTextBooleanRejectsUnexpectedValue(t *testing.T) {
 	for _, value := range []string{"t", "f"} {
-		got, ok := textValue(schemaPGCatalog, "bool", []byte(value))
-		if !ok {
-			t.Fatalf("textValue(%q) had no codec", value)
+		got, ok, err := textValue(schemaPGCatalog, "bool", []byte(value))
+		if err != nil || !ok {
+			t.Fatalf("textValue(%q) = %#v, %v, %v", value, got, ok, err)
 		}
 		want := value == "t"
 		if got != want {
 			t.Errorf("textValue(%q) = %#v, want %v", value, got, want)
 		}
 	}
-	got, ok := textValue(schemaPGCatalog, "bool", []byte("not-a-bool"))
-	if !ok || got != "not-a-bool" {
-		t.Errorf("malformed boolean = %#v, %v, want opaque text", got, ok)
+	got, ok, err := textValue(schemaPGCatalog, "bool", []byte("not-a-bool"))
+	if !ok || got != nil || !errors.Is(err, ErrValueConversion) {
+		t.Errorf("malformed boolean = %#v, %v, %v, want a conversion error", got, ok, err)
 	}
 }
 
@@ -33,6 +39,9 @@ func TestBinaryBooleanRejectsNonCanonicalValue(t *testing.T) {
 	}
 	if _, ok := binaryValue(schemaPGCatalog, "bool", []byte{2}); ok {
 		t.Error("non-canonical binary boolean was decoded")
+	}
+	if _, err := typeDecoder(schemaPGCatalog, "bool", 1)([]byte{2}); !errors.Is(err, ErrValueConversion) {
+		t.Errorf("malformed binary bool error = %v, want ErrValueConversion", err)
 	}
 }
 
@@ -50,6 +59,9 @@ func TestBinaryTemporalRejectsOutOfRange(t *testing.T) {
 	if _, ok := binaryValue(schemaPGCatalog, "timestamp", infinity); ok {
 		t.Error("binary timestamp infinity was decoded as an instant")
 	}
+	if _, err := typeDecoder(schemaPGCatalog, "timestamp", 1)(infinity); !errors.Is(err, ErrValueConversion) {
+		t.Errorf("binary timestamp infinity error = %v, want ErrValueConversion", err)
+	}
 
 	validDate := make([]byte, 4)
 	if got, ok := binaryValue(schemaPGCatalog, "date", validDate); !ok || !got.(time.Time).Equal(pgEpoch) {
@@ -60,29 +72,64 @@ func TestBinaryTemporalRejectsOutOfRange(t *testing.T) {
 	if _, ok := binaryValue(schemaPGCatalog, "date", overRange); ok {
 		t.Error("out-of-range binary date was decoded")
 	}
+	if _, err := typeDecoder(schemaPGCatalog, "date", 1)(overRange); !errors.Is(err, ErrValueConversion) {
+		t.Errorf("out-of-range binary date error = %v, want ErrValueConversion", err)
+	}
+}
+
+func TestConversionErrorDrainsAndReusesConnection(t *testing.T) {
+	srv := testpeer.Start(t, func(peer *testpeer.Conn) {
+		if !startupOK(peer) {
+			return
+		}
+		if !serveUserSelect(peer, "SELECT t",
+			wire.ColumnDescription{Name: "t", TypeOID: 1114, TypeLen: 8, TypeMod: -1, Format: 0},
+			[]byte("infinity")) {
+			return
+		}
+		if !serveUserSelect(peer, "SELECT n",
+			wire.ColumnDescription{Name: "n", TypeOID: 23, TypeLen: 4, TypeMod: -1, Format: 0},
+			[]byte("7")) {
+			return
+		}
+		waitTerminate(peer)
+	})
+	db := sql.OpenDB(newConnector(peerConfig(t, srv, "")))
+	defer func() { _ = db.Close() }()
+	var at time.Time
+	err := db.QueryRowContext(context.Background(), "SELECT t").Scan(&at)
+	if !errors.Is(err, ErrValueConversion) {
+		t.Fatalf("infinity timestamp error = %v, want ErrValueConversion", err)
+	}
+	var number int64
+	if err := db.QueryRowContext(context.Background(), "SELECT n").Scan(&number); err != nil {
+		t.Fatalf("reuse query: %v", err)
+	}
+	if number != 7 {
+		t.Errorf("reuse value = %d, want 7", number)
+	}
 }
 
 func TestTextTemporalPolicy(t *testing.T) {
-	if got := parseDate("2024-02-29"); got == "2024-02-29" {
-		t.Error("valid date was left as text")
+	if _, err := parseDate("2024-02-29"); err != nil {
+		t.Errorf("valid date: %v", err)
 	}
 	for _, value := range []string{"2023-02-29", "0000-01-01", "2024-02-29 BC", "infinity"} {
-		if got := parseDate(value); got != value {
-			t.Errorf("parseDate(%q) = %#v, want text", value, got)
+		if _, err := parseDate(value); !errors.Is(err, ErrValueConversion) {
+			t.Errorf("parseDate(%q) error = %v, want ErrValueConversion", value, err)
 		}
 	}
-	if got := parseTimestamp("2024-01-02 03:04:05"); got == "2024-01-02 03:04:05" {
-		t.Error("valid timestamp was left as text")
+	if _, err := parseTimestamp("2024-01-02 03:04:05"); err != nil {
+		t.Errorf("valid timestamp: %v", err)
 	}
 	for _, value := range []string{"infinity", "-infinity", "2024-01-02 03:04:05 BC"} {
-		if got := parseTimestamp(value); got != value {
-			t.Errorf("parseTimestamp(%q) = %#v, want text", value, got)
+		if _, err := parseTimestamp(value); !errors.Is(err, ErrValueConversion) {
+			t.Errorf("parseTimestamp(%q) error = %v, want ErrValueConversion", value, err)
 		}
 	}
-	moment := parseTimestamptz("2024-01-02 03:04:05+08")
-	parsed, ok := moment.(time.Time)
-	if !ok {
-		t.Fatalf("timestamptz = %T, want time.Time", moment)
+	parsed, err := parseTimestamptz("2024-01-02 03:04:05+08")
+	if err != nil {
+		t.Fatalf("timestamptz: %v", err)
 	}
 	_, offset := parsed.Zone()
 	if offset != 8*60*60 || parsed.Hour() != 3 {

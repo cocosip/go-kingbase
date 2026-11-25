@@ -13,11 +13,25 @@ import (
 
 const (
 	schemaPGCatalog = "pg_catalog"
-	// pgTypeInt2, pgTypeInt4 and pgTypeInt8 appear in both the decode and
-	// parameter-encode switches; keep those literals single-sourced.
-	pgTypeInt2 = "int2"
-	pgTypeInt4 = "int4"
-	pgTypeInt8 = "int8"
+	// Common catalog names are single-sourced because decode, encode, metadata
+	// and target-binding paths all switch on them.
+	pgTypeBool        = "bool"
+	pgTypeInt2        = "int2"
+	pgTypeInt4        = "int4"
+	pgTypeInt8        = "int8"
+	pgTypeOid         = "oid"
+	pgTypeXid         = "xid"
+	pgTypeCid         = "cid"
+	pgTypeFloat4      = "float4"
+	pgTypeFloat8      = "float8"
+	pgTypeText        = "text"
+	pgTypeVarchar     = "varchar"
+	pgTypeBpchar      = "bpchar"
+	pgTypeChar        = "char"
+	pgTypeBytea       = "bytea"
+	pgTypeDate        = "date"
+	pgTypeTimestamp   = "timestamp"
+	pgTypeTimestamptz = "timestamptz"
 )
 
 var (
@@ -33,43 +47,54 @@ var (
 
 // textValue decodes one text-format result value for a catalog type. The
 // boolean reports whether a codec exists; callers fall back to string for
-// unknown types so unknown OIDs never fail a query.
-func textValue(schema, name string, data []byte) (driver.Value, bool) {
+// unknown types so unknown OIDs never fail a query. A known type whose value
+// cannot be represented returns ErrValueConversion.
+func textValue(schema, name string, data []byte) (driver.Value, bool, error) {
 	if schema != schemaPGCatalog {
-		return nil, false
+		return nil, false, nil
 	}
 	switch name {
-	case "bool":
+	case pgTypeBool:
 		if value, ok := strictBool(string(data)); ok {
-			return value, true
+			return value, true, nil
 		}
-		// A malformed boolean is preserved as text instead of silently becoming
-		// false; the server's frame was valid, the value is simply unexpected.
-		return string(data), true
-	case pgTypeInt2, pgTypeInt4, pgTypeInt8, "oid", "xid", "cid":
+		return nil, true, textConversionError(name, data)
+	case pgTypeInt2, pgTypeInt4, pgTypeInt8, pgTypeOid, pgTypeXid, pgTypeCid:
 		if value, err := strconv.ParseInt(string(data), 10, 64); err == nil {
-			return value, true
+			return value, true, nil
 		}
-		return string(data), true
-	case "float4", "float8":
+		return nil, true, textConversionError(name, data)
+	case pgTypeFloat4, pgTypeFloat8:
 		if value, err := strconv.ParseFloat(string(data), 64); err == nil {
-			return value, true
+			return value, true, nil
 		}
-		return string(data), true
-	case "bytea":
-		return decodeBytea(data), true
-	case "date":
-		return parseDate(string(data)), true
-	case "timestamp":
-		return parseTimestamp(string(data)), true
-	case "timestamptz":
-		return parseTimestamptz(string(data)), true
+		return nil, true, textConversionError(name, data)
+	case pgTypeBytea:
+		return decodeBytea(data), true, nil
+	case pgTypeDate:
+		value, err := parseDate(string(data))
+		if err != nil {
+			return nil, true, err
+		}
+		return value, true, nil
+	case pgTypeTimestamp:
+		value, err := parseTimestamp(string(data))
+		if err != nil {
+			return nil, true, err
+		}
+		return value, true, nil
+	case pgTypeTimestamptz:
+		value, err := parseTimestamptz(string(data))
+		if err != nil {
+			return nil, true, err
+		}
+		return value, true, nil
 	case "numeric", "money", "time", "timetz", "interval", "uuid", "json", "jsonb",
-		"xml", "inet", "cidr", "macaddr", "macaddr8", "text", "varchar", "bpchar",
-		"char", "name", "unknown":
-		return string(data), true
+		"xml", "inet", "cidr", "macaddr", "macaddr8", pgTypeText, pgTypeVarchar, pgTypeBpchar,
+		pgTypeChar, "name", "unknown":
+		return string(data), true, nil
 	default:
-		return nil, false
+		return nil, false, nil
 	}
 }
 
@@ -92,32 +117,32 @@ func scanType(schema, name string, format int16) reflect.Type {
 	}
 	if format == 1 {
 		switch name {
-		case "bool":
+		case pgTypeBool:
 			return reflect.TypeOf(true)
-		case pgTypeInt2, pgTypeInt4, pgTypeInt8, "oid", "xid", "cid":
+		case pgTypeInt2, pgTypeInt4, pgTypeInt8, pgTypeOid, pgTypeXid, pgTypeCid:
 			return reflect.TypeOf(int64(0))
-		case "float4", "float8":
+		case pgTypeFloat4, pgTypeFloat8:
 			return reflect.TypeOf(float64(0))
-		case "text", "varchar", "bpchar", "char", "name", "unknown", "json", "jsonb", "uuid":
+		case pgTypeText, pgTypeVarchar, pgTypeBpchar, pgTypeChar, "name", "unknown", "json", "jsonb", "uuid":
 			return reflect.TypeOf("")
-		case "bytea":
+		case pgTypeBytea:
 			return reflect.TypeOf([]byte(nil))
-		case "date", "timestamp", "timestamptz":
+		case pgTypeDate, pgTypeTimestamp, pgTypeTimestamptz:
 			return reflect.TypeOf(time.Time{})
 		default:
 			return opaqueScanType(format)
 		}
 	}
 	switch name {
-	case "bool":
+	case pgTypeBool:
 		return reflect.TypeOf(true)
-	case pgTypeInt2, pgTypeInt4, pgTypeInt8, "oid", "xid", "cid":
+	case pgTypeInt2, pgTypeInt4, pgTypeInt8, pgTypeOid, pgTypeXid, pgTypeCid:
 		return reflect.TypeOf(int64(0))
-	case "float4", "float8":
+	case pgTypeFloat4, pgTypeFloat8:
 		return reflect.TypeOf(float64(0))
-	case "bytea":
+	case pgTypeBytea:
 		return reflect.TypeOf([]byte(nil))
-	case "date", "timestamp", "timestamptz":
+	case pgTypeDate, pgTypeTimestamp, pgTypeTimestamptz:
 		return reflect.TypeOf(time.Time{})
 	default:
 		return reflect.TypeOf("")
@@ -157,29 +182,53 @@ func decodeBytea(data []byte) []byte {
 	return data
 }
 
-func parseDate(value string) driver.Value {
+func parseDate(value string) (time.Time, error) {
 	if parsed, err := time.Parse(dateLayouts[0], value); err == nil && validTemporalYear(parsed) {
-		return parsed
+		return parsed, nil
 	}
-	return value
+	return time.Time{}, textConversionError(pgTypeDate, []byte(value))
 }
 
-func parseTimestamp(value string) driver.Value {
+func parseTimestamp(value string) (time.Time, error) {
 	for _, layout := range timestampLayouts {
 		if parsed, err := time.ParseInLocation(layout, value, time.UTC); err == nil && validTemporalYear(parsed) {
-			return parsed
+			return parsed, nil
 		}
 	}
-	return value
+	return time.Time{}, textConversionError(pgTypeTimestamp, []byte(value))
 }
 
-func parseTimestamptz(value string) driver.Value {
+func parseTimestamptz(value string) (time.Time, error) {
 	for _, layout := range timestamptzLayouts {
 		if parsed, err := time.ParseInLocation(layout, value, time.UTC); err == nil && validTemporalYear(parsed) {
-			return parsed
+			return parsed, nil
 		}
 	}
-	return value
+	return time.Time{}, textConversionError(pgTypeTimestamptz, []byte(value))
+}
+
+// textConversionError keeps diagnostics bounded and identifies the failure as
+// a client-side conversion rather than a protocol error.
+func textConversionError(name string, data []byte) error {
+	const maxDiagnostic = 64
+	if len(data) > maxDiagnostic {
+		data = data[:maxDiagnostic]
+	}
+	return fmt.Errorf("%w: cannot decode %s value %q", ErrValueConversion, name, data)
+}
+
+// binaryLayoutKnown reports whether the driver implements this builtin's
+// binary layout. A false decode for a known layout is malformed input, not an
+// unsupported type that may fall back to opaque bytes.
+func binaryLayoutKnown(name string) bool {
+	switch name {
+	case pgTypeBool, pgTypeInt2, pgTypeInt4, pgTypeInt8, pgTypeOid, pgTypeXid, pgTypeCid, pgTypeFloat4, pgTypeFloat8,
+		pgTypeText, pgTypeVarchar, pgTypeBpchar, pgTypeChar, "name", "unknown", pgTypeBytea, "json",
+		"jsonb", "uuid", pgTypeDate, pgTypeTimestamp, pgTypeTimestamptz:
+		return true
+	default:
+		return false
+	}
 }
 
 // validTemporalYear keeps text dates and timestamps inside the year range that
@@ -200,33 +249,33 @@ func binaryValue(schema, name string, data []byte) (driver.Value, bool) {
 		return nil, false
 	}
 	switch name {
-	case "bool":
+	case pgTypeBool:
 		if len(data) == 1 && (data[0] == 0 || data[0] == 1) {
 			return data[0] == 1, true
 		}
-	case "int2":
+	case pgTypeInt2:
 		if len(data) == 2 {
 			return int64(int16(binary.BigEndian.Uint16(data))), true
 		}
-	case pgTypeInt4, "oid", "xid", "cid":
+	case pgTypeInt4, pgTypeOid, pgTypeXid, pgTypeCid:
 		if len(data) == 4 {
 			return int64(int32(binary.BigEndian.Uint32(data))), true
 		}
-	case "int8":
+	case pgTypeInt8:
 		if len(data) == 8 {
 			return int64(binary.BigEndian.Uint64(data)), true
 		}
-	case "float4":
+	case pgTypeFloat4:
 		if len(data) == 4 {
 			return float64(math.Float32frombits(binary.BigEndian.Uint32(data))), true
 		}
-	case "float8":
+	case pgTypeFloat8:
 		if len(data) == 8 {
 			return math.Float64frombits(binary.BigEndian.Uint64(data)), true
 		}
-	case "text", "varchar", "bpchar", "char", "name", "unknown":
+	case pgTypeText, pgTypeVarchar, pgTypeBpchar, pgTypeChar, "name", "unknown":
 		return string(data), true
-	case "bytea":
+	case pgTypeBytea:
 		return append([]byte(nil), data...), true
 	case "json":
 		return string(data), true
@@ -235,13 +284,13 @@ func binaryValue(schema, name string, data []byte) (driver.Value, bool) {
 		if len(data) > 0 && data[0] == 1 {
 			return string(data[1:]), true
 		}
-	case "date":
+	case pgTypeDate:
 		if len(data) == 4 {
 			if moment, ok := dateFromDays(int32(binary.BigEndian.Uint32(data))); ok {
 				return moment, true
 			}
 		}
-	case "timestamp", "timestamptz":
+	case pgTypeTimestamp, pgTypeTimestamptz:
 		if len(data) == 8 {
 			if moment, ok := timestampFromMicros(int64(binary.BigEndian.Uint64(data))); ok {
 				return moment, true
