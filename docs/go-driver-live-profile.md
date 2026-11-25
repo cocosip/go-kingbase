@@ -76,7 +76,10 @@ refuses a codec when a qualified name has a different shape. A PG session timezo
 of `America/New_York` kept a wall `timestamp` distinct from a DST-normalized
 `timestamptz` instant without a driver-side shift. A PG scalar function returned
 its value through `QueryRow`, and a `CALL` with an INOUT parameter returned the
-updated row; `sql.Out` assignment and SQLServer routine status remain pending. The PG catalog
+updated row; `sql.Out` assignment and SQLServer routine status remain pending. In
+MySQL mode, opt-in `get_last_insert_id=yes` captured `LAST_INSERT_ID()` after a
+single-row INSERT and returned the generated value without changing
+`RowsAffected`; tinyint range conversion and V6 acceptance remain pending. The PG catalog
 lifecycle check created an enum, read it on a fresh connection, dropped it and
 confirmed that the stale catalog reports an error instead of scanning a stale
 OID. An explicit mode that contradicted the server-reported mode was rejected with
