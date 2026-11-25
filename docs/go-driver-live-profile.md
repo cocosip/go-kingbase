@@ -66,7 +66,9 @@ The cancellation check passed in all four modes: each cancelled `pg_sleep` was
 reported as `*kingbase.UncertainError`, and a fresh pooled connection remained
 usable. This is not a full V19 race matrix. Default, read-committed,
 repeatable-read, serializable and read-only `BeginTx` options all opened,
-queried and committed in each mode; read-only enforcement itself was not asserted.
+queried and committed in each mode. A scratch-table write inside a read-only
+transaction was rejected with SQLSTATE 25006 in all four modes; this verifies the
+server's enforcement for the tested statements, not every writable path.
 PG metadata reported uppercase `INT4`/`VARCHAR`/`DATE`, real scan types and the
 varchar length. The PG catalog
 lifecycle check created an enum, read it on a fresh connection, dropped it and
