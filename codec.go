@@ -40,7 +40,12 @@ func textValue(schema, name string, data []byte) (driver.Value, bool) {
 	}
 	switch name {
 	case "bool":
-		return parseBool(string(data)), true
+		if value, ok := strictBool(string(data)); ok {
+			return value, true
+		}
+		// A malformed boolean is preserved as text instead of silently becoming
+		// false; the server's frame was valid, the value is simply unexpected.
+		return string(data), true
 	case pgTypeInt2, pgTypeInt4, pgTypeInt8, "oid", "xid", "cid":
 		if value, err := strconv.ParseInt(string(data), 10, 64); err == nil {
 			return value, true
@@ -128,6 +133,19 @@ func parseBool(value string) bool {
 	}
 }
 
+// strictBool accepts only the PostgreSQL text boolean spellings. Anything else
+// is preserved rather than coerced to false.
+func strictBool(value string) (bool, bool) {
+	switch value {
+	case "t":
+		return true, true
+	case "f":
+		return false, true
+	default:
+		return false, false
+	}
+}
+
 func decodeBytea(data []byte) []byte {
 	if len(data) >= 2 && data[0] == '\\' && data[1] == 'x' {
 		decoded := make([]byte, hex.DecodedLen(len(data)-2))
@@ -140,7 +158,7 @@ func decodeBytea(data []byte) []byte {
 }
 
 func parseDate(value string) driver.Value {
-	if parsed, err := time.Parse(dateLayouts[0], value); err == nil {
+	if parsed, err := time.Parse(dateLayouts[0], value); err == nil && validTemporalYear(parsed) {
 		return parsed
 	}
 	return value
@@ -148,7 +166,7 @@ func parseDate(value string) driver.Value {
 
 func parseTimestamp(value string) driver.Value {
 	for _, layout := range timestampLayouts {
-		if parsed, err := time.ParseInLocation(layout, value, time.UTC); err == nil {
+		if parsed, err := time.ParseInLocation(layout, value, time.UTC); err == nil && validTemporalYear(parsed) {
 			return parsed
 		}
 	}
@@ -157,11 +175,18 @@ func parseTimestamp(value string) driver.Value {
 
 func parseTimestamptz(value string) driver.Value {
 	for _, layout := range timestamptzLayouts {
-		if parsed, err := time.ParseInLocation(layout, value, time.UTC); err == nil {
+		if parsed, err := time.ParseInLocation(layout, value, time.UTC); err == nil && validTemporalYear(parsed) {
 			return parsed
 		}
 	}
 	return value
+}
+
+// validTemporalYear keeps text dates and timestamps inside the year range that
+// database/sql callers and time's text forms can round-trip. Zero, BC and
+// out-of-range years stay text instead of becoming a misleading instant.
+func validTemporalYear(value time.Time) bool {
+	return value.Year() >= 1 && value.Year() <= 9999
 }
 
 // pgEpoch is the origin of PG-wire binary date and timestamp payloads.
@@ -176,8 +201,8 @@ func binaryValue(schema, name string, data []byte) (driver.Value, bool) {
 	}
 	switch name {
 	case "bool":
-		if len(data) == 1 {
-			return data[0] != 0, true
+		if len(data) == 1 && (data[0] == 0 || data[0] == 1) {
+			return data[0] == 1, true
 		}
 	case "int2":
 		if len(data) == 2 {
@@ -212,13 +237,15 @@ func binaryValue(schema, name string, data []byte) (driver.Value, bool) {
 		}
 	case "date":
 		if len(data) == 4 {
-			days := int(int32(binary.BigEndian.Uint32(data)))
-			return pgEpoch.AddDate(0, 0, days), true
+			if moment, ok := dateFromDays(int32(binary.BigEndian.Uint32(data))); ok {
+				return moment, true
+			}
 		}
 	case "timestamp", "timestamptz":
 		if len(data) == 8 {
-			micros := int64(binary.BigEndian.Uint64(data))
-			return pgEpoch.Add(time.Duration(micros) * time.Microsecond), true
+			if moment, ok := timestampFromMicros(int64(binary.BigEndian.Uint64(data))); ok {
+				return moment, true
+			}
 		}
 	case "uuid":
 		if len(data) == 16 {
@@ -226,6 +253,36 @@ func binaryValue(schema, name string, data []byte) (driver.Value, bool) {
 		}
 	}
 	return nil, false
+}
+
+// maxTemporalDays bounds binary date/timestamp conversion before integer
+// widening and rejects PG infinity/sentinel values, which are not instants.
+const maxTemporalDays = 4_000_000
+
+const microsPerDay = int64(24 * 60 * 60 * 1_000_000)
+
+func dateFromDays(days int32) (time.Time, bool) {
+	if days > maxTemporalDays || days < -maxTemporalDays {
+		return time.Time{}, false
+	}
+	moment := pgEpoch.AddDate(0, 0, int(days))
+	if !validTemporalYear(moment) {
+		return time.Time{}, false
+	}
+	return moment, true
+}
+
+func timestampFromMicros(micros int64) (time.Time, bool) {
+	days := micros / microsPerDay
+	remainder := micros % microsPerDay
+	if days > maxTemporalDays || days < -maxTemporalDays {
+		return time.Time{}, false
+	}
+	moment := pgEpoch.AddDate(0, 0, int(days)).Add(time.Duration(remainder) * time.Microsecond)
+	if !validTemporalYear(moment) {
+		return time.Time{}, false
+	}
+	return moment, true
 }
 
 // formatUUID renders the 16-byte wire form as the canonical text form.
