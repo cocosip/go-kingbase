@@ -30,7 +30,7 @@ provided. It checks startup, mode/wire metadata, one qualified parameter and the
 server version report.
 
 ```sh
-KINGBASE_TEST_DSN='host=... port=54321 user=... password=... database=...' \
+KINGBASE_TEST_DSN='host=... port=54321 user=... password=... dbname=...' \
 KINGBASE_TEST_MODE=pg \
 KINGBASE_TEST_ARTIFACT_DIR=artifacts/v9-pg \
 go test -tags live ./live -run TestLiveSmoke -v
@@ -40,6 +40,35 @@ go test -tags live ./live -run TestLiveSmoke -v
 `live-smoke.json` with the reported metadata and timestamp. The harness does not
 run by default (`go test ./...` excludes it), and it never substitutes for the
 full V1–V19 checklist.
+
+Connection details are supplied only through the process environment and are
+never committed, logged by the repository, or written to artifacts. Artifact
+commands must be reviewed for credentials before retention.
+
+## 2026-11-25 sanitized result
+
+An operator-provided KingbaseES **V009R001C010** deployment was exercised with
+four compatibility modes through the PG-wire listener. This is a partial
+evidence run, not a profile acceptance:
+
+| Mode | Startup/mode | Catalog | Built-ins | Tx/prepared | COPY IN | Cursor | Binary parameters | Arrays | Listener | Generated ID | Cancel recovery |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| pg | pass | full | pass | pass | pass | pass | pass | pass | pass | pass | pass |
+| oracle | pass | full | pass | pass | pass | pass | pass | pass | not run | not run | not run |
+| mysql | pass | full | pass | pass | pass | pass | pass | pass | not run | not run | not run |
+| sqlserver | pass | full | pass | pass | pass | pass | pass | unsupported literal | not run | not run | not run |
+
+The SQLServer-mode run found that `BEGIN` alone is rejected and
+`BEGIN TRANSACTION` is required; the driver now renders that form for the
+SQLServer compatibility mode in transaction.go. SQLServer mode also rejected the
+PG `ARRAY[...]` literal, so array support remains unverified for that profile.
+The PG cancellation run recovered a new pooled connection after the cancelled
+query; this is not a full V19 race matrix.
+
+Still missing for acceptance: ordinary-role permission and raw catalog-shape
+capture, V1 fallback/conflict cases, V5 routine/OUT/status forms, auth/TLS
+matrix, V12 deployment confirmation, V14 storage scope, V16 initialization
+budget, V17 DDL/catalog lifecycle, and the full V19 session/reset matrix.
 
 ## Acceptance ledger
 
