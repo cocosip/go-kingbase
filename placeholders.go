@@ -8,10 +8,47 @@ import (
 )
 
 // placeholderPlan is a statement with its placeholders normalized to $n plus
-// the number of positional parameters it expects.
+// the number of positional parameters it expects. An explicit qualified cast
+// may also name a parameter target for verified binary encoding.
 type placeholderPlan struct {
-	query string
-	args  int
+	query   string
+	args    int
+	targets map[int]targetRef
+}
+
+// targetRef is a SQL-spelled qualified type name attached to one parameter.
+type targetRef struct {
+	schema string
+	name   string
+}
+
+// targetCollector records explicit cast targets and drops an index whose casts
+// disagree, so a repeated placeholder never inherits a guessed target.
+type targetCollector struct {
+	refs     map[int]targetRef
+	disabled map[int]bool
+}
+
+func (c *targetCollector) add(query string, index, start int) {
+	if c.disabled[index] {
+		return
+	}
+	ref, ok := castTarget(query, start)
+	if !ok {
+		return
+	}
+	if c.refs == nil {
+		c.refs = make(map[int]targetRef)
+	}
+	if existing, exists := c.refs[index]; exists && existing != ref {
+		delete(c.refs, index)
+		if c.disabled == nil {
+			c.disabled = make(map[int]bool)
+		}
+		c.disabled[index] = true
+		return
+	}
+	c.refs[index] = ref
 }
 
 // errMixedPlaceholders rejects a statement that mixes ? with $n.
@@ -32,6 +69,7 @@ func planPlaceholders(profile modeProfile, query string) (placeholderPlan, error
 	explicitMax := 0 // largest explicit $n index
 	sawQuestion := false
 	sawExplicit := false
+	collector := targetCollector{}
 	for i := 0; i < len(query); {
 		if end, ok := literalSpan(profile, query, i); ok {
 			out.WriteString(query[i:end])
@@ -61,6 +99,7 @@ func planPlaceholders(profile modeProfile, query string) (placeholderPlan, error
 			if index > explicitMax {
 				explicitMax = index
 			}
+			collector.add(query, index, end)
 			out.WriteString(query[i:end])
 			i = end
 		case '?':
@@ -74,6 +113,7 @@ func planPlaceholders(profile modeProfile, query string) (placeholderPlan, error
 			}
 			sawQuestion = true
 			next++
+			collector.add(query, next, i+1)
 			out.WriteString("$")
 			out.WriteString(strconv.Itoa(next))
 			i++
@@ -105,7 +145,7 @@ func planPlaceholders(profile modeProfile, query string) (placeholderPlan, error
 			i++
 		}
 	}
-	plan := placeholderPlan{query: out.String()}
+	plan := placeholderPlan{query: out.String(), targets: collector.refs}
 	if sawQuestion {
 		plan.args = next
 	} else {
@@ -114,16 +154,22 @@ func planPlaceholders(profile modeProfile, query string) (placeholderPlan, error
 	return plan, nil
 }
 
-// rewritePlaceholders applies the profile's verified placeholder rules to a
-// statement and reports its positional parameter count. A mode without a
-// verified profile passes the statement through unchanged with -1 (no count
-// check) instead of fabricating semantics.
-func (c *conn) rewritePlaceholders(query string) (string, int, error) {
+// rewriteParameters returns the normalized statement and its explicit
+// qualified cast targets. A mode without a verified profile passes the
+// statement through unchanged with -1 (no count check) instead of fabricating
+// semantics.
+func (c *conn) rewriteParameters(query string) (placeholderPlan, error) {
 	profile, verified := c.mode.profile()
 	if !verified {
-		return query, -1, nil
+		return placeholderPlan{query: query, args: -1}, nil
 	}
-	plan, err := planPlaceholders(profile, query)
+	return planPlaceholders(profile, query)
+}
+
+// rewritePlaceholders applies the profile's verified placeholder rules to a
+// statement and reports its positional parameter count.
+func (c *conn) rewritePlaceholders(query string) (string, int, error) {
+	plan, err := c.rewriteParameters(query)
 	if err != nil {
 		return "", 0, err
 	}
@@ -229,6 +275,47 @@ func dollarQuoteAt(query string, i int) (end int, ok bool) {
 		return len(query), true
 	}
 	return j + 1 + closing + len(tag), true
+}
+
+// castTarget reads an immediately following qualified `::schema.type` cast.
+// Only a plain two-part identifier is accepted; aliases, arrays, quoted names
+// and type modifiers stay on the inference path instead of being guessed.
+func castTarget(query string, start int) (targetRef, bool) {
+	i := skipSpace(query, start)
+	if i+1 >= len(query) || query[i] != ':' || query[i+1] != ':' {
+		return targetRef{}, false
+	}
+	i = skipSpace(query, i+2)
+	if i >= len(query) || !isIdentifierStart(query[i]) {
+		return targetRef{}, false
+	}
+	first := query[i:identifierEnd(query, i)]
+	i = skipSpace(query, identifierEnd(query, i))
+	if i >= len(query) || query[i] != '.' {
+		return targetRef{}, false
+	}
+	i = skipSpace(query, i+1)
+	if i >= len(query) || !isIdentifierStart(query[i]) {
+		return targetRef{}, false
+	}
+	secondEnd := identifierEnd(query, i)
+	second := query[i:secondEnd]
+	if next := skipSpace(query, secondEnd); next < len(query) && query[next] == '[' {
+		return targetRef{}, false
+	}
+	return targetRef{schema: strings.ToLower(first), name: strings.ToLower(second)}, true
+}
+
+func skipSpace(query string, i int) int {
+	for i < len(query) {
+		switch query[i] {
+		case ' ', '\t', '\n', '\r':
+			i++
+		default:
+			return i
+		}
+	}
+	return i
 }
 
 func isASCIIDigit(char byte) bool {

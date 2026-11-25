@@ -68,6 +68,9 @@ type typeCatalog struct {
 	// names holds unqualified identities from a two-column fallback; codecs and
 	// metadata must not consume them as verified builtin identities.
 	names map[uint32]string
+	// byName maps a unique qualified identity to its OID for explicit target
+	// resolution. Duplicate identities are removed rather than guessed.
+	byName map[string]uint32
 	// ambiguous holds qualified identities that appeared more than once, so no
 	// single OID may claim a builtin codec or verified shape for that name.
 	ambiguous map[string]struct{}
@@ -119,15 +122,35 @@ func (c *typeCatalog) nameOnly(oid uint32) (string, bool) {
 // names two OIDs the same way cannot prove which one owns a builtin codec.
 func (c *typeCatalog) markAmbiguousNames() {
 	c.ambiguous = make(map[string]struct{})
+	c.byName = make(map[string]uint32, len(c.byOID))
 	seen := make(map[string]uint32, len(c.byOID))
 	for oid, info := range c.byOID {
 		key := catalogNameKey(info)
 		if _, duplicate := seen[key]; duplicate {
 			c.ambiguous[key] = struct{}{}
+			delete(c.byName, key)
+			continue
+		}
+		if _, ambiguous := c.ambiguous[key]; ambiguous {
 			continue
 		}
 		seen[key] = oid
+		c.byName[key] = oid
 	}
+}
+
+// lookup returns the OID of a unique qualified catalog identity. It never
+// guesses between duplicates and is unavailable for a names-only catalog.
+func (c *typeCatalog) lookup(schema, name string) (uint32, bool) {
+	if schema == "" || name == "" {
+		return 0, false
+	}
+	key := schema + "\x00" + name
+	if _, ambiguous := c.ambiguous[key]; ambiguous {
+		return 0, false
+	}
+	oid, ok := c.byName[key]
+	return oid, ok
 }
 
 // loadCatalog reads the server type namespace inside the connection budget.

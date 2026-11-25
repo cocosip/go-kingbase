@@ -25,18 +25,18 @@ func (c *conn) QueryContext(ctx context.Context, query string, args []driver.Nam
 	if err != nil {
 		return nil, err
 	}
-	query, expected, err := c.rewritePlaceholders(query)
+	plan, err := c.rewriteParameters(query)
 	if err != nil {
 		return nil, err
 	}
-	if expected >= 0 && expected != len(values) {
-		return nil, fmt.Errorf("kingbase: statement expects %d arguments, got %d", expected, len(values))
+	if plan.args >= 0 && plan.args != len(values) {
+		return nil, fmt.Errorf("kingbase: statement expects %d arguments, got %d", plan.args, len(values))
 	}
 	var rows driver.Rows
 	if len(values) == 0 {
-		rows, err = c.querySimple(ctx, query)
+		rows, err = c.querySimple(ctx, plan.query)
 	} else {
-		rows, err = c.queryExtended(ctx, query, values)
+		rows, err = c.queryExtended(ctx, plan.query, values, plan.targets)
 	}
 	if err != nil {
 		return nil, c.classifyCommandError(err)
@@ -50,13 +50,14 @@ func (c *conn) ExecContext(ctx context.Context, query string, args []driver.Name
 	if err != nil {
 		return nil, err
 	}
-	query, expected, err := c.rewritePlaceholders(query)
+	plan, err := c.rewriteParameters(query)
 	if err != nil {
 		return nil, err
 	}
-	if expected >= 0 && expected != len(values) {
-		return nil, fmt.Errorf("kingbase: statement expects %d arguments, got %d", expected, len(values))
+	if plan.args >= 0 && plan.args != len(values) {
+		return nil, fmt.Errorf("kingbase: statement expects %d arguments, got %d", plan.args, len(values))
 	}
+	query = plan.query
 	capture := false
 	if c.cfg != nil && c.cfg.GetLastInsertID && c.mode == ModePG {
 		planned, column, err := c.planGeneratedInsert(ctx, query)
@@ -72,7 +73,7 @@ func (c *conn) ExecContext(ctx context.Context, query string, args []driver.Name
 	if len(values) == 0 {
 		result, err = c.execSimple(ctx, query, capture)
 	} else {
-		result, err = c.execExtended(ctx, query, values, capture)
+		result, err = c.execExtended(ctx, query, values, plan.targets, capture)
 	}
 	if err != nil {
 		return nil, c.classifyCommandError(err)
@@ -330,8 +331,8 @@ func (c *conn) awaitFirstResult() ([]wire.ColumnDescription, bool, error) {
 	}
 }
 
-func (c *conn) queryExtended(ctx context.Context, query string, values []driver.Value) (driver.Rows, error) {
-	params, err := encodeParameters(values)
+func (c *conn) queryExtended(ctx context.Context, query string, values []driver.Value, targets map[int]targetRef) (driver.Rows, error) {
+	params, formats, err := c.encodePlanParameters(values, targets)
 	if err != nil {
 		return nil, err
 	}
@@ -339,7 +340,7 @@ func (c *conn) queryExtended(ctx context.Context, query string, values []driver.
 		return nil, err
 	}
 	c.commandSent = true
-	if err := c.sendExtended(query, params, nil, true); err != nil {
+	if err := c.sendExtended(query, params, formats, true); err != nil {
 		return nil, err
 	}
 	columns, ready, err := c.awaitExtendedDescription()
@@ -361,8 +362,8 @@ func (c *conn) execSimple(ctx context.Context, query string, capture bool) (driv
 	return c.collectCommandResult(capture)
 }
 
-func (c *conn) execExtended(ctx context.Context, query string, values []driver.Value, capture bool) (driver.Result, error) {
-	params, err := encodeParameters(values)
+func (c *conn) execExtended(ctx context.Context, query string, values []driver.Value, targets map[int]targetRef, capture bool) (driver.Result, error) {
+	params, formats, err := c.encodePlanParameters(values, targets)
 	if err != nil {
 		return nil, err
 	}
@@ -370,7 +371,7 @@ func (c *conn) execExtended(ctx context.Context, query string, values []driver.V
 		return nil, err
 	}
 	c.commandSent = true
-	if err := c.sendExtended(query, params, nil, false); err != nil {
+	if err := c.sendExtended(query, params, formats, false); err != nil {
 		return nil, err
 	}
 	return c.collectCommandResult(capture)

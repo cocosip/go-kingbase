@@ -55,6 +55,32 @@ func encodeParameter(value any) ([]byte, error) {
 	}
 }
 
+// encodePlanParameters encodes direct-statement parameters. An explicit
+// qualified pg_catalog cast that resolves to one catalog identity may select
+// the verified binary layout; every other parameter keeps text encoding and
+// server inference. No OID is sent or assigned by type name alone.
+func (c *conn) encodePlanParameters(values []driver.Value, targets map[int]targetRef) ([][]byte, []int16, error) {
+	useBinary := c.cfg != nil && c.cfg.BinaryParameters
+	if useBinary && c.catalog != nil && len(targets) != 0 {
+		oids := make([]uint32, len(values))
+		found := false
+		for index, ref := range targets {
+			if index < 1 || index > len(values) || ref.schema != schemaPGCatalog {
+				continue
+			}
+			if oid, ok := c.catalog.lookup(ref.schema, ref.name); ok {
+				oids[index-1] = oid
+				found = true
+			}
+		}
+		if found {
+			return c.encodeParametersWithTypes(values, oids)
+		}
+	}
+	params, err := encodeParameters(values)
+	return params, nil, err
+}
+
 // encodeParametersWithTypes encodes a Bind batch for a prepared statement whose
 // parameter OIDs are known. With binary parameters enabled, values whose target
 // type has a verified binary layout are sent as binary and the rest stay text;

@@ -51,6 +51,47 @@ func TestPlanPlaceholders(t *testing.T) {
 	}
 }
 
+func TestPlanPlaceholdersTargets(t *testing.T) {
+	plan, err := planPlaceholders(pgModeProfile,
+		`SELECT $1::pg_catalog.int4, $2::int4, $3 :: PG_CATALOG.BYTEA, $4::pg_catalog.int4[]`)
+	if err != nil {
+		t.Fatalf("planPlaceholders: %v", err)
+	}
+	if len(plan.targets) != 2 {
+		t.Fatalf("targets = %v, want indexes 1 and 3", plan.targets)
+	}
+	if got := plan.targets[1]; got != (targetRef{schema: "pg_catalog", name: "int4"}) {
+		t.Errorf("target 1 = %v", got)
+	}
+	if got := plan.targets[3]; got != (targetRef{schema: "pg_catalog", name: "bytea"}) {
+		t.Errorf("target 3 = %v", got)
+	}
+	if _, ok := plan.targets[2]; ok {
+		t.Error("unqualified cast selected a target")
+	}
+	if _, ok := plan.targets[4]; ok {
+		t.Error("array cast selected a scalar target")
+	}
+
+	conflict, err := planPlaceholders(pgModeProfile,
+		`SELECT $1::pg_catalog.int4, $1::pg_catalog.int8`)
+	if err != nil {
+		t.Fatalf("planPlaceholders: %v", err)
+	}
+	if len(conflict.targets) != 0 {
+		t.Errorf("conflicting casts kept target %v", conflict.targets)
+	}
+
+	question, err := planPlaceholders(pgModeProfile, `SELECT ?::pg_catalog.int4`)
+	if err != nil {
+		t.Fatalf("planPlaceholders: %v", err)
+	}
+	if question.query != "SELECT $1::pg_catalog.int4" ||
+		question.targets[1] != (targetRef{schema: "pg_catalog", name: "int4"}) {
+		t.Errorf("question plan = %q targets %v", question.query, question.targets)
+	}
+}
+
 func TestPlanPlaceholdersRejects(t *testing.T) {
 	cases := []struct {
 		name  string
