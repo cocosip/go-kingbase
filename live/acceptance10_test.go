@@ -19,7 +19,7 @@ func TestLiveCatalogBuiltinShapes(t *testing.T) {
 		  AND t.typname IN ('bool', 'bytea', 'char', 'name', 'int2', 'int4', 'int8', 'oid',
 		      'xid', 'cid', 'text', 'json', 'jsonb', 'float4', 'float8', 'money', 'bpchar',
 		      'varchar', 'date', 'time', 'timetz', 'timestamp', 'timestamptz', 'interval',
-		      'bit', 'varbit', 'numeric', 'uuid', 'xml', 'inet', 'cidr')`)
+		      'bit', 'varbit', 'numeric', 'uuid', 'xml', 'inet', 'cidr', 'macaddr', 'macaddr8')`)
 	if err != nil {
 		t.Fatalf("catalog shape query: %v", err)
 	}
@@ -36,7 +36,7 @@ func TestLiveCatalogBuiltinShapes(t *testing.T) {
 		"timetz": {"b", 12}, "timestamp": {"b", 8}, "timestamptz": {"b", 8},
 		"interval": {"b", 16}, "bit": {"b", -1}, "varbit": {"b", -1},
 		"numeric": {"b", -1}, "uuid": {"b", 16}, "xml": {"b", -1},
-		"inet": {"b", -1}, "cidr": {"b", -1},
+		"inet": {"b", -1}, "cidr": {"b", -1}, "macaddr": {"b", 6}, "macaddr8": {"b", 8},
 	}
 	seen := make(map[string]bool, len(expected))
 	for rows.Next() {
