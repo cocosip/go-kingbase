@@ -47,6 +47,10 @@ func (c *conn) QueryContext(ctx context.Context, query string, args []driver.Nam
 
 // ExecContext runs a statement and returns its completion result.
 func (c *conn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
+	args, outputs := extractOutArguments(args)
+	if len(outputs) > 0 {
+		return c.execRoutineWithOutputs(ctx, query, args, outputs)
+	}
 	plan, err := c.rewriteParameters(query)
 	if err != nil {
 		return nil, err

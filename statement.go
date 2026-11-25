@@ -2,6 +2,7 @@ package kingbase
 
 import (
 	"context"
+	"database/sql"
 	"database/sql/driver"
 	"fmt"
 	"strconv"
@@ -201,6 +202,10 @@ func (s *stmt) Query(args []driver.Value) (driver.Rows, error) {
 
 // ExecContext runs the prepared statement with positional arguments.
 func (s *stmt) ExecContext(ctx context.Context, args []driver.NamedValue) (driver.Result, error) {
+	args, outputs := extractOutArguments(args)
+	if len(outputs) > 0 {
+		return s.execRoutineWithOutputs(ctx, args, outputs)
+	}
 	if s.autoIDErr != nil {
 		return nil, s.autoIDErr
 	}
@@ -335,7 +340,14 @@ func (c *conn) CheckNamedValue(argument *driver.NamedValue) error {
 	// Keep the compatibility wrappers and the full uint64 range intact until
 	// binding; the default converter would collapse them into string/int64 and
 	// lose the caller's target intent or reject values above MaxInt64.
-	switch argument.Value.(type) {
+	switch value := argument.Value.(type) {
+	case sql.Out:
+		out, err := newOutArgument(value)
+		if err != nil {
+			return fmt.Errorf("kingbase: parameter %d: %w", argument.Ordinal, err)
+		}
+		argument.Value = out
+		return nil
 	case uint64, VarChar, VarCharMax, NVarCharMax, NChar, DateTime1:
 		return nil
 	}
