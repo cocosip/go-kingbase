@@ -76,7 +76,9 @@ refuses a codec when a qualified name has a different shape. A PG session timezo
 of `America/New_York` kept a wall `timestamp` distinct from a DST-normalized
 `timestamptz` instant without a driver-side shift. A PG scalar function returned
 its value through `QueryRow`, and a `CALL` with an INOUT parameter returned the
-updated row; `sql.Out` assignment and SQLServer routine status remain pending. In
+updated row; PG `sql.Out` assignment for a direct and a prepared `CALL` also
+returned the INOUT value after completion, while SQLServer status and the
+MySQL-compatible OUT form remain pending. In
 MySQL mode, opt-in `get_last_insert_id=yes` captured `LAST_INSERT_ID()` after a
 single-row INSERT and returned the generated value without changing
 `RowsAffected`; tinyint range conversion and V6 acceptance remain pending. The PG catalog
