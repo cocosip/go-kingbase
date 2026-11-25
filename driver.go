@@ -28,5 +28,5 @@ func (d *Driver) OpenConnector(name string) (driver.Connector, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Connector{cfg: cfg}, nil
+	return newConnector(cfg), nil
 }

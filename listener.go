@@ -65,7 +65,7 @@ func NewListener(ctx context.Context, cfg *Config, channels ...string) (*Listene
 		}
 		quoted[i] = QuoteIdentifier(channel)
 	}
-	physical, err := (&Connector{cfg: cfg}).Connect(ctx)
+	physical, err := newConnector(cfg).Connect(ctx)
 	if err != nil {
 		return nil, err
 	}

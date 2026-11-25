@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cocosip/go-kingbase/internal/wire"
@@ -15,13 +16,47 @@ import (
 
 // Connector creates physical connections from one immutable configuration.
 // database/sql owns pooling; a Connector never pools or reuses connections.
+// The configured transport and mode are pinned by the first snapshot, so a
+// later caller mutation cannot switch either on subsequent connections. A
+// Connector must not be copied after first use.
 type Connector struct {
-	cfg *Config
+	cfg     *Config
+	pinOnce sync.Once
+	pinned  *Config
+
+	modeMu       sync.Mutex
+	modePinned   bool
+	resolvedMode CompatibilityMode
 }
 
-// Config returns the immutable connection configuration.
+// Config returns an independent snapshot of the pinned configuration. Mutating
+// the returned value cannot change this Connector or another connection.
 func (c *Connector) Config() *Config {
-	return c.cfg
+	cfg := c.snapshot()
+	if cfg == nil {
+		return nil
+	}
+	return cfg.clone()
+}
+
+// snapshot pins the caller's configuration once. A nil configuration stays nil
+// so Connect reports it instead of panicking.
+func (c *Connector) snapshot() *Config {
+	c.pinOnce.Do(func() {
+		if c.cfg != nil {
+			c.pinned = c.cfg.clone()
+		}
+	})
+	return c.pinned
+}
+
+// newConnector snapshots the configuration at construction time.
+func newConnector(cfg *Config) *Connector {
+	connector := &Connector{}
+	if cfg != nil {
+		connector.cfg = cfg.clone()
+	}
+	return connector
 }
 
 // Driver returns the owning driver.
@@ -35,20 +70,28 @@ func (c *Connector) Driver() driver.Driver {
 // identity, target selection and catalog work. There is no protocol or implicit
 // port fallback; a failed candidate is closed before the next one starts.
 func (c *Connector) Connect(ctx context.Context) (driver.Conn, error) {
-	if c.cfg == nil {
+	cfg := c.snapshot()
+	if cfg == nil {
 		return nil, fmt.Errorf("kingbase: connector has no configuration")
 	}
-	if c.cfg.User == "" {
+	if cfg.User == "" {
 		return nil, fmt.Errorf("kingbase: user is required")
 	}
+	if cfg.WireProtocol != WirePG {
+		return nil, fmt.Errorf("kingbase: wireProtocol %q is not supported", cfg.WireProtocol.String())
+	}
 
-	deadlineCtx, cancel := withConnectTimeout(ctx, c.cfg.ConnectTimeout)
+	deadlineCtx, cancel := withConnectTimeout(ctx, cfg.ConnectTimeout)
 	defer cancel()
 
 	var failures []error
-	for _, ep := range c.cfg.endpoints() {
-		physical, err := c.connectEndpoint(deadlineCtx, ep)
+	for _, ep := range cfg.endpoints() {
+		physical, err := c.connectEndpoint(deadlineCtx, cfg, ep)
 		if err == nil {
+			if pinErr := c.pinResolvedMode(physical); pinErr != nil {
+				_ = physical.Close()
+				return nil, pinErr
+			}
 			return physical, nil
 		}
 		failures = append(failures, fmt.Errorf("%s: %w", ep.address, err))
@@ -66,9 +109,31 @@ func (c *Connector) Connect(ctx context.Context) (driver.Conn, error) {
 		fmt.Errorf("kingbase: no configured endpoint accepted the connection: %w", errors.Join(failures...)))
 }
 
+// pinResolvedMode records the first fully initialized connection's mode and
+// refuses a later connection that resolved a different authoritative mode.
+// This keeps one Connector from mixing mode semantics during failover.
+func (c *Connector) pinResolvedMode(physical driver.Conn) error {
+	connection, ok := physical.(*conn)
+	if !ok {
+		return fmt.Errorf("kingbase: connector returned %T", physical)
+	}
+	c.modeMu.Lock()
+	defer c.modeMu.Unlock()
+	if !c.modePinned {
+		c.modePinned = true
+		c.resolvedMode = connection.mode
+		return nil
+	}
+	if connection.mode != c.resolvedMode {
+		return fmt.Errorf("kingbase: connector mode %s conflicts with server database_mode %s reported by %s",
+			c.resolvedMode, connection.mode, connection.modeSource)
+	}
+	return nil
+}
+
 // connectEndpoint opens, initializes and validates one candidate endpoint.
-func (c *Connector) connectEndpoint(ctx context.Context, ep endpoint) (driver.Conn, error) {
-	dialer := net.Dialer{KeepAlive: c.keepAliveInterval()}
+func (c *Connector) connectEndpoint(ctx context.Context, cfg *Config, ep endpoint) (driver.Conn, error) {
+	dialer := net.Dialer{KeepAlive: cfg.keepAliveInterval()}
 	netConn, err := dialer.DialContext(ctx, ep.network, ep.address)
 	if err != nil {
 		return nil, fmt.Errorf("kingbase: dial %s: %w", ep.address, err)
@@ -93,7 +158,7 @@ func (c *Connector) connectEndpoint(ctx context.Context, ep endpoint) (driver.Co
 	defer stopWatch()
 
 	physical := &conn{
-		cfg:         c.cfg,
+		cfg:         cfg,
 		netEndpoint: ep,
 		netConn:     netConn,
 		params:      make(map[string]string, 8),
@@ -104,7 +169,7 @@ func (c *Connector) connectEndpoint(ctx context.Context, ep endpoint) (driver.Co
 	physical.reader = wire.NewReader(physical.netConn, 0)
 	physical.writer = wire.NewWriter(physical.netConn)
 	if err := physical.handshake(); err != nil {
-		return nil, fmt.Errorf("kingbase: %s handshake failed: %w", c.cfg.Network, err)
+		return nil, fmt.Errorf("kingbase: %s handshake failed: %w", cfg.Network, err)
 	}
 	if err := physical.captureIdentity(ctx); err != nil {
 		return nil, err
@@ -223,9 +288,9 @@ func withConnectTimeout(ctx context.Context, timeout time.Duration) (context.Con
 
 // keepAliveInterval maps the configured keepalive policy onto net.Dialer,
 // where a negative value disables keepalives and zero keeps the OS default.
-func (c *Connector) keepAliveInterval() time.Duration {
-	if !c.cfg.KeepAlives {
+func (c *Config) keepAliveInterval() time.Duration {
+	if !c.KeepAlives {
 		return -1
 	}
-	return c.cfg.KeepAlivesIdle
+	return c.KeepAlivesIdle
 }

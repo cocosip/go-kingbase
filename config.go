@@ -93,10 +93,14 @@ const (
 
 // String returns the normalized transport name.
 func (w WireProtocol) String() string {
-	if w == WireMySQL {
+	switch w {
+	case WirePG:
+		return "pg"
+	case WireMySQL:
 		return modeMySQLName
+	default:
+		return fmt.Sprintf("unknown(%d)", int(w))
 	}
-	return "pg"
 }
 
 // SSLMode is the requested TLS trust policy for TCP connections.
@@ -187,6 +191,18 @@ type Config struct {
 
 	Options    string
 	SearchPath string
+}
+
+// clone returns an independent copy, including the endpoint slices, so a
+// Connector snapshot cannot be changed through a caller-held configuration.
+func (c *Config) clone() *Config {
+	if c == nil {
+		return nil
+	}
+	clone := *c
+	clone.Hosts = append([]string(nil), c.Hosts...)
+	clone.Ports = append([]int(nil), c.Ports...)
+	return &clone
 }
 
 // TargetSessionAttrs is the opt-in target-selection policy for a host list.
