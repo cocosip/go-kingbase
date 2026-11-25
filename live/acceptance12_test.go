@@ -4,6 +4,7 @@ package live_test
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"testing"
 	"time"
@@ -50,5 +51,44 @@ func TestLiveRoutineCallRows(t *testing.T) {
 	}
 	if result != 3 {
 		t.Errorf("CALL INOUT result = %d, want 3", result)
+	}
+}
+
+func TestLiveRoutineOutAssignment(t *testing.T) {
+	db, conn, meta := liveDB(t)
+	if meta.Mode != kingbase.ModePG {
+		t.Skip("sql.Out assignment is scoped to the PG profile")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	procedure := fmt.Sprintf("live_out_%d", time.Now().UnixNano())
+	quoted := kingbase.QuoteIdentifier(procedure)
+	if _, err := conn.ExecContext(ctx, "CREATE PROCEDURE "+quoted+
+		"(IN a integer, INOUT b integer) LANGUAGE plpgsql AS $$ BEGIN b := b + a; END $$"); err != nil {
+		t.Fatalf("CREATE PROCEDURE: %v", err)
+	}
+	defer func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cleanupCancel()
+		_, _ = conn.ExecContext(cleanupCtx, "DROP PROCEDURE IF EXISTS "+quoted+"(integer, integer)")
+	}()
+	var result int64 = 2
+	if _, err := db.ExecContext(ctx, "CALL "+quoted+"($1, $2)", int64(1), sql.Out{Dest: &result, In: true}); err != nil {
+		t.Fatalf("CALL with sql.Out: %v", err)
+	}
+	if result != 3 {
+		t.Errorf("INOUT result = %d, want 3", result)
+	}
+	prepared, err := db.PrepareContext(ctx, "CALL "+quoted+"($1, $2)")
+	if err != nil {
+		t.Fatalf("PrepareContext CALL: %v", err)
+	}
+	defer func() { _ = prepared.Close() }()
+	result = 2
+	if _, err := prepared.ExecContext(ctx, int64(1), sql.Out{Dest: &result, In: true}); err != nil {
+		t.Fatalf("prepared CALL with sql.Out: %v", err)
+	}
+	if result != 3 {
+		t.Errorf("prepared INOUT result = %d, want 3", result)
 	}
 }
