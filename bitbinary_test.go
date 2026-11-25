@@ -38,7 +38,7 @@ func TestBitBinaryMatchesText(t *testing.T) {
 		}
 	}
 	for _, name := range []string{pgTypeBit, pgTypeVarbit} {
-		if text, ok, err := textValue(ModePG, schemaPGCatalog, name, []byte("10101")); err != nil || !ok || text != "10101" {
+		if text, ok, err := textValue(ModePG, schemaPGCatalog, name, []byte("10101"), nil); err != nil || !ok || text != "10101" {
 			t.Errorf("%s text = %#v, %v, %v", name, text, ok, err)
 		}
 		if !binaryLayoutKnown(ModePG, schemaPGCatalog, name) {

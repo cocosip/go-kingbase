@@ -1049,7 +1049,7 @@ func TestGeneratedTinyintConversion(t *testing.T) {
 		{mode: ModeSQLServer, text: "256", reject: true},
 		{mode: ModeSQLServer, text: "-1", reject: true},
 	} {
-		value, _, err := textValue(testCase.mode, schemaSys, pgTypeTinyint, []byte(testCase.text))
+		value, _, err := textValue(testCase.mode, schemaSys, pgTypeTinyint, []byte(testCase.text), nil)
 		if testCase.reject {
 			if !errors.Is(err, ErrValueConversion) {
 				t.Errorf("%s tinyint %q error = %v, want conversion error", testCase.mode, testCase.text, err)

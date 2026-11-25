@@ -143,7 +143,7 @@ func modeTypeSpecFor(mode CompatibilityMode, schema, name string) (modeTypeSpec,
 // The boolean reports whether a codec exists; callers fall back to string for
 // unknown types so unknown OIDs never fail a query. A known type whose value
 // cannot be represented returns ErrValueConversion.
-func textValue(mode CompatibilityMode, schema, name string, data []byte) (driver.Value, bool, error) {
+func textValue(mode CompatibilityMode, schema, name string, data []byte, location *time.Location) (driver.Value, bool, error) {
 	if schema == schemaSys {
 		spec, ok := modeTypeSpecFor(mode, schema, name)
 		if !ok {
@@ -191,7 +191,7 @@ func textValue(mode CompatibilityMode, schema, name string, data []byte) (driver
 		}
 		return value, true, nil
 	case pgTypeTimestamptz:
-		value, err := parseTimestamptz(string(data))
+		value, err := parseTimestamptz(string(data), location)
 		if err != nil {
 			return nil, true, err
 		}
@@ -449,10 +449,20 @@ func parseTimestamp(value string) (time.Time, error) {
 	return time.Time{}, textConversionError(pgTypeTimestamp, []byte(value))
 }
 
-func parseTimestamptz(value string) (time.Time, error) {
+func parseTimestamptz(value string, location *time.Location) (time.Time, error) {
 	for _, layout := range timestamptzLayouts {
 		if parsed, err := time.ParseInLocation(layout, value, time.UTC); err == nil && validTemporalYear(parsed) {
 			return parsed, nil
+		}
+	}
+	// The measured MySQL-mode listener renders an instant as the session-zone
+	// wall clock without an offset; the startup-reported TimeZone recovers the
+	// instant instead of shifting it through an assumed zone.
+	if location != nil {
+		for _, layout := range timestampLayouts {
+			if parsed, err := time.ParseInLocation(layout, value, location); err == nil && validTemporalYear(parsed) {
+				return parsed, nil
+			}
 		}
 	}
 	return time.Time{}, textConversionError(pgTypeTimestamptz, []byte(value))

@@ -61,3 +61,5 @@ docs/superpowers/
 
 # Vendor SDKs are local research inputs, not product source.
 /.source-code/
+# Live acceptance artifacts are local, sanitized before any doc update
+/live/artifacts/

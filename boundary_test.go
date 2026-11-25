@@ -15,7 +15,7 @@ import (
 
 func TestTextBooleanRejectsUnexpectedValue(t *testing.T) {
 	for _, value := range []string{"t", "f"} {
-		got, ok, err := textValue(ModePG, schemaPGCatalog, "bool", []byte(value))
+		got, ok, err := textValue(ModePG, schemaPGCatalog, "bool", []byte(value), nil)
 		if err != nil || !ok {
 			t.Fatalf("textValue(%q) = %#v, %v, %v", value, got, ok, err)
 		}
@@ -24,7 +24,7 @@ func TestTextBooleanRejectsUnexpectedValue(t *testing.T) {
 			t.Errorf("textValue(%q) = %#v, want %v", value, got, want)
 		}
 	}
-	got, ok, err := textValue(ModePG, schemaPGCatalog, "bool", []byte("not-a-bool"))
+	got, ok, err := textValue(ModePG, schemaPGCatalog, "bool", []byte("not-a-bool"), nil)
 	if !ok || got != nil || !errors.Is(err, ErrValueConversion) {
 		t.Errorf("malformed boolean = %#v, %v, %v, want a conversion error", got, ok, err)
 	}
@@ -40,7 +40,7 @@ func TestBinaryBooleanRejectsNonCanonicalValue(t *testing.T) {
 	if _, ok := binaryValue(ModePG, schemaPGCatalog, "bool", []byte{2}); ok {
 		t.Error("non-canonical binary boolean was decoded")
 	}
-	if _, err := typeDecoder(ModePG, schemaPGCatalog, "bool", 1)([]byte{2}); !errors.Is(err, ErrValueConversion) {
+	if _, err := typeDecoder(ModePG, schemaPGCatalog, "bool", 1, nil)([]byte{2}); !errors.Is(err, ErrValueConversion) {
 		t.Errorf("malformed binary bool error = %v, want ErrValueConversion", err)
 	}
 }
@@ -59,7 +59,7 @@ func TestBinaryTemporalRejectsOutOfRange(t *testing.T) {
 	if _, ok := binaryValue(ModePG, schemaPGCatalog, "timestamp", infinity); ok {
 		t.Error("binary timestamp infinity was decoded as an instant")
 	}
-	if _, err := typeDecoder(ModePG, schemaPGCatalog, "timestamp", 1)(infinity); !errors.Is(err, ErrValueConversion) {
+	if _, err := typeDecoder(ModePG, schemaPGCatalog, "timestamp", 1, nil)(infinity); !errors.Is(err, ErrValueConversion) {
 		t.Errorf("binary timestamp infinity error = %v, want ErrValueConversion", err)
 	}
 
@@ -72,7 +72,7 @@ func TestBinaryTemporalRejectsOutOfRange(t *testing.T) {
 	if _, ok := binaryValue(ModePG, schemaPGCatalog, "date", overRange); ok {
 		t.Error("out-of-range binary date was decoded")
 	}
-	if _, err := typeDecoder(ModePG, schemaPGCatalog, "date", 1)(overRange); !errors.Is(err, ErrValueConversion) {
+	if _, err := typeDecoder(ModePG, schemaPGCatalog, "date", 1, nil)(overRange); !errors.Is(err, ErrValueConversion) {
 		t.Errorf("out-of-range binary date error = %v, want ErrValueConversion", err)
 	}
 }
@@ -128,13 +128,13 @@ func TestExactDecimalAndTextBoundaries(t *testing.T) {
 		{"timetz", "23:59:59.999999+05:30"},
 	}
 	for _, testCase := range cases {
-		got, ok, err := textValue(ModePG, schemaPGCatalog, testCase.typ, []byte(testCase.value))
+		got, ok, err := textValue(ModePG, schemaPGCatalog, testCase.typ, []byte(testCase.value), nil)
 		if err != nil || !ok || got != testCase.value {
 			t.Errorf("textValue(%s, %q) = %#v, %v, %v, want exact text", testCase.typ, testCase.value, got, ok, err)
 		}
 	}
 	for _, value := range []string{"NaN", "Infinity", "-Infinity"} {
-		got, ok, err := textValue(ModePG, schemaPGCatalog, "float8", []byte(value))
+		got, ok, err := textValue(ModePG, schemaPGCatalog, "float8", []byte(value), nil)
 		if err != nil || !ok {
 			t.Errorf("float8 %q = %#v, %v, %v", value, got, ok, err)
 			continue
@@ -153,7 +153,7 @@ func TestExactDecimalAndTextBoundaries(t *testing.T) {
 }
 
 func TestTimestamptzOffsetsAndPrecision(t *testing.T) {
-	moment, err := parseTimestamptz("2024-03-10 03:30:00.123456789-04:00")
+	moment, err := parseTimestamptz("2024-03-10 03:30:00.123456789-04:00", nil)
 	if err != nil {
 		t.Fatalf("timestamptz: %v", err)
 	}
@@ -162,7 +162,7 @@ func TestTimestamptzOffsetsAndPrecision(t *testing.T) {
 		t.Errorf("timestamptz = %v offset %d nanos %d", moment, offset, moment.Nanosecond())
 	}
 
-	seconds, err := parseTimestamptz("2024-03-10 03:30:00+05:30:45")
+	seconds, err := parseTimestamptz("2024-03-10 03:30:00+05:30:45", nil)
 	if err != nil {
 		t.Fatalf("seconds-offset timestamptz: %v", err)
 	}
@@ -171,11 +171,11 @@ func TestTimestamptzOffsetsAndPrecision(t *testing.T) {
 		t.Errorf("seconds offset = %d, want 19845", secondsOffset)
 	}
 
-	before, err := parseTimestamptz("2024-03-10 01:30:00-05:00")
+	before, err := parseTimestamptz("2024-03-10 01:30:00-05:00", nil)
 	if err != nil {
 		t.Fatalf("before DST: %v", err)
 	}
-	after, err := parseTimestamptz("2024-03-10 03:30:00-04:00")
+	after, err := parseTimestamptz("2024-03-10 03:30:00-04:00", nil)
 	if err != nil {
 		t.Fatalf("after DST: %v", err)
 	}
@@ -235,12 +235,49 @@ func TestTextTemporalPolicy(t *testing.T) {
 			t.Errorf("parseTimestamp(%q) error = %v, want ErrValueConversion", value, err)
 		}
 	}
-	parsed, err := parseTimestamptz("2024-01-02 03:04:05+08")
+	parsed, err := parseTimestamptz("2024-01-02 03:04:05+08", nil)
 	if err != nil {
 		t.Fatalf("timestamptz: %v", err)
 	}
 	_, offset := parsed.Zone()
 	if offset != 8*60*60 || parsed.Hour() != 3 {
 		t.Errorf("timestamptz = %v offset %d, want 03:04:05+08:00", parsed, offset)
+	}
+}
+
+// TestTimestamptzOffsetlessSessionZone covers the measured MySQL-mode text form:
+// an instant is rendered as the session-zone wall clock with no offset, so the
+// startup-reported TimeZone recovers the instant instead of assuming UTC.
+func TestTimestamptzOffsetlessSessionZone(t *testing.T) {
+	zone := time.FixedZone("CST", 8*60*60)
+	parsed, err := parseTimestamptz("2024-03-10 14:30:00", zone)
+	if err != nil {
+		t.Fatalf("parseTimestamptz(offset-less, session zone): %v", err)
+	}
+	if got := parsed.UTC().Format("2006-01-02 15:04:05"); got != "2024-03-10 06:30:00" {
+		t.Errorf("instant = %s, want 2024-03-10 06:30:00", got)
+	}
+	if _, err := parseTimestamptz("2024-03-10 14:30:00", nil); !errors.Is(err, ErrValueConversion) {
+		t.Fatalf("offset-less without a zone error = %v, want conversion error", err)
+	}
+	physical := &conn{params: map[string]string{"TimeZone": "Asia/Shanghai"}}
+	location := physical.sessionLocation()
+	if location == nil {
+		t.Skip("the platform has no Asia/Shanghai zoneinfo")
+	}
+	value, ok, err := textValue(ModeMySQL, schemaPGCatalog, pgTypeTimestamptz, []byte("2024-03-10 14:30:00"), location)
+	if err != nil || !ok {
+		t.Fatalf("textValue timestamptz = %#v, %v, %v", value, ok, err)
+	}
+	stamp, isTime := value.(time.Time)
+	if !isTime || stamp.UTC().Format("15:04:05") != "06:30:00" {
+		t.Errorf("decoded timestamptz = %#v, want the 06:30:00Z instant", value)
+	}
+	if physical.sessionLocation() != location {
+		t.Error("sessionLocation did not reuse its loaded zone")
+	}
+	physical.sessionZoneName = ""
+	if other := physical.sessionLocation(); other == nil {
+		t.Error("sessionLocation did not reload after invalidation")
 	}
 }

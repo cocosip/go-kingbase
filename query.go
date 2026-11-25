@@ -289,6 +289,11 @@ func (c *conn) handleAsync(typ wire.MsgType, payload []byte) (bool, error) {
 			}
 		}
 		c.params[name] = value
+		if name == sessionTimeZoneParameter || name == "TIME_ZONE" {
+			c.sessionZoneName = ""
+			c.sessionZone = nil
+			c.sessionZoneErr = false
+		}
 		return true, nil
 	case wire.MsgNotificationResponse:
 		// LISTEN/NOTIFY delivery is a separate task; it cannot reenter here.

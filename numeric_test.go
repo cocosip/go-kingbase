@@ -72,7 +72,7 @@ func TestNumericBinaryRejectsMalformedLayout(t *testing.T) {
 		if value, ok := numericBinaryValue(data); ok {
 			t.Errorf("%s: numericBinaryValue = %q, true, want false", name, value)
 		}
-		decoder := typeDecoder(ModePG, schemaPGCatalog, pgTypeNumeric, 1)
+		decoder := typeDecoder(ModePG, schemaPGCatalog, pgTypeNumeric, 1, nil)
 		if _, err := decoder(data); !errors.Is(err, ErrValueConversion) {
 			t.Errorf("%s: typeDecoder error = %v, want ErrValueConversion", name, err)
 		}

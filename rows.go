@@ -6,6 +6,7 @@ import (
 	"io"
 	"reflect"
 	"strings"
+	"time"
 
 	"github.com/cocosip/go-kingbase/internal/wire"
 )
@@ -74,7 +75,7 @@ func (r *rows) resetColumns(columns []wire.ColumnDescription) {
 			continue
 		}
 		r.scanTypes[i] = scanType(r.conn.mode, schema, name, column.Format)
-		r.decoders[i] = typeDecoder(r.conn.mode, schema, name, column.Format)
+		r.decoders[i] = typeDecoder(r.conn.mode, schema, name, column.Format, r.conn.sessionLocation())
 	}
 }
 
@@ -85,7 +86,7 @@ func unknownTypeDecoder(format int16) func([]byte) (driver.Value, error) {
 }
 
 // typeDecoder builds the per-column decoder for a verified catalog type.
-func typeDecoder(mode CompatibilityMode, schema, name string, format int16) func([]byte) (driver.Value, error) {
+func typeDecoder(mode CompatibilityMode, schema, name string, format int16, location *time.Location) func([]byte) (driver.Value, error) {
 	if format == 1 {
 		return func(data []byte) (driver.Value, error) {
 			if value, ok := binaryValue(mode, schema, name, data); ok {
@@ -104,7 +105,7 @@ func typeDecoder(mode CompatibilityMode, schema, name string, format int16) func
 		return unknownTypeDecoder(format)
 	}
 	return func(data []byte) (driver.Value, error) {
-		if value, ok, err := textValue(mode, schema, name, data); ok {
+		if value, ok, err := textValue(mode, schema, name, data, location); ok {
 			return value, err
 		}
 		return string(data), nil

@@ -59,6 +59,46 @@ type conn struct {
 	// inNotice counts running notice handlers on the protocol reader; the
 	// counter is atomic because COPY completes on a separate goroutine.
 	inNotice atomic.Int32
+
+	// sessionZone caches the server-reported session timezone so zone-less
+	// timestamptz text on listeners that omit the offset (measured MySQL mode)
+	// resolves to the intended instant instead of being guessed as UTC.
+	sessionZone     *time.Location
+	sessionZoneName string
+	sessionZoneErr  bool
+}
+
+// sessionTimeZoneParameter is the startup parameter that reports the session
+// timezone; the listener also repeats an uppercase TIME_ZONE alias.
+const sessionTimeZoneParameter = "TimeZone"
+
+// sessionLocation returns the server-reported session timezone, or nil when the
+// listener did not report a loadable zone. A nil result keeps an offset-less
+// timestamptz value an explicit conversion error rather than a fabricated one.
+func (c *conn) sessionLocation() *time.Location {
+	name := c.params[sessionTimeZoneParameter]
+	if name == "" {
+		name = c.params["TIME_ZONE"]
+	}
+	if name == "" {
+		return nil
+	}
+	if c.sessionZoneName == name {
+		if c.sessionZoneErr {
+			return nil
+		}
+		return c.sessionZone
+	}
+	zone, err := time.LoadLocation(name)
+	c.sessionZoneName = name
+	if err != nil {
+		c.sessionZoneErr = true
+		c.sessionZone = nil
+		return nil
+	}
+	c.sessionZoneErr = false
+	c.sessionZone = zone
+	return zone
 }
 
 var _ driver.Conn = (*conn)(nil)

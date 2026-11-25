@@ -117,6 +117,29 @@ the server-native colon bind. NumInput evidence: the listener reports accurate p
 every mode, including SQLServer; the SQLServer profile still reports `-1` by
 design so database/sql leaves the count check to the driver, whose binding plan
 rejects a mismatch before sending.
+Timezone evidence: every listener reports `TimeZone=Asia/Shanghai` at startup
+(plus an uppercase `TIME_ZONE` alias). PG, Oracle and SQLServer render a
+`timestamptz` text value with its offset, while MySQL renders the session-zone
+wall clock with no offset (`2024-03-10 14:30:00` for `06:30:00+00`); the driver
+now resolves such text through the startup-reported session zone instead of
+assuming UTC, and keeps an unloadable/absent zone an explicit conversion error.
+
+Evidence-matrix run (`live/evidence_test.go`, artifact `evidence-<mode>.json`):
+each mode's qualified catalog query returned a full row set (pg 754, oracle
+1006, mysql 902, sqlserver 801 rows) with the raw column names retained; the
+builtin-shape capture confirms `pg_catalog.bit` is `b/-1` everywhere, MySQL
+exposes `sys.tinyint b/1`, `sys.uint4 b/4`, `sys.year d/4 base=int4` and
+`sys.bit b/-1`, SQLServer exposes `sys.tinyint b/1`, `sys.bit b/1`,
+`sys.money b/8`, `sys.smalldatetime b/8` and Oracle exposes
+`pg_catalog.tinyint b/1`. `sslmode=require` fails on every port with
+`server does not support TLS`, so V8 stays unverified by infrastructure. A
+read-only transaction rejected `CREATE TABLE` with SQLSTATE 25006 in every mode
+and the connection recovered, while a normal transaction committed. Boundary
+values: high-precision numeric and `18446744073709551615` stay exact text where
+the mode accepts the cast, `NaN`/`+Inf` decode as float64, interval stays its
+exact text, and the mode-specific tinyint/year/datetime/money/bit/smalldatetime
+values decode as documented above.
+
 Routine evidence: a PG-style `CALL p(IN a, INOUT b)` returns one row with the
 INOUT value on the extended protocol in PG, Oracle and MySQL, and no result set
 at all in SQLServer mode (the simple protocol does return it there); MySQL

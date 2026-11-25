@@ -37,6 +37,12 @@ func TestLiveModeTypeCodecs(t *testing.T) {
 		return value
 	}
 
+	// The measured MySQL-mode listener renders an instant as a session-zone wall
+	// clock without an offset; every mode must resolve the same instant.
+	if got, ok := queryOne("SELECT CAST('2024-03-10 06:30:00+00' AS timestamptz)").(time.Time); !ok ||
+		got.UTC().Format("2006-01-02 15:04:05") != "2024-03-10 06:30:00" {
+		t.Errorf("timestamptz = %#v, want the 06:30:00Z instant", got)
+	}
 	switch meta.Mode.String() {
 	case "oracle":
 		if got := queryOne("SELECT CAST(5 AS tinyint)"); got != int64(5) {
