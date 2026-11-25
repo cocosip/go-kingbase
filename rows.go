@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"reflect"
+	"strings"
 
 	"github.com/cocosip/go-kingbase/internal/wire"
 )
@@ -112,10 +113,11 @@ func (r *rows) Columns() []string {
 	return r.names
 }
 
-// ColumnTypeDatabaseTypeName returns the catalog type name, or empty for a
-// type the server did not identify.
+// ColumnTypeDatabaseTypeName returns the public uppercase catalog/backend type
+// name without a length suffix, or empty for a type the server did not
+// identify. The exact catalog spelling stays private to the connection.
 func (r *rows) ColumnTypeDatabaseTypeName(index int) string {
-	return r.typeNames[index]
+	return strings.ToUpper(r.typeNames[index])
 }
 
 // ColumnTypeScanType returns the Go type produced by Next.
@@ -130,7 +132,8 @@ func (r *rows) ColumnTypeNullable(_ int) (bool, bool) {
 }
 
 // ColumnTypeLength returns the fixed catalog length or the declared character
-// length from the column typmod.
+// length from the column typmod. Character types report characters; unbounded
+// and opaque types report unknown.
 func (r *rows) ColumnTypeLength(index int) (int64, bool) {
 	column := r.columns[index]
 	info, known := r.conn.typeMetadata(column.TypeOID)
@@ -151,6 +154,8 @@ func (r *rows) ColumnTypeLength(index int) (int64, bool) {
 }
 
 // ColumnTypePrecisionScale returns numeric precision and scale from the typmod.
+// PostgreSQL stores scale in an 11-bit signed field, so negative scale values
+// are reported exactly instead of being masked into a large positive number.
 func (r *rows) ColumnTypePrecisionScale(index int) (int64, int64, bool) {
 	column := r.columns[index]
 	info, known := r.conn.typeMetadata(column.TypeOID)
@@ -158,7 +163,9 @@ func (r *rows) ColumnTypePrecisionScale(index int) (int64, int64, bool) {
 		return 0, 0, false
 	}
 	typmod := column.TypeMod - 4
-	return int64((typmod >> 16) & 0xffff), int64(typmod & 0xffff), true
+	rawScale := typmod & 0x7ff
+	scale := int64((rawScale ^ 0x400) - 0x400)
+	return int64((typmod >> 16) & 0xffff), scale, true
 }
 
 // Next fills dest with the next row and returns io.EOF at the end of the set.

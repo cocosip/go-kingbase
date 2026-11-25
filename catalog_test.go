@@ -204,7 +204,7 @@ func TestRowsCoreTextCodecs(t *testing.T) {
 		t.Fatalf("Next: %v", err)
 	}
 	for i, tc := range cases {
-		if got, want := typeNamer.ColumnTypeDatabaseTypeName(i), tc.typeName; got != want {
+		if got, want := typeNamer.ColumnTypeDatabaseTypeName(i), strings.ToUpper(tc.typeName); got != want {
 			t.Errorf("column %d type name = %q, want %q", i, got, want)
 		}
 		if got, want := scanTyper.ColumnTypeScanType(i), tc.scanType; got != want {
@@ -340,8 +340,8 @@ func TestCatalogDomainResolution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("QueryContext: %v", err)
 	}
-	if name := result.(driver.RowsColumnTypeDatabaseTypeName).ColumnTypeDatabaseTypeName(0); name != testTypeInt4 {
-		t.Errorf("domain type name = %q, want base int4", name)
+	if name := result.(driver.RowsColumnTypeDatabaseTypeName).ColumnTypeDatabaseTypeName(0); name != strings.ToUpper(testTypeInt4) {
+		t.Errorf("domain type name = %q, want base INT4", name)
 	}
 	dest := make([]driver.Value, 1)
 	if err := result.Next(dest); err != nil || dest[0] != int64(5) {
@@ -545,7 +545,7 @@ func assertOpaqueString(t *testing.T, r *rows, want string) {
 	if r.ColumnTypeScanType(0) != reflect.TypeOf("") {
 		t.Errorf("ScanType = %v, want string for an opaque fallback type", r.ColumnTypeScanType(0))
 	}
-	if r.ColumnTypeDatabaseTypeName(0) != testTypeInt4 {
+	if r.ColumnTypeDatabaseTypeName(0) != strings.ToUpper(testTypeInt4) {
 		t.Errorf("DatabaseTypeName = %q, want the fallback name", r.ColumnTypeDatabaseTypeName(0))
 	}
 	if err := r.Close(); err != nil {

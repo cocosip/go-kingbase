@@ -586,8 +586,8 @@ func TestArrayThroughDatabaseSQL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ColumnTypes: %v", err)
 	}
-	if name := columnTypes[0].DatabaseTypeName(); name != "_int4" {
-		t.Errorf("DatabaseTypeName = %q, want _int4", name)
+	if name := columnTypes[0].DatabaseTypeName(); name != "_INT4" {
+		t.Errorf("DatabaseTypeName = %q, want _INT4", name)
 	}
 	var got Array[int64]
 	if !rows.Next() {
