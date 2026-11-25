@@ -25,6 +25,7 @@ func (c *conn) QueryContext(ctx context.Context, query string, args []driver.Nam
 	if err != nil {
 		return nil, err
 	}
+	query = c.rewriteRoutine(plan.query)
 	values, err := plan.bindValues(args)
 	if err != nil {
 		return nil, err
@@ -34,9 +35,9 @@ func (c *conn) QueryContext(ctx context.Context, query string, args []driver.Nam
 	}
 	var rows driver.Rows
 	if len(values) == 0 {
-		rows, err = c.querySimple(ctx, plan.query)
+		rows, err = c.querySimple(ctx, query)
 	} else {
-		rows, err = c.queryExtended(ctx, plan.query, values, plan.targets)
+		rows, err = c.queryExtended(ctx, query, values, plan.targets)
 	}
 	if err != nil {
 		return nil, c.classifyCommandError(err)
@@ -50,6 +51,7 @@ func (c *conn) ExecContext(ctx context.Context, query string, args []driver.Name
 	if err != nil {
 		return nil, err
 	}
+	query = c.rewriteRoutine(plan.query)
 	values, err := plan.bindValues(args)
 	if err != nil {
 		return nil, err
@@ -57,7 +59,6 @@ func (c *conn) ExecContext(ctx context.Context, query string, args []driver.Name
 	if plan.args >= 0 && plan.args != len(values) {
 		return nil, fmt.Errorf("kingbase: statement expects %d arguments, got %d", plan.args, len(values))
 	}
-	query = plan.query
 	capture := false
 	if c.cfg != nil && c.cfg.GetLastInsertID && c.mode == ModePG {
 		planned, column, err := c.planGeneratedInsert(ctx, query)

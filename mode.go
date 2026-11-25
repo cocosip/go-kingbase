@@ -20,6 +20,10 @@ type modeProfile struct {
 	// already reserved by the literal scanner (', -, /, E, e, $) are not
 	// accepted here.
 	identifierQuotes string
+	// bracketQuotes enables SQLServer-style [identifier] components.
+	bracketQuotes bool
+	// routineConvenience enables the profile-gated bare-procedure rewrite.
+	routineConvenience bool
 }
 
 // pgIdentifierQuotes is the PostgreSQL baseline: only double-quoted identifiers.

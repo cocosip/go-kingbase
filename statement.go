@@ -52,7 +52,7 @@ func (c *conn) PrepareContext(ctx context.Context, query string) (driver.Stmt, e
 	if err != nil {
 		return nil, err
 	}
-	query = plan.query
+	query = c.rewriteRoutine(plan.query)
 	var generatedQuery string
 	var autoIDErr error
 	if c.cfg != nil && c.cfg.GetLastInsertID && c.mode == ModePG {
