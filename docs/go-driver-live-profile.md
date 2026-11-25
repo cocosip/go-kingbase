@@ -51,24 +51,31 @@ An operator-provided KingbaseES **V009R001C010** deployment was exercised with
 four compatibility modes through the PG-wire listener. This is a partial
 evidence run, not a profile acceptance:
 
-| Mode | Startup/mode | Catalog | Built-ins | Tx/prepared | COPY IN | Cursor | Binary parameters | Arrays | Listener | Generated ID | Cancel recovery |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| pg | pass | full | pass | pass | pass | pass | pass | pass | pass | pass | pass |
-| oracle | pass | full | pass | pass | pass | pass | pass | pass | not run | not run | not run |
-| mysql | pass | full | pass | pass | pass | pass | pass | pass | not run | not run | not run |
-| sqlserver | pass | full | pass | pass | pass | pass | pass | unsupported literal | not run | not run | not run |
+| Mode | Startup/mode | Catalog | Built-ins | Tx/prepared | COPY IN | Cursor | Binary parameters | Arrays | Metadata | Boundary | Catalog lifecycle | Listener | Generated ID | Cancel recovery |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| pg | pass | full | pass | pass | pass | pass | pass | pass | pass | pass | pass | pass | pass | pass |
+| oracle | pass | full | pass | pass | pass | pass | pass | pass | pass | pass | not run | not run | not run | not run |
+| mysql | pass | full | pass | pass | pass | pass | pass | pass | pass | pass | not run | not run | not run | not run |
+| sqlserver | pass | full | pass | pass | pass | pass | pass | unsupported literal | pass | not run | not run | not run | not run | not run |
 
 The SQLServer-mode run found that `BEGIN` alone is rejected and
 `BEGIN TRANSACTION` is required; the driver now renders that form for the
 SQLServer compatibility mode in transaction.go. SQLServer mode also rejected the
 PG `ARRAY[...]` literal, so array support remains unverified for that profile.
 The PG cancellation run recovered a new pooled connection after the cancelled
-query; this is not a full V19 race matrix.
+query; this is not a full V19 race matrix. PG metadata reported uppercase
+`INT4`/`VARCHAR`/`DATE`, real scan types and the varchar length. The PG catalog
+lifecycle check created an enum, read it on a fresh connection, dropped it and
+confirmed that the stale catalog reports an error instead of scanning a stale
+OID. `sslmode=require` was rejected by all four listeners of this deployment
+because they did not offer TLS; V8 remains unverified and requires a TLS-enabled
+deployment, not a fallback.
 
 Still missing for acceptance: ordinary-role permission and raw catalog-shape
 capture, V1 fallback/conflict cases, V5 routine/OUT/status forms, auth/TLS
 matrix, V12 deployment confirmation, V14 storage scope, V16 initialization
-budget, V17 DDL/catalog lifecycle, and the full V19 session/reset matrix.
+budget, the stale-pooled-snapshot and explicit reopen parts of V17, and the full
+V19 session/reset matrix.
 
 ## Acceptance ledger
 
