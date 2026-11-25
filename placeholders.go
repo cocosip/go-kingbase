@@ -154,7 +154,7 @@ func literalSpan(profile modeProfile, query string, i int) (int, bool) {
 		}
 	case '$':
 		if i+1 >= len(query) || !isASCIIDigit(query[i+1]) {
-			if _, end, ok := dollarQuoteAt(query, i); ok {
+			if end, ok := dollarQuoteAt(query, i); ok {
 				return end, true
 			}
 		}
@@ -209,10 +209,10 @@ func skipBlockComment(query string, open int) int {
 	return len(query)
 }
 
-// dollarQuoteAt recognizes a dollar-quoted body start at i and returns its tag,
-// the index just past the closing delimiter, and whether it matched. A tag is
+// dollarQuoteAt recognizes a dollar-quoted body start at i and returns the
+// index just past the closing delimiter plus whether it matched. A tag is
 // letters, digits and underscores only; '$' terminates it.
-func dollarQuoteAt(query string, i int) (tag string, end int, ok bool) {
+func dollarQuoteAt(query string, i int) (end int, ok bool) {
 	j := i + 1
 	if j < len(query) && isIdentifierStart(query[j]) {
 		j++
@@ -221,14 +221,14 @@ func dollarQuoteAt(query string, i int) (tag string, end int, ok bool) {
 		}
 	}
 	if j >= len(query) || query[j] != '$' {
-		return "", 0, false
+		return 0, false
 	}
-	tag = query[i : j+1]
+	tag := query[i : j+1]
 	closing := strings.Index(query[j+1:], tag)
 	if closing < 0 {
-		return tag, len(query), true
+		return len(query), true
 	}
-	return tag, j + 1 + closing + len(tag), true
+	return j + 1 + closing + len(tag), true
 }
 
 func isASCIIDigit(char byte) bool {

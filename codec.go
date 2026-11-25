@@ -13,9 +13,10 @@ import (
 
 const (
 	schemaPGCatalog = "pg_catalog"
-	// pgTypeInt2 and pgTypeInt8 appear in both the decode and parameter-encode
-	// switches; keep those literals single-sourced.
+	// pgTypeInt2, pgTypeInt4 and pgTypeInt8 appear in both the decode and
+	// parameter-encode switches; keep those literals single-sourced.
 	pgTypeInt2 = "int2"
+	pgTypeInt4 = "int4"
 	pgTypeInt8 = "int8"
 )
 
@@ -40,7 +41,7 @@ func textValue(schema, name string, data []byte) (driver.Value, bool) {
 	switch name {
 	case "bool":
 		return parseBool(string(data)), true
-	case pgTypeInt2, "int4", pgTypeInt8, "oid", "xid", "cid":
+	case pgTypeInt2, pgTypeInt4, pgTypeInt8, "oid", "xid", "cid":
 		if value, err := strconv.ParseInt(string(data), 10, 64); err == nil {
 			return value, true
 		}
@@ -88,7 +89,7 @@ func scanType(schema, name string, format int16) reflect.Type {
 		switch name {
 		case "bool":
 			return reflect.TypeOf(true)
-		case pgTypeInt2, "int4", pgTypeInt8, "oid", "xid", "cid":
+		case pgTypeInt2, pgTypeInt4, pgTypeInt8, "oid", "xid", "cid":
 			return reflect.TypeOf(int64(0))
 		case "float4", "float8":
 			return reflect.TypeOf(float64(0))
@@ -105,7 +106,7 @@ func scanType(schema, name string, format int16) reflect.Type {
 	switch name {
 	case "bool":
 		return reflect.TypeOf(true)
-	case pgTypeInt2, "int4", pgTypeInt8, "oid", "xid", "cid":
+	case pgTypeInt2, pgTypeInt4, pgTypeInt8, "oid", "xid", "cid":
 		return reflect.TypeOf(int64(0))
 	case "float4", "float8":
 		return reflect.TypeOf(float64(0))
@@ -182,7 +183,7 @@ func binaryValue(schema, name string, data []byte) (driver.Value, bool) {
 		if len(data) == 2 {
 			return int64(int16(binary.BigEndian.Uint16(data))), true
 		}
-	case "int4", "oid", "xid", "cid":
+	case pgTypeInt4, "oid", "xid", "cid":
 		if len(data) == 4 {
 			return int64(int32(binary.BigEndian.Uint32(data))), true
 		}

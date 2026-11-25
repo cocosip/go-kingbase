@@ -57,11 +57,22 @@ func (c *conn) ExecContext(ctx context.Context, query string, args []driver.Name
 	if expected >= 0 && expected != len(values) {
 		return nil, fmt.Errorf("kingbase: statement expects %d arguments, got %d", expected, len(values))
 	}
+	capture := false
+	if c.cfg != nil && c.cfg.GetLastInsertID && c.mode == ModePG {
+		planned, column, err := c.planGeneratedInsert(ctx, query)
+		if err != nil {
+			return nil, err
+		}
+		if column != "" {
+			query = planned
+			capture = true
+		}
+	}
 	var result driver.Result
 	if len(values) == 0 {
-		result, err = c.execSimple(ctx, query)
+		result, err = c.execSimple(ctx, query, capture)
 	} else {
-		result, err = c.execExtended(ctx, query, values)
+		result, err = c.execExtended(ctx, query, values, capture)
 	}
 	if err != nil {
 		return nil, c.classifyCommandError(err)
@@ -328,7 +339,7 @@ func (c *conn) queryExtended(ctx context.Context, query string, values []driver.
 		return nil, err
 	}
 	c.commandSent = true
-	if err := c.sendExtended(query, params, true); err != nil {
+	if err := c.sendExtended(query, params, nil, true); err != nil {
 		return nil, err
 	}
 	columns, ready, err := c.awaitExtendedDescription()
@@ -338,7 +349,7 @@ func (c *conn) queryExtended(ctx context.Context, query string, values []driver.
 	return newRows(c, columns, ready), nil
 }
 
-func (c *conn) execSimple(ctx context.Context, query string) (driver.Result, error) {
+func (c *conn) execSimple(ctx context.Context, query string, capture bool) (driver.Result, error) {
 	if err := c.beginCommand(ctx); err != nil {
 		return nil, err
 	}
@@ -347,10 +358,10 @@ func (c *conn) execSimple(ctx context.Context, query string) (driver.Result, err
 		c.retire()
 		return nil, fmt.Errorf("kingbase: send query: %w", err)
 	}
-	return c.collectCommandResult()
+	return c.collectCommandResult(capture)
 }
 
-func (c *conn) execExtended(ctx context.Context, query string, values []driver.Value) (driver.Result, error) {
+func (c *conn) execExtended(ctx context.Context, query string, values []driver.Value, capture bool) (driver.Result, error) {
 	params, err := encodeParameters(values)
 	if err != nil {
 		return nil, err
@@ -359,23 +370,23 @@ func (c *conn) execExtended(ctx context.Context, query string, values []driver.V
 		return nil, err
 	}
 	c.commandSent = true
-	if err := c.sendExtended(query, params, false); err != nil {
+	if err := c.sendExtended(query, params, nil, false); err != nil {
 		return nil, err
 	}
-	return c.collectCommandResult()
+	return c.collectCommandResult(capture)
 }
 
 // sendExtended writes one Parse/Bind[/Describe]/Execute/Sync batch with a
 // single flush. A failed send may leave the protocol state unknown, so the
 // connection is retired.
-func (c *conn) sendExtended(query string, params [][]byte, describe bool) error {
+func (c *conn) sendExtended(query string, params [][]byte, formats []int16, describe bool) error {
 	type step struct {
 		typ     wire.MsgType
 		payload []byte
 	}
 	steps := []step{
 		{typ: wire.MsgParse, payload: wire.EncodeParse("", query, nil)},
-		{typ: wire.MsgBind, payload: wire.EncodeBind("", "", nil, params, nil)},
+		{typ: wire.MsgBind, payload: wire.EncodeBind("", "", formats, params, nil)},
 	}
 	if describe {
 		steps = append(steps, step{typ: wire.MsgDescribe, payload: wire.EncodeDescribe('P', "")})
@@ -441,11 +452,13 @@ func (c *conn) awaitExtendedDescription() ([]wire.ColumnDescription, bool, error
 }
 
 // collectCommandResult consumes a command response through ReadyForQuery and
-// returns the last completion tag. A trailing error wins over success, and
-// rows are discarded.
-func (c *conn) collectCommandResult() (driver.Result, error) {
+// returns the last completion tag. A trailing error wins over success. When
+// capture is set, the first row of the appended RETURNING is decoded as the
+// generated ID while remaining rows are drained.
+func (c *conn) collectCommandResult(capture bool) (driver.Result, error) {
 	result := &result{rowsAffected: -1}
 	var firstErr error
+	rows := 0
 	for {
 		typ, payload, err := c.reader.ReadMessage()
 		if err != nil {
@@ -469,9 +482,49 @@ func (c *conn) collectCommandResult() (driver.Result, error) {
 			if affected, ok := parseCommandTag(tag); ok {
 				result.rowsAffected = affected
 			}
-		case wire.MsgRowDescription, wire.MsgDataRow, wire.MsgEmptyQueryResponse,
-			wire.MsgParseComplete, wire.MsgBindComplete, wire.MsgNoData,
-			wire.MsgParameterDescription, wire.MsgCloseComplete:
+		case wire.MsgRowDescription:
+			if !capture {
+				continue
+			}
+			columns, err := wire.DecodeRowDescription(payload)
+			if err != nil {
+				c.retire()
+				return nil, fmt.Errorf("kingbase: malformed RowDescription: %w", err)
+			}
+			if len(columns) != 1 {
+				result.lastInsertIDErr = fmt.Errorf("%w: RETURNING returned %d columns", ErrLastInsertIDUnavailable, len(columns))
+			}
+		case wire.MsgDataRow:
+			if !capture {
+				continue
+			}
+			rows++
+			if rows > 1 {
+				result.lastInsertIDErr = fmt.Errorf("%w: RETURNING returned multiple rows", ErrLastInsertIDUnavailable)
+				continue
+			}
+			columns, err := wire.DecodeDataRow(payload)
+			if err != nil {
+				c.retire()
+				return nil, fmt.Errorf("kingbase: malformed DataRow: %w", err)
+			}
+			if len(columns) != 1 {
+				result.lastInsertIDErr = fmt.Errorf("%w: RETURNING returned %d values", ErrLastInsertIDUnavailable, len(columns))
+				continue
+			}
+			if columns[0].Null {
+				result.lastInsertIDErr = fmt.Errorf("%w: generated ID is NULL", ErrLastInsertIDUnavailable)
+				continue
+			}
+			id, err := parseGeneratedIDValue(columns[0].Data)
+			if err != nil {
+				result.lastInsertIDErr = err
+				continue
+			}
+			result.lastInsertID = id
+			result.lastInsertIDValid = true
+		case wire.MsgEmptyQueryResponse, wire.MsgParseComplete, wire.MsgBindComplete,
+			wire.MsgNoData, wire.MsgParameterDescription, wire.MsgCloseComplete:
 			// Exec discards rows, for example INSERT ... RETURNING.
 		case wire.MsgErrorResponse:
 			if firstErr == nil {
@@ -485,6 +538,9 @@ func (c *conn) collectCommandResult() (driver.Result, error) {
 			c.endCommand()
 			if firstErr != nil {
 				return nil, firstErr
+			}
+			if capture && rows == 0 && result.lastInsertIDErr == nil {
+				result.lastInsertIDErr = fmt.Errorf("%w: INSERT returned no generated ID", ErrLastInsertIDUnavailable)
 			}
 			return result, nil
 		case wire.MsgCopyInResponse, wire.MsgCopyData, wire.MsgCopyDone:
@@ -590,17 +646,27 @@ func (c *conn) drainCurrentResult() (bool, error) {
 	}
 }
 
-// result is one command completion. LastInsertId stays unavailable until the
-// generated-identity task implements its restricted contract.
+// result is one command completion. A generated ID is captured only when the
+// caller requested it and the rewritten INSERT returned a row.
 type result struct {
-	rowsAffected int64
+	rowsAffected      int64
+	lastInsertID      int64
+	lastInsertIDValid bool
+	lastInsertIDErr   error
 }
 
 var _ driver.Result = (*result)(nil)
 
-// LastInsertId reports that automatic generated-id capture is not enabled.
+// LastInsertId reports the captured generated ID, or a typed unavailable or
+// overflow error. It never substitutes a misleading zero.
 func (r *result) LastInsertId() (int64, error) {
-	return 0, fmt.Errorf("kingbase: LastInsertId is unavailable (enable get_last_insert_id)")
+	if r.lastInsertIDErr != nil {
+		return 0, r.lastInsertIDErr
+	}
+	if !r.lastInsertIDValid {
+		return 0, ErrLastInsertIDUnavailable
+	}
+	return r.lastInsertID, nil
 }
 
 // RowsAffected returns the parsed affected-row count, or -1 when the tag does

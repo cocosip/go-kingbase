@@ -9,6 +9,14 @@ import (
 	"github.com/cocosip/go-kingbase/internal/wire"
 )
 
+// ErrLastInsertIDUnavailable reports that LastInsertId has no captured value:
+// automatic capture was disabled, the statement was not an eligible INSERT, or
+// the resolved insert did not return exactly one usable generated ID.
+var ErrLastInsertIDUnavailable = errors.New("kingbase: LastInsertId is unavailable")
+
+// ErrLastInsertIDOverflow reports a captured generated ID outside int64.
+var ErrLastInsertIDOverflow = errors.New("kingbase: LastInsertId overflows int64")
+
 // Error is a server error response, including Kingbase extensions. Use
 // errors.As to inspect it:
 //

@@ -21,6 +21,12 @@ type stmt struct {
 	conn      *conn
 	name      string
 	paramOIDs []uint32
+	// generatedQuery is the safe INSERT with RETURNING appended; Exec uses it
+	// through an unnamed Parse so Query keeps the caller's original statement.
+	generatedQuery string
+	// autoIDErr is reported only by Exec, leaving Query with explicit RETURNING
+	// usable when automatic capture is enabled.
+	autoIDErr error
 	closed    bool
 }
 
@@ -46,6 +52,17 @@ func (c *conn) PrepareContext(ctx context.Context, query string) (driver.Stmt, e
 		return nil, err
 	}
 	query = planned
+	var generatedQuery string
+	var autoIDErr error
+	if c.cfg != nil && c.cfg.GetLastInsertID && c.mode == ModePG {
+		rewritten, column, err := c.planGeneratedInsert(ctx, query)
+		switch {
+		case err != nil:
+			autoIDErr = err
+		case column != "":
+			generatedQuery = rewritten
+		}
+	}
 	name := "kb_stmt_" + strconv.Itoa(c.nextStmtID)
 	c.nextStmtID++
 	if err := c.beginCommand(ctx); err != nil {
@@ -65,7 +82,13 @@ func (c *conn) PrepareContext(ctx context.Context, query string) (driver.Stmt, e
 	if err != nil {
 		return nil, c.classifyCommandError(err)
 	}
-	return &stmt{conn: c, name: name, paramOIDs: paramOIDs}, nil
+	return &stmt{
+		conn:           c,
+		name:           name,
+		paramOIDs:      paramOIDs,
+		generatedQuery: generatedQuery,
+		autoIDErr:      autoIDErr,
+	}, nil
 }
 
 // wireStep is one frontend message in a single-flush batch.
@@ -172,6 +195,31 @@ func (s *stmt) Query(args []driver.Value) (driver.Rows, error) {
 
 // ExecContext runs the prepared statement with positional arguments.
 func (s *stmt) ExecContext(ctx context.Context, args []driver.NamedValue) (driver.Result, error) {
+	if s.autoIDErr != nil {
+		return nil, s.autoIDErr
+	}
+	values, err := namedValuesToValues(args)
+	if err != nil {
+		return nil, err
+	}
+	if len(values) != len(s.paramOIDs) {
+		return nil, fmt.Errorf("kingbase: statement expects %d parameters, got %d", len(s.paramOIDs), len(values))
+	}
+	if s.generatedQuery != "" {
+		params, formats, err := s.conn.encodeParametersWithTypes(values, s.paramOIDs)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.conn.beginCommand(ctx); err != nil {
+			return nil, err
+		}
+		s.conn.commandSent = true
+		if err := s.conn.sendExtended(s.generatedQuery, params, formats, false); err != nil {
+			s.conn.retire()
+			return nil, s.conn.classifyCommandError(err)
+		}
+		return s.conn.classifyCommandResult(true)
+	}
 	params, formats, err := s.encodeArguments(args)
 	if err != nil {
 		return nil, err
@@ -184,7 +232,7 @@ func (s *stmt) ExecContext(ctx context.Context, args []driver.NamedValue) (drive
 		s.conn.retire()
 		return nil, s.conn.classifyCommandError(err)
 	}
-	return s.conn.classifyCommandResult()
+	return s.conn.classifyCommandResult(false)
 }
 
 // QueryContext runs the prepared statement and returns rows.
@@ -236,8 +284,8 @@ func (c *conn) bindAndExecute(statement string, params [][]byte, paramFormats []
 }
 
 // classifyCommandResult finishes an exec-style response.
-func (c *conn) classifyCommandResult() (driver.Result, error) {
-	result, err := c.collectCommandResult()
+func (c *conn) classifyCommandResult(capture bool) (driver.Result, error) {
+	result, err := c.collectCommandResult(capture)
 	if err != nil {
 		return nil, c.classifyCommandError(err)
 	}
