@@ -1,7 +1,7 @@
 # KingbaseES Go Driver — Capability Matrix
 
 > Status: corrected requirements; M0 core in progress, no live acceptance yet
-> Date: 2026-11-24
+> Date: 2026-11-25
 > Companion documents: [Architecture Design](go-driver-architecture-design.md) · [Development Plan and Progress](go-driver-development.md)
 
 ## Reading Guide
@@ -13,7 +13,7 @@
 - offline = unit/replay; live = actual server; both = both required. Impl/offline/live statuses below are independent: todo/pending/pending initially. n/a live means the requirement is offline-only, not that a missing server passed.
 - Aggregate live accepted requires all applicable profiles in the release manifest. A blocked/unavailable profile stays pending and cannot be advertised. Tests/provenance live in the progress tracker, with per-profile records in section 17.
 
-DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup exchange with cleartext/MD5/SM3/SCRAM authentication, TLS trust-policy negotiation, simple/extended query-or-exec, server-side prepared statement reuse with drain/retire semantics, type-catalog codecs, transactions, cancel-channel delivery with bounded synchronization and liveness/reset hooks are implemented and tested offline. No live acceptance exists yet; documentation correction does not change implementation status.
+DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup exchange with cleartext/MD5/SM3/SCRAM authentication, TLS trust-policy negotiation, simple/extended query-or-exec, server-side prepared statement reuse with drain/retire semantics, type-catalog codecs, transactions, cancel-channel delivery with bounded synchronization, liveness/reset hooks, explicit array scanning and PG-mode generated-ID capture are implemented and tested offline. No live acceptance exists yet; documentation correction does not change implementation status.
 
 ## 1. Connection and Configuration
 
@@ -103,10 +103,10 @@ DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup excha
 
 | ID | Capability | Priority | Verification | Notes | Impl | Offline | Live |
 |---|---|---|---|---|---|---|---|
-| F-601 | Safe opt-in PG generated identity | P0 | both | Verified one generated integral column on supported single-row INSERT; never RETURNING * or column-one guess | todo | pending | pending |
-| F-602 | Generated-ID type/range coverage | P0 | both | Checked exact int64 only; unsigned high-bit/float/nonintegral/ambiguous IDs unavailable or overflow; explicit Query for other values | todo | pending | pending |
+| F-601 | Safe opt-in PG generated identity | P0 | both | Verified one generated integral column on supported single-row INSERT; never RETURNING * or column-one guess; MySQL form remains F-603 | done | done | pending |
+| F-602 | Generated-ID type/range coverage | P0 | both | Checked exact int64 only; unsigned high-bit/float/nonintegral/ambiguous IDs unavailable or overflow; explicit Query for other values | done | done | pending |
 | F-603 | Generated tinyint conversion | P0 | offline | Apply accepted mode range and exact int64 conversion | todo | pending | n/a |
-| F-604 | Unavailable/overflow LastInsertId | P0 | offline | Typed error, not zero; preserve RowsAffected; reject unsafe requested rewrite before executing | todo | pending | n/a |
+| F-604 | Unavailable/overflow LastInsertId | P0 | offline | Typed error, not zero; preserve RowsAffected; reject unsafe requested rewrite before executing | done | done | n/a |
 | F-605 | Sequence access boundaries | P1 | both | Explicit verified SQL on owning connection; no MAX/last-sequence identity guess; no portable GetSchema promise | todo | pending | pending |
 
 ## 8. Transactions, COPY, Notifications
