@@ -70,7 +70,7 @@ DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup excha
 | F-304 | Array/domain/composite contracts | P1 | both | Validated links; opaque default text; explicit Array Scanner/Valuer for rectangular 1-D/multi-D, empty/NULL arrays and NULL elements; dimensions/lower bounds preserved; bounded recursion | done | done | pending |
 | F-305 | Binary parameters/results and text option | P1 | both | Verified type/format only; disable_prepared_binary_result parity; no unconditional bytea target | done | done | pending |
 | F-306 | Timezone and temporal meaning | P0 | both | Date/wall time distinct from instants; session zone/DST/precision; no implicit shift | todo | pending | pending |
-| F-307 | Actual uppercase DatabaseTypeName | P1 | both | Backend/catalog name without length; no unified PG relabel; absent OID empty | todo | pending | pending |
+| F-307 | Actual uppercase DatabaseTypeName | P1 | both | Backend/catalog name without length; no unified PG relabel; absent OID empty | done | done | pending |
 | F-308 | Honest column metadata | P1 | both | Nullable known/unknown ok flags; outer joins/expressions; real ScanType, byte/character lengths and precision | done | done | pending |
 | F-309 | YEAR standard value | P1 | both | int64 for validated live forms; reject malformed/truncated/overflow input | todo | pending | pending |
 | F-310 | Numeric/temporal conversion boundaries | P0 | both | Full uint64/decimal/NaN/infinity/zero/BC/precision/negative-time/DST/locale cases; no truncation | todo | pending | pending |
