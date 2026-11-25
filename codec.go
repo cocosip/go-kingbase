@@ -126,7 +126,7 @@ func scanType(schema, name string, format int16) reflect.Type {
 			return reflect.TypeOf(int64(0))
 		case pgTypeFloat4, pgTypeFloat8:
 			return reflect.TypeOf(float64(0))
-		case pgTypeText, pgTypeVarchar, pgTypeBpchar, pgTypeChar, "name", "unknown", "json", "jsonb", "uuid":
+		case pgTypeText, pgTypeVarchar, pgTypeBpchar, pgTypeChar, "name", "unknown", "json", "jsonb", "uuid", pgTypeNumeric:
 			return reflect.TypeOf("")
 		case pgTypeBytea:
 			return reflect.TypeOf([]byte(nil))
@@ -227,7 +227,7 @@ func binaryLayoutKnown(name string) bool {
 	switch name {
 	case pgTypeBool, pgTypeInt2, pgTypeInt4, pgTypeInt8, pgTypeOid, pgTypeXid, pgTypeCid, pgTypeFloat4, pgTypeFloat8,
 		pgTypeText, pgTypeVarchar, pgTypeBpchar, pgTypeChar, "name", "unknown", pgTypeBytea, "json",
-		"jsonb", "uuid", pgTypeDate, pgTypeTimestamp, pgTypeTimestamptz:
+		"jsonb", "uuid", pgTypeDate, pgTypeTimestamp, pgTypeTimestamptz, pgTypeNumeric:
 		return true
 	default:
 		return false
@@ -244,6 +244,14 @@ func validTemporalYear(value time.Time) bool {
 // pgEpoch is the origin of PG-wire binary date and timestamp payloads.
 var pgEpoch = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
 
+// boolBinaryValue accepts only canonical 0/1 bytes.
+func boolBinaryValue(data []byte) (driver.Value, bool) {
+	if len(data) == 1 && (data[0] == 0 || data[0] == 1) {
+		return data[0] == 1, true
+	}
+	return nil, false
+}
+
 // binaryValue decodes one binary-format result value for a catalog type. The
 // boolean reports whether a codec exists; callers fall back to the raw bytes so
 // an unverified binary layout is never misparsed.
@@ -253,9 +261,7 @@ func binaryValue(schema, name string, data []byte) (driver.Value, bool) {
 	}
 	switch name {
 	case pgTypeBool:
-		if len(data) == 1 && (data[0] == 0 || data[0] == 1) {
-			return data[0] == 1, true
-		}
+		return boolBinaryValue(data)
 	case pgTypeInt2:
 		if len(data) == 2 {
 			return int64(int16(binary.BigEndian.Uint16(data))), true
@@ -299,6 +305,8 @@ func binaryValue(schema, name string, data []byte) (driver.Value, bool) {
 				return moment, true
 			}
 		}
+	case pgTypeNumeric:
+		return numericValue(data)
 	case "uuid":
 		if len(data) == 16 {
 			return formatUUID(data), true

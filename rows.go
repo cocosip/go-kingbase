@@ -94,9 +94,9 @@ func typeDecoder(schema, name string, format int16) func([]byte) (driver.Value, 
 			if binaryLayoutKnown(name) {
 				return nil, fmt.Errorf("%w: malformed %s binary value", ErrValueConversion, name)
 			}
-			// Unverified binary layouts (numeric, interval, inet, ...) stay raw
-			// bytes; ponytail: add codecs when their wire layout is proven, and
-			// never guess a layout from the type name alone.
+			// Unverified binary layouts (interval, inet, ...) stay raw bytes;
+			// ponytail: add codecs when their wire layout is proven, and never
+			// guess a layout from the type name alone.
 			return append([]byte(nil), data...), nil
 		}
 	}
