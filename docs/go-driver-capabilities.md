@@ -174,7 +174,7 @@ For deployments whose native MySQL endpoint is established by V12/V15 (Architect
 
 ## 13. Live Verification Requirements
 
-The [V1–V19 evidence ledger](go-driver-live-profile.md#v1v19-evidence-ledger-2026-11-25-and-2026-11-26-four-mode-runs) records the 2026-11-25 and 2026-11-26 four-mode runs: V1–V6, V9, V10, V12, V14 and V16–V19 are evidenced on this deployment, V7 is evidenced for the enabled method set (only SCRAM is enabled), V8 is deferred by operator decision (O8) because no listener offers TLS, and V11/V13/V15 remain later-scope items. The four-instance profile is accepted as recorded in section 17; the TLS deferral is a scope decision (O8 in the [progress tracker](go-driver-development.md)), not an accepted limitation. Not-applicable is allowed only for a named excluded profile/feature with reason, never lack of infrastructure. V11/V13 apply to later V8 scope; V15 and native cases of V8/V19 apply when M5 enters the release manifest. Authentication/COPY/notification cases follow enabled features; unsupported extensions remain unclaimed.
+The [V1–V19 evidence ledger](go-driver-development.md#5-live-verification) records the 2026-11-25 and 2026-11-26 four-mode runs: V1–V6, V9, V10, V12, V14 and V16–V19 are evidenced on this deployment, V7 is evidenced for the enabled method set (only SCRAM is enabled), V8 is deferred by operator decision (O8) because no listener offers TLS, and V11/V13/V15 remain later-scope items. The four-instance profile is accepted as recorded in section 17; the TLS deferral is a scope decision (O8 in the [progress tracker](go-driver-development.md)), not an accepted limitation. Not-applicable is allowed only for a named excluded profile/feature with reason, never lack of infrastructure. V11/V13 apply to later V8 scope; V15 and native cases of V8/V19 apply when M5 enters the release manifest. Authentication/COPY/notification cases follow enabled features; unsupported extensions remain unclaimed.
 
 | ID | Item | Required evidence | Blocks |
 |---|---|---|---|
@@ -203,7 +203,7 @@ The [V1–V19 evidence ledger](go-driver-live-profile.md#v1v19-evidence-ledger-2
 - A second connection pool, ORM/provider, SQL dialect translation and database administration are outside this driver. database/sql integration remains required.
 - No built-in product OID table, arbitrary business-SQL translation or automatic protocol/port fallback.
 - V8 is later scope; native MySQL is conditional M5. Neither is advertised by passing V9 PG tests.
-- GSS/SSPI channel binding (F-806) and the native MySQL backend (M5) stay outside the initial PG release. LISTEN/callbacks, keepalive, multi-host, env fallback and benchmarks are P2 and may be explicitly deferred.
+- GSS/SSPI channel binding (F-806) and the native MySQL backend (M5) stay outside the initial PG release. LISTEN/NOTIFY, keepalive, multi-host, environment fallback and the opt-in benchmark are P2 features that ship with the Live states their section 17 records list, and none of them blocks the release.
 - Compression, LOCAL INFILE, multi-statement execution, unverified long-data streaming and control-query cancellation are not enabled on native MySQL.
 - A separate EF provider is future work, not a Go driver acceptance requirement. No ADO.NET-specific APIs are mechanically copied.
 
@@ -256,7 +256,7 @@ override records below carry the accepted set. Each record names the profile, th
 test, the artifact (`live/artifacts/<mode>/`, local and gitignored), the capture time
 (2026-11-26T06:22Z), the driver revision recorded in each artifact and the role (`system` for the suite, plus a
 temporary ordinary login for the V2 capture). Aggregate Live is accepted for this profile only
-under the scope limits recorded in the [live ledger](go-driver-live-profile.md#accepted-profile-operator-four-mode-run-2026-11-26).
+under the scope limits recorded in the [live acceptance record](go-driver-development.md#96-scope-limits).
 
 | Feature(s) | Covering live test(s) | Profiles |
 |---|---|---|

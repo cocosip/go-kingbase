@@ -1,7 +1,8 @@
 # KingbaseES Go Driver — Usage and Configuration
 
 > Status: describes the released PG-wire behaviour. Where status or scope matters, the
-> [capability matrix](go-driver-capabilities.md) and the [live profile ledger](go-driver-live-profile.md)
+> [capability matrix](go-driver-capabilities.md) and the
+> [live acceptance record](go-driver-development.md#94-accepted-profile-operator-four-mode-run-2026-11-26)
 > are authoritative; this page is the practical reference.
 
 ## Install
@@ -205,6 +206,76 @@ If a failure happened after a command may have reached the server, the driver re
 to `database/sql`, so the statement is never retried automatically. Treat it as "check the data,
 then decide".
 
+## Migrating from the vendor Go SDK
+
+This ledger maps the sampled official Go SDK surface and KingbaseES options to this module. It is
+scoped to the released PG-wire target: a `defer` row is an explicit non-promise, not parity.
+
+### Driver and configuration
+
+| Official shape | Status | Go contract |
+|---|---|---|
+| `sql.Open("kingbase", dsn)` and blank import registration | keep | The driver name remains `kingbase`; the module registers it in `init`. |
+| `host`, `port`, `user`, `password`, `database` | keep | DSN, URL and environment forms normalize through `ParseConfig`; the conventional port is only a default. |
+| `compatibilityMode` / `compatible_mode` / `mode` / `databaseMode` | keep | Aliases declare client semantics only; verified server evidence wins and a conflict fails at connect. |
+| `wireProtocol` | keep | `pg` is the supported transport; `mysql` fails clearly until M5 ships. There is no auto value. |
+| `sslmode`, certificate paths | keep | `require`, `verify-ca`, `verify-full`, `disable`; missing trust material is an error, never a plaintext fallback. |
+| `binary_parameters` | keep | Applies to server-prepared parameters and verified explicit `$n::pg_catalog.type` targets; raw bytes without a target stay text plus server inference. |
+| `get_last_insert_id` / `get_auto_increment_id` | replace | Restricted opt-in generated-ID capture; `LastInsertId` returns a typed unavailable/overflow error, never zero. |
+| Explicit `nextval`/`currval` sequence calls | replace | Caller SQL on one pinned `*sql.Conn`; the driver never guesses with `MAX()` or last-sequence state and offers no portable sequence helper. |
+| `client_encoding` | keep | UTF8/UTF-8 only in this release; other encodings fail before a connection is published. |
+| Connector with a notice handler or other programmatic fields | replace | `ParseConfig(dsn)` then `NewConnector(cfg)` for `sql.OpenDB`; the configuration is deep-copied at construction. |
+
+### Values and helpers
+
+| Official shape | Status | Go contract |
+|---|---|---|
+| `CopyIn(table, columns...)` / `CopyInSchema` | keep | Returns a `COPY ... FROM STDIN` statement string; prepare on a pinned transaction, `Exec` rows, zero-argument `Exec` to flush and finish, then close. It is not a returned writer. |
+| `CopyOut` / exporter | replace | `COPY ... TO STDOUT` through `QueryContext`: one `copy` column of protocol chunks (text or binary). `Exec`, prepared statements, arguments, a COPY that is not the first statement and `COPY ... TO <file>` fail closed; closing early drains to ReadyForQuery. |
+| `QuoteIdentifier` | keep | Quotes one identifier; callers still build only bounded SQL fragments. |
+| `Array` / typed arrays | replace | The generic `Array[T]` Scanner/Valuer handles rectangular text arrays; default results stay opaque text. |
+| `VarChar`, `VarCharMax`, `NVarCharMax`, `NChar` | keep | Compatibility wrappers implement `driver.Valuer`/`sql.Scanner` and keep their text intent through bind. |
+| `DateTime1` | keep | Wraps `time.Time`; binary/text temporal policy follows the driver's `time.Time` contract. |
+| `CursorString` and refcursor helper | replace | `NewCursor(*sql.Tx, name)` keeps the owning transaction and exposes explicit `Fetch`/`FetchAll`/`Close`; the name is one quoted identifier and ownership never transfers. Automatic routine OUT cursor creation stays deferred (T-037). |
+| `sql.Out`, `ReturnStatus`, routine conveniences | defer | F-501–F-505/T-036/T-037; an unsupported form returns a clear error. |
+| `GetSchema` / DataAdapter-style metadata | not provided | No portable schema-discovery promise; use explicit catalog queries and `ConnectionMetadata`. |
+| Numeric/decimal object | replace | Results are exact decimal `string`; use the caller's decimal Scanner. No hidden float conversion. |
+| `civil.Date` / `civil.Time` | replace | Use `time.Time` for date/timestamp and keep time-without-date as `string`. |
+| Internal connection diagnostics | replace | `ConnectionMetadata(*sql.Conn)` returns `ServerMetadata`; access it on a pinned `sql.Conn`. |
+| Server notices and async messages | keep | `Config.NoticeHandler` receives decoded notices; `NewListener` owns the LISTEN/NOTIFY connection. Both are reachable without internal packages. |
+| Binary COPY input | replace | Two shipped forms: `CopyInBinary` encodes Go values using the storage type the catalog reports (F-705) and `CopyInRawBinary` forwards an already encoded payload chunk by chunk (F-707). |
+| Native MySQL backend | defer | Conditional M5; no automatic transport selection or downgrade. |
+
+### Standard value boundaries
+
+- `bool`/BIT: strict PG text `t`/`f`; a malformed known value returns `ErrValueConversion`, not a
+  silent `false`.
+- Integers keep `int64`; full-range `uint64` parameters use exact decimal text.
+- Numeric, money, time, timetz, interval, UUID, JSON/XML and inet values keep their verified text
+  form; there is no implicit JSON/XML or duration conversion.
+- Date, timestamp and timestamptz use `time.Time` only for valid years 1..9999; zero/BC/infinity and
+  out-of-range forms return a typed conversion error so callers can explicitly select text.
+- Domains resolve only through validated catalog links; ambiguous or unverified identities stay
+  opaque.
+
+## Examples and tests
+
+The examples compile with the module and show the supported surface:
+
+| Example | Shows |
+|---|---|
+| [`examples/basic`](../examples/basic/main.go) | open/ping, a qualified int8 parameter, text-array scan |
+| [`examples/transaction`](../examples/transaction/main.go) | explicit transaction, `Exec`, `RowsAffected`, rollback |
+| [`examples/copyin`](../examples/copyin/main.go) | statement-shaped COPY IN on a pinned transaction |
+| [`examples/cursor`](../examples/cursor/main.go) | explicit refcursor fetch/close on its owning transaction |
+| [`examples/listener`](../examples/listener/main.go) | pull-driven LISTEN/NOTIFY and gap handling |
+| [`examples/metadata`](../examples/metadata/main.go) | per-connection `ServerMetadata` |
+
+Verify the examples with `go build ./... && go vet ./...`; the offline suite is `go test ./...` and
+the live acceptance suite is `go test -tags live ./live`, which needs `KINGBASE_TEST_DSN` and is
+described in the [live acceptance record](go-driver-development.md#9-live-acceptance-record).
+Examples do not add live evidence.
+
 ## Scope of this release
 
 - PG wire against V9 deployments, `pg`/`oracle`/`mysql`/`sqlserver` compatibility modes.
@@ -213,11 +284,3 @@ then decide".
 - Not in this release: the native MySQL backend (`wire_protocol=mysql`), V8R6 evidence, GSS/SSPI
   channel binding, and TLS live evidence. Each is a recorded deferral with a revisit condition in
   the [development plan](go-driver-development.md).
-
-## Examples and tests
-
-- Runnable programs: [`examples/`](../examples) (`basic`, `copyin`, `cursor`, `listener`,
-  `metadata`, `transaction`).
-- Offline suite: `go test ./...`.
-- Live acceptance: `go test -tags live ./live`, which needs `KINGBASE_TEST_DSN`; see
-  [live profile acceptance](go-driver-live-profile.md) for the manifest and evidence layout.

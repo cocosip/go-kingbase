@@ -31,11 +31,10 @@ MySQL transport, V8R6, GSS/SSPI and live TLS acceptance remain out of scope.
 The specification, feature matrix and delivery plan are the source of truth for
 scope and acceptance:
 
-- [Usage and configuration](docs/go-driver-usage.md)
+- [Usage and configuration](docs/go-driver-usage.md) (includes the migration ledger and examples)
 - [Architecture design](docs/go-driver-architecture-design.md)
 - [Capability matrix](docs/go-driver-capabilities.md)
-- [Development plan and progress](docs/go-driver-development.md)
-- [API migration ledger and examples](docs/go-driver-migration.md)
+- [Development plan and progress](docs/go-driver-development.md) (includes the live acceptance record)
 
 ## Contract notes
 

@@ -4,7 +4,7 @@
 > Date: 2026-11-24 (status line refreshed 2026-11-26)
 > Companion documents: [Usage and Configuration](go-driver-usage.md) · [Capability Matrix](go-driver-capabilities.md) · [Development Plan and Progress](go-driver-development.md)
 > Premise: an independent implementation, with no vendor implementation copied. Source inspection has informed this specification, so it is not evidence of a formal clean-room process. Vendor source and generated OID lists are research evidence, not live-server acceptance.
-> Implementation: the scaffold, connection/query/catalog/mode layers and the M4 quality items are committed and pass the offline suite ([progress tracker](go-driver-development.md)); the profile acceptance with its scope limits is recorded in the [live ledger](go-driver-live-profile.md#accepted-profile-operator-four-mode-run-2026-11-26), and live TLS acceptance is deferred by operator decision (O8).
+> Implementation: the scaffold, connection/query/catalog/mode layers and the M4 quality items are committed and pass the offline suite ([progress tracker](go-driver-development.md)); the profile acceptance with its scope limits is recorded in the [live acceptance record](go-driver-development.md#94-accepted-profile-operator-four-mode-run-2026-11-26), and live TLS acceptance is deferred by operator decision (O8).
 
 ## 1. Goals and Confirmed Requirements
 
@@ -155,8 +155,8 @@ compatibilityMode selects semantics; wireProtocol selects transport. There is no
 | application_name / fallback_application_name | string | empty | verify native-backend mechanism separately |
 | client_encoding | implemented encoding | UTF-8 | initially UTF8/UTF-8 only; reject unimplemented encodings |
 | options / search_path | string | unset | explicit runtime allowlist; backend-safe configuration, no value concatenation into SQL |
-| keepalives / keepalives_idle | yes/no / seconds | OS default | P2; explicit unsupported error until delivered |
-| multiple hosts / target_session_attrs | host list / verified target rule | unset | P2; explicit unsupported error until delivered |
+| keepalives / keepalives_idle / keepalives_interval / keepalives_count | yes/no, seconds | enabled, OS default | P2 tuning; an unsupported platform value fails instead of being ignored |
+| host list / target_session_attrs | host or port list / any, read-write, read-only | unset, any | P2 opt-in path: no protocol or port fallback, and an unverifiable target fails closed |
 
 ### 4.1 Parameter rules
 
@@ -405,23 +405,29 @@ Live TLS acceptance is deferred by operator decision (O8 in the [progress tracke
 
 MySQL TLS is independently accepted in V8/V15 with the same configured trust policy. SM3 password authentication does not establish national-crypto TLS/certificate support. Runtime TLS-version/cipher policy is verified against the Go 1.26.0 baseline.
 
-## 13. Planned Package Layout
+## 13. Package Layout
 
 ```text
 go-kingbase/
-  driver.go, connector.go, config.go    database/sql entry points/configuration
-  conn.go, stmt.go, rows.go, tx.go      operation/transaction lifecycle
-  profile.go, catalog.go, typeinfo.go  qualified identities/capability policy
-  encode.go, decode.go, array.go       standard values and explicit helpers
-  placeholders.go, copy.go, notify.go  binding, text COPY, asynchronous delivery
-  errors.go, diagnostics.go           structured errors and metadata
-  internal/wire/                      bounded PG codecs/state machine
-  internal/auth/                      independently implemented SCRAM/SM3
-  internal/testpeer/                  protocol/failure simulator
-  internal/mysql/                     conditional separately accepted backend
+  doc.go, driver.go, connector.go, config.go       entry points and configuration
+  conn.go, session.go, query.go, statement.go, rows.go, transaction.go,
+  ping.go, cancel.go                                operation, session and recovery lifecycle
+  mode.go, catalog.go, codec.go, identity.go        mode profiles, qualified catalog, mode codecs
+  encode.go, decode.go, numeric.go, timebinary.go, intervalbinary.go,
+  inetbinary.go, bitbinary.go, array.go, wrapper.go standard values and explicit helpers
+  placeholders.go, routine.go, routine_out.go, generated.go
+                                                    binding plan, routines and generated IDs
+  copy.go, copy_binary.go, cursor.go                COPY IN/OUT forms and cursors
+  listener.go, notice.go                            asynchronous delivery
+  errors.go, tls.go                                 structured errors and the TLS policy
+  internal/wire/                                    bounded PG codecs and state machine
+  internal/auth/, internal/sm3/                     independently implemented authentication
+  internal/testpeer/                                protocol and failure simulator (test-only)
 ```
 
-T-001 created go.mod, the license/dependency/CI contract and this skeleton package; packages are added by their owning tasks as behaviour is implemented. Current files: driver.go, connector.go, config.go, conn.go, query.go, rows.go, errors.go, encode.go, decode.go, tls.go; internal/wire (bounded PG framing) and internal/testpeer (scripted offline peer).
+`examples/` holds the compiling programs and `live/` the build-tagged acceptance suite. A native
+MySQL backend would add `internal/mysql/` only when M5 is accepted; the root package stays
+PG-wire-shaped until then.
 
 ### 13.1 Confirmed module and Go baseline
 
@@ -439,26 +445,21 @@ Use github.com/cocosip/go-kingbase in imports, examples and package-release chec
 
 ## 14. API and Migration Compatibility
 
-Driver registration is kingbase, package is kingbase and module is github.com/cocosip/go-kingbase (O1 resolved). The new path requires import migration, not a drop-in claim. T-053 publishes compiling examples after implementation.
+Driver registration is `kingbase`, the package is `kingbase` and the module is
+`github.com/cocosip/go-kingbase` (O1 resolved). The new path requires an import migration, not a
+drop-in claim. The keep/replace/defer surface for the vendor Go SDK is the
+[migration ledger](go-driver-usage.md#migrating-from-the-vendor-go-sdk); this section only fixes
+the contract points where a mechanical port would change meaning:
 
-| Official surface/behaviour | First-release migration decision |
+| Official surface | Contract point |
 |---|---|
-| Driver/Connector/Dialer | equivalent database/sql entry points on Go 1.26.0; exact signatures delivered by T-001 |
-| CopyIn/CopyInSchema | statement-string helpers (§10.3), no writer claim |
-| Array | Scanner/Valuer helper with explicit dimensions/lower-bounds/NULL support; unsupported shapes return errors |
-| ReturnStatus/DateTime1/VarChar*/NChar/CursorString | retain typed intent under accepted target/routine profiles; checked conversion |
-| NullTime | use sql.NullTime for time.Time results; string/explicit Scanner for time-of-day; no promised compatibility alias |
-| QuoteIdentifier/QuoteLiteral | equivalent accepted-syntax escaping helpers; not substitutes for bind parameters |
-| ConnectorWithNoticeHandler/NewListener | equivalent callbacks/listener with ownership/queue/non-reentrancy rules; P2 deferral disclosed |
-| civil/decimal/narrow-int/[]T default values | standard boundary §7.1; direct type assertions migrate to Scan/explicit Scanner |
-| EnableInfinityTs | no global mapping; unsupported infinity conversion requires explicit text retrieval (§7.2) |
-| oid subpackage/constants | not provided; use qualified runtime metadata and typed binding |
-| get_last_insert_id | restricted generated-column contract; unavailable/overflow errors, not zero |
-| disable_prepared_binary_result | retain and test value/metadata parity |
-| TLS files/require | retain explicit-root CA behaviour; missing explicit roots fail; public certs are not private keys |
-| automatic transport/mutable mode | configure protocol explicitly; no automatic switch or mid-session mode change |
+| `NullTime` | use `sql.NullTime` for `time.Time` results and an explicit `Scanner` for time-of-day; no compatibility alias is promised |
+| `civil`/decimal/narrow-int/`[]T` defaults | standard boundary §7.1 applies; direct type assertions migrate to `Scan`/an explicit `Scanner` |
+| `EnableInfinityTs` | no global toggle: unsupported infinity/BC/zero temporal forms require explicit text retrieval (§7.2) |
+| `oid` subpackage and constants | not provided; use the qualified runtime catalog and typed binding |
+| `GetSchema`/DataAdapter, `TransactionScope`, an independent .NET-style pool | not Go requirements; `ConnectionMetadata` and explicit catalog queries replace portable schema discovery |
 
-ADO.NET DataAdapter, TransactionScope, GetSchema and an independent .NET-style pool are not missing Go requirements. Comparison source is sibling repository kbconnector-dotnet/docs/kbconnector-design.md (local research, no product implementation). Shared requirements are initialization budgets, retry safety, bounded framing, session cleanup and independent backend acceptance; Go API and COPY scope differences are specified in this document.
+Comparison source is the sibling `kbconnector-dotnet` design, used as research evidence only.
 
 ## 15. Verification and Release Strategy
 
@@ -472,19 +473,21 @@ ADO.NET DataAdapter, TransactionScope, GetSchema and an independent .NET-style p
 | Concurrency | multi-mode isolation/-race on eligible supported toolchain/platform; no global mode/codec |
 | Release | Go/platform/module/license decisions closed; scoped P0/P1 accepted; P2 deferrals visible; lint/package/examples/dependencies verified |
 
-Implementation, offline proof and live acceptance are separate [progress](go-driver-development.md) dimensions. Skipped tests/static SDK data do not establish live acceptance. A V-item is not-applicable only for a specifically excluded profile/feature with reason. Lack of a required V9 instance blocks acceptance, not engineering.
+Implementation, offline proof and live acceptance are separate [progress](go-driver-development.md)
+dimensions. Skipped tests and static SDK data do not establish live acceptance.
 
 ## 16. Decisions and Evidence Gates
 
-| ID | Decision/question | State/effect |
-|---|---|---|
-| O1 | published module identity/oid migration | resolved: github.com/cocosip/go-kingbase from Git origin; package kingbase with driver registration kingbase (the vendor sample package name gokb is not reused); oid subpackage omitted per §14 |
-| O2 | public scalar/temporal contract | resolved in specification: standard driver values, date time.Time/time text, no implicit civil/sql.NullBool |
-| O3 | qualified catalog access | resolved: V2 evidenced on the accepted operator four-mode deployment; no built-in escape hatch; the driver fails closed if required metadata is unavailable |
-| O4 | V8 support | later scope, V11/V13 before enabling; no universal no-special-code assertion |
-| O5 | live-profile availability | resolved: one operator four-instance V9 deployment is accepted (scope-limited) with V1–V19 evidence recorded; live TLS acceptance deferred by operator decision (O8) |
-| O6 | MySQL backend release | conditional M5 after V12/V15/native-bootstrap/reset evidence; excluded from initial PG claims |
-| O7 | minimum Go/platform/license/toolchain | resolved: Go 1.26.0; Apache-2.0 with NOTICE; stdlib-only core; linux/windows/darwin amd64+arm64; CI runs Go 1.26.x with golangci-lint v2.14.0 (§13.1) |
+Each decision's current state and effect is recorded once in the
+[development plan](go-driver-development.md#6-decisions-and-investigation-gates); this contract
+only fixes what no decision may override:
+
+- The compatibility mode comes from server evidence or an explicit declaration that the server
+  confirms; a catalog marker, a port or a product string never selects it.
+- Capabilities come from the qualified catalog loaded over the connection; there is no built-in OID
+  table and no user-selected product-version parameter.
+- A deferred capability keeps its fail-closed error: the gate may decide not to ship support, never
+  to fall back silently.
 
 ## Appendix A: Snapshot Comparison
 
@@ -542,13 +545,14 @@ A NuGet search sampled Kdbndp 8.0.0 on 2026-11-23; it is not the complete offici
 
 No third-party report establishes accepted server support here. The primary-source candidates and failure contract in §9 govern this design; actual query accessibility and server behaviour remain V1/V2 evidence requirements.
 
-### B.4 Items still lacking live evidence
+### B.4 Items the accepted profile did not settle
 
-- whether single-mode edition servers restrict connections to their own mode (the four Go snapshots run in three modes, so the driver itself does not restrict);
-- visibility and permissions of `pg_settings` / `pg_type` on C019+ and across modes;
-- the text form returned for `year` columns (`YYYY` or `YYYY-MM-DD`);
-- the mapping between server version and the driver version bundled in each installation package (the four snapshot versions come from directory names).
-
+- whether a single-mode edition server restricts connections to its own compatibility mode (the
+  accepted deployment runs four instances, so the driver itself restricts nothing);
+- catalog visibility and permissions on builds later than the accepted deployment (the snapshot
+  evidence comes from the accepted release, and a later release must be re-measured, not assumed);
+- the mapping between a server release and the driver version bundled in each installation package
+  (the sampled figures come from package directory names, not from a vendor statement).
 ## Appendix C: MySQL Transport Backend (conditional)
 
 ### C.1 Scope and selection

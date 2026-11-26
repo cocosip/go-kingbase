@@ -22,12 +22,9 @@ contract and the only source of status; this file says how to work, never what i
 2. [Capability matrix](docs/go-driver-capabilities.md) — the `F-*` feature IDs with independent
    Impl / Offline / Live states.
 3. [Development plan and progress](docs/go-driver-development.md) — the `T-*` tasks, milestones,
-   `V*` verification items, `O*` decisions, deferrals and the dated log.
-4. [Live profile acceptance](docs/go-driver-live-profile.md) — manifest fields, the evidence ledger
-   and the accepted-profile records.
-5. [API migration ledger](docs/go-driver-migration.md) — public keep/replace/defer surface.
-6. [Usage and configuration](docs/go-driver-usage.md) — the practical DSN/API reference; it
-   describes released behaviour and defers to the records above for status.
+   `V*` verification items, `O*` decisions, deferrals, the live acceptance record and the dated log.
+4. [Usage and configuration](docs/go-driver-usage.md) — the practical DSN/API reference and the
+   migration ledger; it describes released behaviour and defers to the records above for status.
 
 Status changes over time: driver releases, server releases and operator scope all move it. Never
 copy a status, revision, feature ID or deferral list into this file or into a commit message; cite
