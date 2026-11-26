@@ -36,7 +36,7 @@ the document instead, so the next reader cannot act on a stale snapshot.
 go build ./...
 go vet ./...
 go test ./... -count=1 -timeout 10m
-go test -race ./... -count=1                # where cgo is available
+go test -race ./... -count=1                # needs cgo; on Windows a UCRT C toolchain
 go test -tags=live ./... -run '^$'          # compile the live suite, no database needed
 golangci-lint run --build-tags=live ./...   # must report 0 issues
 gofmt -l .                                  # must print nothing

@@ -73,6 +73,11 @@ gofmt -l .
 go mod tidy && git diff --exit-code
 ```
 
+The driver is pure Go and release builds use `CGO_ENABLED=0`, but `go test -race` still requires
+cgo, so a race run needs a C toolchain. On Windows that toolchain must target the UCRT: an
+MSVCRT-era MinGW-w64 (for example the 2018 gcc 8.1.0 build) produces a test binary that fails to
+start with `0xc0000139`, while a UCRT build such as llvm-mingw works.
+
 CI (`.github/workflows/ci.yml`) runs the same commands on linux/windows/darwin
 amd64/arm64 with Go 1.26.x, uploads the Linux coverage profile and enforces its
 70% floor. Tag pushes publish a GitHub release (`release.yml`); CodeQL and
