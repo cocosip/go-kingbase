@@ -18,6 +18,7 @@ promise parity.
 | `get_last_insert_id` / `get_auto_increment_id` | replace | Restricted opt-in generated-ID capture; `LastInsertId` returns a typed unavailable/overflow error, never zero. |
 | Explicit `nextval`/`currval` sequence calls | replace | Caller SQL on one pinned `*sql.Conn`; the driver never guesses with `MAX()`/last-sequence state and offers no portable sequence/GetSchema helper. |
 | `client_encoding` | keep | UTF8/UTF-8 only in this release; other encodings fail before publishing a connection. |
+| Connector with a notice handler / programmatic config | replace | `kingbase.ParseConfig(dsn)` then `kingbase.NewConnector(cfg)` for `sql.OpenDB`, so `Config.NoticeHandler`, pools and every other programmatic field stay reachable; the configuration is deep-copied at construction. |
 
 ## Values and helpers
 
@@ -34,6 +35,7 @@ promise parity.
 | Numeric/decimal object | replace | Results are exact decimal `string`; use the caller's decimal Scanner. No hidden float conversion. |
 | `civil.Date` / `civil.Time` | replace | Use `time.Time` for date/timestamp and preserve time-without-date as `string`. |
 | Internal connection diagnostics | replace | `kingbase.ConnectionMetadata(*sql.Conn)` returns `ServerMetadata`; access it on a pinned `sql.Conn`. |
+| Server notices / async messages | keep | `Config.NoticeHandler` receives decoded notices; `kingbase.NewListener` owns the LISTEN/NOTIFY connection. Both are reachable without internal packages. |
 | COPY OUT, binary COPY | defer | F-705/F-706/T-056/T-057; not part of the first-release COPY IN contract. |
 | Native MySQL backend | defer | M5 conditional; no automatic transport selection or downgrade. |
 
@@ -73,4 +75,5 @@ golangci-lint run ./...
 
 See [architecture](go-driver-architecture-design.md) and
 [capabilities](go-driver-capabilities.md) for the authoritative scope. Examples
-do not add live-profile evidence; M3 V1–V19 remains pending.
+do not add live-profile evidence; the accepted profile and its limits are in the
+[live ledger](go-driver-live-profile.md#accepted-profile-v9r001c010-four-mode-2026-11-26).

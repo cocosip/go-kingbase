@@ -1,10 +1,10 @@
 # KingbaseES Go Driver — Architecture Design
 
-> Status: corrected requirements and interface contract; the initial PG-wire scope is implemented, M0/M1/M2 are complete with named offline proof, and live profile acceptance (M3) is the remaining gate
+> Status: corrected requirements and interface contract; the initial PG-wire scope is implemented, M0–M4 are complete and one V009R001C010 four-instance profile is **accepted (scope-limited)** at revision `b0ae780`
 > Date: 2026-11-24 (status line refreshed 2026-11-26)
 > Companion documents: [Capability Matrix](go-driver-capabilities.md) · [Development Plan and Progress](go-driver-development.md)
 > Premise: an independent implementation, with no vendor implementation copied. Source inspection has informed this specification, so it is not evidence of a formal clean-room process. Vendor source and generated OID lists are research evidence, not live-server acceptance.
-> Implementation: the scaffold, connection/query/catalog/mode layers and the M4 quality items are committed and pass the offline suite ([progress tracker](go-driver-development.md)); no V9 profile is accepted yet, and live TLS acceptance is deferred by operator decision (O8 in the progress tracker).
+> Implementation: the scaffold, connection/query/catalog/mode layers and the M4 quality items are committed and pass the offline suite ([progress tracker](go-driver-development.md)); the profile acceptance with its scope limits is recorded in the [live ledger](go-driver-live-profile.md#accepted-profile-v9r001c010-four-mode-2026-11-26), and live TLS acceptance is deferred by operator decision (O8).
 
 ## 1. Goals and Confirmed Requirements
 
@@ -476,7 +476,7 @@ Implementation, offline proof and live acceptance are separate [progress](go-dri
 | O2 | public scalar/temporal contract | resolved in specification: standard driver values, date time.Time/time text, no implicit civil/sql.NullBool |
 | O3 | qualified catalog access | resolved: V2 evidenced on the V009R001C010 four-mode deployment; no built-in escape hatch; the driver fails closed if required metadata is unavailable |
 | O4 | V8 support | later scope, V11/V13 before enabling; no universal no-special-code assertion |
-| O5 | live-profile availability | resolved (no accepted profile): V1–V19 evidence recorded on one V009R001C010 deployment; live TLS acceptance deferred by operator decision (O8), so M3 stays open rather than approved |
+| O5 | live-profile availability | resolved: one V009R001C010 four-instance deployment is accepted (scope-limited) with V1–V19 evidence recorded; live TLS acceptance deferred by operator decision (O8) |
 | O6 | MySQL backend release | conditional M5 after V12/V15/native-bootstrap/reset evidence; excluded from initial PG claims |
 | O7 | minimum Go/platform/license/toolchain | resolved: Go 1.26.0; Apache-2.0 with NOTICE; stdlib-only core; linux/windows/darwin amd64+arm64; CI runs Go 1.26.x with golangci-lint v2.14.0 (§13.1) |
 

@@ -18,14 +18,16 @@ Development against KingbaseES V009R001C010 is in progress. The PG-wire
 implementation covers the initial scope (DSN/auth, catalog, query/binding,
 mode-specific codecs, routine INOUT/`sql.Out` where the listener returns an
 output row, transactions, COPY IN, cursors, listeners, metadata, generated IDs)
-and passes the offline suite plus a live acceptance harness. No public release
-or production support claim exists yet: the M3 evidence run recorded V1–V19
-observations, but V7 stays partial (the deployment enables only SCRAM) and live
-TLS acceptance (V8) is deferred by operator decision because the deployment has
-no TLS listener — the TLS policy is implemented and covered offline only, with no
-plaintext fallback. The native MySQL transport, V8R6, binary COPY and extra auth
-extensions remain out of scope. The specification, feature matrix and delivery
-plan are the source of truth for scope and acceptance:
+and passes the offline suite plus a live acceptance harness. One deployment
+profile is accepted (scope-limited, driver revision `b0ae780`): the four-instance
+KingbaseES V009R001C010 deployment, verified in pg/oracle/mysql/sqlserver modes on
+2026-11-26 with no failing live test. Two limits stay explicit: the deployment
+enables only `scram-sha-256` authentication, and live TLS acceptance (V8) is
+deferred by operator decision because it offers no TLS listener — the TLS trust
+policy is implemented and covered offline, with no plaintext fallback. The native
+MySQL transport, V8R6, binary COPY and extra auth extensions remain out of scope.
+The specification, feature matrix and delivery plan are the source of truth for
+scope and acceptance:
 
 - [Architecture design](docs/go-driver-architecture-design.md)
 - [Capability matrix](docs/go-driver-capabilities.md)

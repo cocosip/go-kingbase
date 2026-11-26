@@ -1,6 +1,6 @@
 # KingbaseES Go Driver — Capability Matrix
 
-> Status: initial PG-wire scope implemented and tested offline; live acceptance in progress on a V009R001C010 four-mode deployment, no accepted profile yet; live TLS acceptance is deferred by operator decision (O8)
+> Status: initial PG-wire scope implemented and tested offline; the V009R001C010 four-mode deployment is **accepted (scope-limited)** on 2026-11-26 (`b0ae780`); live TLS acceptance is deferred by operator decision (O8)
 > Date: 2026-11-25 (TLS deferral recorded 2026-11-26)
 > Companion documents: [Architecture Design](go-driver-architecture-design.md) · [Development Plan and Progress](go-driver-development.md)
 
@@ -22,7 +22,7 @@ DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup excha
 |---|---|---|---|---|---|---|---|
 | F-101 | DSN parsing: URL and libpq forms | P0 | offline | spaces/quotes/backslashes/empty values | done | done | n/a |
 | F-102 | Driver/runtime allowlist and validation | P0 | offline | Unknown driver keys fail; only listed runtime settings forwarded safely; explicit unsupported P2 options fail | done | done | n/a |
-| F-103 | Whole physical Connect timeout | P0 | both | Context/timeout covers DNS through identity, mode, catalog and idle validation; close partial sessions | done | done | pending |
+| F-103 | Whole physical Connect timeout | P0 | both | Context/timeout covers DNS through identity, mode, catalog and idle validation; close partial sessions | done | done | accepted |
 | F-104 | `application_name` / `fallback_application_name` | P1 | live | verified application-name visibility per backend, not assumed PG SQL on MySQL | done | done | done |
 | F-105 | TCP keepalive | P2 | offline | OS-specific settings; explicit unsupported error until implemented | done | done | n/a |
 | F-106 | Multiple hosts and target_session_attrs | P2 | live | Separate opt-in target-selection policy; no protocol or port fallback | done | done | pending |
@@ -32,19 +32,19 @@ DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup excha
 | F-110 | Values that keep their case | P0 | offline | `user`, `password`, `dbname`, paths, runtime parameter values are not folded | done | done | n/a |
 | F-111 | URL percent-decoding | P0 | offline | `app%40tenant` → `app@tenant`, decode before folding | done | done | n/a |
 | F-112 | Duplicate parameter semantics | P1 | offline | after folding, the last occurrence wins | done | done | n/a |
-| F-113 | Runtime/lexical parameter handling | P1 | both | Allowlist, exact values, safe backend configuration, refresh lexical context or retire | done | done | pending |
+| F-113 | Runtime/lexical parameter handling | P1 | both | Allowlist, exact values, safe backend configuration, refresh lexical context or retire | done | done | accepted |
 | F-114 | Missing `dbname` defaults to the user name | P1 | offline | libpq convention | done | done | n/a |
-| F-115 | Safe session reset before reuse | P0 | both | SessionResetter checkout timing; pinned Conn state; bounded reset, dirty/poisoned retirement, prepared-handle invalidation | done | done | pending |
-| F-116 | `Pinger` and `Validator` (connection liveness) | P0 | both | used by `db.Ping` and pool health checks | done | done | pending |
-| F-117 | Client encoding | P0 | both | Initially UTF8/UTF-8 only; reject unimplemented encodings; never silently corrupt | done | done | pending |
+| F-115 | Safe session reset before reuse | P0 | both | SessionResetter checkout timing; pinned Conn state; bounded reset, dirty/poisoned retirement, prepared-handle invalidation | done | done | accepted |
+| F-116 | `Pinger` and `Validator` (connection liveness) | P0 | both | used by `db.Ping` and pool health checks | done | done | accepted |
+| F-117 | Client encoding | P0 | both | Initially UTF8/UTF-8 only; reject unimplemented encodings; never silently corrupt | done | done | accepted |
 
 ## 2. Mode Selection
 
 | ID | Capability | Priority | Verification | Notes | Impl | Offline | Live |
 |---|---|---|---|---|---|---|---|
-| F-201 | Auto mode from authoritative server evidence | P0 | both | Validated startup/query report; bounded PG candidate chain; native bootstrap separately verified; no bare-name inference | done | done | pending |
-| F-202 | Explicit mode declaration and validation | P0 | both | Check known server conflicts; unavailable discovery records modeVerified=false; no fabricated actualMode | done | done | pending |
-| F-207 | Mode probe failure contract | P0 | both | Auto unknown fails; distinguish empty/missing/permission/timeout; no PG default or catalog-mode guess | done | done | pending |
+| F-201 | Auto mode from authoritative server evidence | P0 | both | Validated startup/query report; bounded PG candidate chain; native bootstrap separately verified; no bare-name inference | done | done | accepted |
+| F-202 | Explicit mode declaration and validation | P0 | both | Check known server conflicts; unavailable discovery records modeVerified=false; no fabricated actualMode | done | done | accepted |
+| F-207 | Mode probe failure contract | P0 | both | Auto unknown fails; distinguish empty/missing/permission/timeout; no PG default or catalog-mode guess | done | done | accepted |
 | F-208 | Connector mode/protocol pinning | P1 | offline | Protocol fixed by configuration; authoritative mode conflicts fail; no greeting memo | done | done | n/a |
 | F-209 | Per-connection state isolation | P0 | offline | concurrent modes with `-race`; no process-global mutable state | done | done | n/a |
 
@@ -53,71 +53,71 @@ DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup excha
 | ID | Capability | Priority | Verification | Notes | Impl | Offline | Live |
 |---|---|---|---|---|---|---|---|
 | F-212 | Unknown type/OID handling | P0 | offline | a type the driver has no codec for decodes as `string`/`[]byte`; absent OID has empty DatabaseTypeName; ScanType follows actual text string/binary bytes; malformed frames still error | done | done | n/a |
-| F-214 | Qualified registry and fixture provenance | P0 | both | Synthetic/SDK fixtures distinct from actual server captures; live captures include namespace/shape/query/product provenance | done | done | pending |
-| F-215 | Required connect-time qualified catalog | P0 | both | Namespace names, typtype, element/base/length/delimiter/row links before user SQL; bounded capture; no fixed row-count promise | done | done | pending |
+| F-214 | Qualified registry and fixture provenance | P0 | both | Synthetic/SDK fixtures distinct from actual server captures; live captures include namespace/shape/query/product provenance | done | done | accepted |
+| F-215 | Required connect-time qualified catalog | P0 | both | Namespace names, typtype, element/base/length/delimiter/row links before user SQL; bounded capture; no fixed row-count promise | done | done | accepted |
 | F-216 | Ambiguous names and user types | P0 | offline | OID plus qualified identity/shape; app.int/year/bit never acquire built-in codecs or select mode | done | done | n/a |
-| F-217 | Verified alternate catalog queries | P0 | both | PG full-shape then accepted sys equivalent for missing-object cases; two-column fallback cannot enable required codecs | done | done | pending |
-| F-220 | Qualified profile/catalog validation | P0 | both | Only live-verified required shape rules; year/int markers do not determine mode or create arbitrary conflicts | done | done | pending |
+| F-217 | Verified alternate catalog queries | P0 | both | PG full-shape then accepted sys equivalent for missing-object cases; two-column fallback cannot enable required codecs | done | done | accepted |
+| F-220 | Qualified profile/catalog validation | P0 | both | Only live-verified required shape rules; year/int markers do not determine mode or create arbitrary conflicts | done | done | accepted |
 | F-221 | Bounded protocol/endpoint diagnostics | P0 | offline | Configured transport only; sanitized capped prefix; no zero-wait peek, cross-protocol reconnect, port scan or downgrade | done | done | n/a |
-| F-218 | Catalog refresh boundary | P1 | both | New physical connection after type-changing DDL; stale/unknown OIDs safe; no mid-reader reload | done | done | pending |
+| F-218 | Catalog refresh boundary | P1 | both | New physical connection after type-changing DDL; stale/unknown OIDs safe; no mid-reader reload | done | done | accepted |
 
 ## 4. Type Encoding and Decoding
 
 | ID | Capability | Priority | Verification | Notes | Impl | Offline | Live |
 |---|---|---|---|---|---|---|---|
-| F-301 | Core scalar types | P0 | both | bool/int/float/numeric/text/bytea/date/time/timestamp/interval/uuid/json/xml/inet; standard driver values; text/binary parity for implemented formats; unknown binary remains bytes | done | done | pending |
-| F-302 | Mode-specific codecs | P0 | both | tinyint/smallint/int/bigint/real/float/bit/datetime/year/money/binary/varbinary/nchar/nvarchar/longtext family/blob/uint4/uint8 with verified identity/range and standard values. MySQL tinyint/uint4 int64, uint8 exact text, datetime wall-clock time.Time, binary/varbinary []byte, nchar/nvarchar string; SQLServer bit bool and money exact 4-decimal text; MySQL BIT is a bit string and stays exact hex text or raw bytes (no codec is claimed, so it is never a bool) | done | done | pending |
-| F-303 | Mode semantics at standard value boundary | P0 | both | tinyint range checked then int64 (signed Oracle/MySQL, unsigned SQLServer); SQLServer boolean BIT bool; MySQL BIT stays bit-string text/bytes so NullBool cannot accept it; date time.Time, time text, datetime time.Time in text; datetime binary stays opaque because the listener encodes a session-timezone instant | done | done | pending |
-| F-304 | Array/domain/composite contracts | P1 | both | Validated links; opaque default text; explicit Array Scanner/Valuer for rectangular 1-D/multi-D, empty/NULL arrays and NULL elements; dimensions/lower bounds preserved; bounded recursion | done | done | pending |
-| F-305 | Binary parameters/results and text option | P1 | both | Verified type/format only; disable_prepared_binary_result parity; no unconditional bytea target | done | done | pending |
-| F-306 | Timezone and temporal meaning | P0 | both | Date/wall time distinct from instants; session zone/DST/precision; no implicit shift. Non-PG datetime text is the wall clock, its binary payload (session-timezone instant) stays opaque, PG date/timestamp/timestamptz keep their verified layouts, and a zone-less timestamptz text resolves through the startup-reported session TimeZone with no UTC assumption | done | done | pending |
-| F-307 | Actual uppercase DatabaseTypeName | P1 | both | Backend/catalog name without length; no unified PG relabel; absent OID empty | done | done | pending |
-| F-308 | Honest column metadata | P1 | both | Nullable known/unknown ok flags; outer joins/expressions; real ScanType, byte/character lengths and precision | done | done | pending |
-| F-309 | YEAR standard value | P1 | both | int64 for validated live forms; malformed/truncated/overflow input rejected by the server domain; MySQL-mode live YYYY/YYYY-MM-DD forms pass through the validated int4 domain link | done | done | pending |
-| F-310 | Numeric/temporal conversion boundaries | P0 | both | Full uint64/decimal/NaN/infinity/zero/BC/precision/negative-time/DST/locale cases; no truncation. MySQL uint4 checks the 32-bit bound and uint8 stays exact text up to 2^64-1 | done | done | pending |
+| F-301 | Core scalar types | P0 | both | bool/int/float/numeric/text/bytea/date/time/timestamp/interval/uuid/json/xml/inet; standard driver values; text/binary parity for implemented formats; unknown binary remains bytes | done | done | accepted |
+| F-302 | Mode-specific codecs | P0 | both | tinyint/smallint/int/bigint/real/float/bit/datetime/year/money/binary/varbinary/nchar/nvarchar/longtext family/blob/uint4/uint8 with verified identity/range and standard values. MySQL tinyint/uint4 int64, uint8 exact text, datetime wall-clock time.Time, binary/varbinary []byte, nchar/nvarchar string; SQLServer bit bool and money exact 4-decimal text; MySQL BIT is a bit string and stays exact hex text or raw bytes (no codec is claimed, so it is never a bool) | done | done | accepted |
+| F-303 | Mode semantics at standard value boundary | P0 | both | tinyint range checked then int64 (signed Oracle/MySQL, unsigned SQLServer); SQLServer boolean BIT bool; MySQL BIT stays bit-string text/bytes so NullBool cannot accept it; date time.Time, time text, datetime time.Time in text; datetime binary stays opaque because the listener encodes a session-timezone instant | done | done | accepted |
+| F-304 | Array/domain/composite contracts | P1 | both | Validated links; opaque default text; explicit Array Scanner/Valuer for rectangular 1-D/multi-D, empty/NULL arrays and NULL elements; dimensions/lower bounds preserved; bounded recursion | done | done | accepted |
+| F-305 | Binary parameters/results and text option | P1 | both | Verified type/format only; disable_prepared_binary_result parity; no unconditional bytea target | done | done | accepted |
+| F-306 | Timezone and temporal meaning | P0 | both | Date/wall time distinct from instants; session zone/DST/precision; no implicit shift. Non-PG datetime text is the wall clock, its binary payload (session-timezone instant) stays opaque, PG date/timestamp/timestamptz keep their verified layouts, and a zone-less timestamptz text resolves through the startup-reported session TimeZone with no UTC assumption | done | done | accepted |
+| F-307 | Actual uppercase DatabaseTypeName | P1 | both | Backend/catalog name without length; no unified PG relabel; absent OID empty | done | done | accepted |
+| F-308 | Honest column metadata | P1 | both | Nullable known/unknown ok flags; outer joins/expressions; real ScanType, byte/character lengths and precision | done | done | accepted |
+| F-309 | YEAR standard value | P1 | both | int64 for validated live forms; malformed/truncated/overflow input rejected by the server domain; MySQL-mode live YYYY/YYYY-MM-DD forms pass through the validated int4 domain link | done | done | accepted |
+| F-310 | Numeric/temporal conversion boundaries | P0 | both | Full uint64/decimal/NaN/infinity/zero/BC/precision/negative-time/DST/locale cases; no truncation. MySQL uint4 checks the 32-bit bound and uint8 stays exact text up to 2^64-1 | done | done | accepted |
 
 ## 5. Execution and Binding
 
 | ID | Capability | Priority | Verification | Notes | Impl | Offline | Live |
 |---|---|---|---|---|---|---|---|
-| F-401 | Simple query and extended protocol | P0 | both | prepared-statement reuse; one-shot extended and server-side prepare with reuse | done | done | pending |
+| F-401 | Simple query and extended protocol | P0 | both | prepared-statement reuse; one-shot extended and server-side prepare with reuse | done | done | accepted |
 | F-402 | Placeholder lexer and binding plan | P0 | offline | One style; quotes/backticks/brackets/dollar/comments/operators/settings; repeated/reversed names/indexes expand correctly; native `:n`/`@var` pass through per mode | done | done | n/a |
-| F-403 | Logical NumInput and call validation | P0 | both | Unique names/max contiguous dollar index; the SQLServer profile reports -1 and `bindValues` still rejects a count that disagrees with the logical plan before sending | done | done | pending |
-| F-404 | NamedValue/Valuer/NULL conversion | P1 | both | Preserve wrapper target metadata; nil/Null validity, full uint64 range, Valuer once per logical argument; ordinary Valuers resolve once and the SDK wrappers keep their qualified target until Bind | done | done | pending |
-| F-405 | Qualified target OID inference | P0 | both | Explicit verified target or inference; byte/bool/bytes wrappers cannot hardcode same-named user targets | done | done | pending |
-| F-406 | Multiple results and terminal errors | P1 | both | NextResultSet/early Close drains all trailers; trailing errors preserved before outputs/success | done | done | pending |
-| F-407 | Cancellation and synchronization | P0 | both | PG cancel EOF plus original ReadyForQuery barriers; races/timeout retire; MySQL aborts until control path accepted | done | done | pending |
-| F-408 | Session lexical settings | P0 | both | Verified quote/backslash/question/comment rules; context updates or reject/retire; no stale rewrite cache | done | done | pending |
+| F-403 | Logical NumInput and call validation | P0 | both | Unique names/max contiguous dollar index; the SQLServer profile reports -1 and `bindValues` still rejects a count that disagrees with the logical plan before sending | done | done | accepted |
+| F-404 | NamedValue/Valuer/NULL conversion | P1 | both | Preserve wrapper target metadata; nil/Null validity, full uint64 range, Valuer once per logical argument; ordinary Valuers resolve once and the SDK wrappers keep their qualified target until Bind | done | done | accepted |
+| F-405 | Qualified target OID inference | P0 | both | Explicit verified target or inference; byte/bool/bytes wrappers cannot hardcode same-named user targets | done | done | accepted |
+| F-406 | Multiple results and terminal errors | P1 | both | NextResultSet/early Close drains all trailers; trailing errors preserved before outputs/success | done | done | accepted |
+| F-407 | Cancellation and synchronization | P0 | both | PG cancel EOF plus original ReadyForQuery barriers; races/timeout retire; MySQL aborts until control path accepted | done | done | accepted |
+| F-408 | Session lexical settings | P0 | both | Verified quote/backslash/question/comment rules; context updates or reject/retire; no stale rewrite cache | done | done | accepted |
 
 ## 6. Stored Procedures and OUT Parameters
 
 | ID | Capability | Priority | Verification | Notes | Impl | Offline | Live |
 |---|---|---|---|---|---|---|---|
-| F-501 | SQLServer fixed routine status | P0 | both | Per accepted invocation; unbound status discarded without failure. The SQLServer-mode listener returns no output result set for a parameterized CALL, and Exec discards that status while keeping the connection reusable | done | done | pending |
-| F-502 | OUT/INOUT assignment | P0 | both | Checked sql.Out conversion after complete results; incomplete/cancelled call has no valid outputs; live direct and prepared CALL assign the single INOUT row in PG/Oracle/MySQL, while SQLServer mode reports the listener limitation instead of assigning | done | done | pending |
-| F-503 | SQLServer routine-name convenience | P1 | both | Profile-gated parsed qualified identifier; no arbitrary SQL concatenation; the live bare-name call becomes EXEC in SQLServer mode | done | done | pending |
-| F-504 | Non-SQLServer routine forms | P1 | both | Accepted forms are mode-specific: PG/Oracle/MySQL return the INOUT row for bound parameters, native `:n`/`@var` placeholders pass through, and the listeners reject MySQL `@var` OUT forms with a server error that the driver surfaces (no silent assignment) | done | done | pending |
-| F-505 | OUT tinyint signedness/range | P1 | both | Checked uint8/int8 destinations; NULL/overflow explicit | done | done | pending |
-| F-506 | Refcursor ownership and lifecycle | P1 | both | Pinned session/transaction, explicit fetch/close, multiple cursor and cancellation handling | done | done | pending |
+| F-501 | SQLServer fixed routine status | P0 | both | Per accepted invocation; unbound status discarded without failure. The SQLServer-mode listener returns no output result set for a parameterized CALL, and Exec discards that status while keeping the connection reusable | done | done | accepted |
+| F-502 | OUT/INOUT assignment | P0 | both | Checked sql.Out conversion after complete results; incomplete/cancelled call has no valid outputs; live direct and prepared CALL assign the single INOUT row in PG/Oracle/MySQL, while SQLServer mode reports the listener limitation instead of assigning | done | done | accepted |
+| F-503 | SQLServer routine-name convenience | P1 | both | Profile-gated parsed qualified identifier; no arbitrary SQL concatenation; the live bare-name call becomes EXEC in SQLServer mode | done | done | accepted |
+| F-504 | Non-SQLServer routine forms | P1 | both | Accepted forms are mode-specific: PG/Oracle/MySQL return the INOUT row for bound parameters, native `:n`/`@var` placeholders pass through, and the listeners reject MySQL `@var` OUT forms with a server error that the driver surfaces (no silent assignment) | done | done | accepted |
+| F-505 | OUT tinyint signedness/range | P1 | both | Checked uint8/int8 destinations; NULL/overflow explicit | done | done | accepted |
+| F-506 | Refcursor ownership and lifecycle | P1 | both | Pinned session/transaction, explicit fetch/close, multiple cursor and cancellation handling | done | done | accepted |
 
 ## 7. Auto-Increment and Sequences
 
 | ID | Capability | Priority | Verification | Notes | Impl | Offline | Live |
 |---|---|---|---|---|---|---|---|
-| F-601 | Safe opt-in PG generated identity | P0 | both | Verified one generated integral column on supported single-row INSERT; never RETURNING * or column-one guess; MySQL form remains F-603 | done | done | pending |
-| F-602 | Generated-ID type/range coverage | P0 | both | Checked exact int64 only; unsigned high-bit/float/nonintegral/ambiguous IDs unavailable or overflow; explicit Query for other values | done | done | pending |
+| F-601 | Safe opt-in PG generated identity | P0 | both | Verified one generated integral column on supported single-row INSERT; never RETURNING * or column-one guess; MySQL form remains F-603 | done | done | accepted |
+| F-602 | Generated-ID type/range coverage | P0 | both | Checked exact int64 only; unsigned high-bit/float/nonintegral/ambiguous IDs unavailable or overflow; explicit Query for other values | done | done | accepted |
 | F-603 | Generated tinyint conversion | P0 | offline | Apply accepted mode range and exact int64 conversion; the live MySQL listener types LAST_INSERT_ID() as UINT8 (measured), so its exact decimal text converts to int64 with overflow rejection, while a tinyint generated column value is decoded by the mode codec with the signed (Oracle/MySQL) or unsigned (SQLServer) 8-bit range | done | done | n/a |
 | F-604 | Unavailable/overflow LastInsertId | P0 | offline | Typed error, not zero; preserve RowsAffected; reject unsafe requested rewrite before executing | done | done | n/a |
-| F-605 | Sequence access boundaries | P1 | both | Explicit verified SQL on owning connection; no MAX/last-sequence identity guess; no portable GetSchema promise | done | done | pending |
+| F-605 | Sequence access boundaries | P1 | both | Explicit verified SQL on owning connection; no MAX/last-sequence identity guess; no portable GetSchema promise | done | done | accepted |
 
 ## 8. Transactions, COPY, Notifications
 
 | ID | Capability | Priority | Verification | Notes | Impl | Offline | Live |
 |---|---|---|---|---|---|---|---|
-| F-701 | TxOptions and transaction lifecycle | P0 | both | LevelDefault, four explicit levels, unsupported error, ReadOnly, commit/rollback/cancel recovery; SQLServer mode uses BEGIN/COMMIT/ROLLBACK TRANSACTION because the live listener rejects the bare verbs | done | done | pending |
-| F-702 | CopyIn/CopyInSchema text import | P1 | both | Statement-string helpers; Tx.Prepare/Exec/flush/Close; identifiers, NULL/escaping, completion/trailing errors | done | done | pending |
-| F-703 | LISTEN/NOTIFY | P2 | both | Async parsing; bounded 256-message queue, overflow gap/reconnect, no replay, nil gap marker | done | done | pending |
-| F-704 | NOTICE/WARNING callbacks | P2 | both | Default discard; no stderr, same-connection reentrancy forbidden | done | done | pending |
+| F-701 | TxOptions and transaction lifecycle | P0 | both | LevelDefault, four explicit levels, unsupported error, ReadOnly, commit/rollback/cancel recovery; SQLServer mode uses BEGIN/COMMIT/ROLLBACK TRANSACTION because the live listener rejects the bare verbs | done | done | accepted |
+| F-702 | CopyIn/CopyInSchema text import | P1 | both | Statement-string helpers; Tx.Prepare/Exec/flush/Close; identifiers, NULL/escaping, completion/trailing errors | done | done | accepted |
+| F-703 | LISTEN/NOTIFY | P2 | both | Async parsing; bounded 256-message queue, overflow gap/reconnect, no replay, nil gap marker | done | done | accepted |
+| F-704 | NOTICE/WARNING callbacks | P2 | both | Default discard; no stderr, same-connection reentrancy forbidden | done | done | accepted |
 | F-705 | Binary COPY import | P2 | both | Deferred from first PG release; future complete/abort/ownership contract and live acceptance | todo | pending | pending |
 | F-706 | COPY output | P2 | both | Deferred from first PG release; distinguish text/binary output and reader ownership | todo | pending | pending |
 | F-707 | Raw COPY streams | P2 | both | Deferred from first PG release; no backup/CDC/cross-version promise | todo | pending | pending |
@@ -127,7 +127,7 @@ DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup excha
 | ID | Capability | Priority | Verification | Notes | Impl | Offline | Live |
 |---|---|---|---|---|---|---|---|
 | F-801 | Cleartext and MD5 auth | P0 | both | Only accepted server request forms; offline transcripts plus per-profile live proof | done | done | pending |
-| F-802 | SCRAM-SHA-256 auth | P0 | both | Signature/nonce/iterations/salt/attribute limits and negative vectors | done | done | pending |
+| F-802 | SCRAM-SHA-256 auth | P0 | both | Signature/nonce/iterations/salt/attribute limits and negative vectors | done | done | accepted |
 | F-803 | SM3 password auth | P0 | both | Exact evidenced method; does not imply cryptographic TLS or arbitrary variants | done | done | pending |
 | F-804 | Explicit TLS trust policy | P0 | both | require plus configured existing root verifies CA; verify-ca/full; no downgrade; explicit missing files fail | done | done | pending |
 | F-805 | Private-key/certificate handling | P1 | both | Strict POSIX private-key permissions only; readable public certs accepted; Windows cases separate | done | done | pending |
@@ -137,10 +137,10 @@ DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup excha
 
 | ID | Capability | Priority | Verification | Notes | Impl | Offline | Live |
 |---|---|---|---|---|---|---|---|
-| F-901 | Full mapping of server error fields | P0 | both | `errors.As` | done | done | pending |
+| F-901 | Full mapping of server error fields | P0 | both | `errors.As` | done | done | accepted |
 | F-902 | Error/operation classification | P1 | offline | Execution uncertainty separate from retry safety; redacted config/protocol/catalog/cancel errors | done | done | n/a |
-| F-903 | Safe retirement without duplicate execution | P0 | both | After possible execution mark invalid without ErrBadConn matching; only retry-safe boundaries may signal ErrBadConn | done | done | pending |
-| F-1001 | Verified connection diagnostics | P1 | both | Configured/observed mode/protocol, source/verification, raw kernel/product release and capability profile; documented accessor | done | done | pending |
+| F-903 | Safe retirement without duplicate execution | P0 | both | After possible execution mark invalid without ErrBadConn matching; only retry-safe boundaries may signal ErrBadConn | done | done | accepted |
+| F-1001 | Verified connection diagnostics | P1 | both | Configured/observed mode/protocol, source/verification, raw kernel/product release and capability profile; documented accessor | done | done | accepted |
 | F-1002 | Public API migration ledger/examples | P1 | offline | Keep/replace/defer official helpers and options; compiling examples required after implementation | done | done | n/a |
 
 ## 11. Quality Assurance
@@ -149,9 +149,9 @@ DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup excha
 |---|---|---|---|---|---|---|---|
 | F-1101 | Unit/contract suite | P0 | offline | Coverage target at least 70 percent plus named risk tests; percentage alone is not acceptance | done | done | n/a |
 | F-1102 | Fake-server/failure suite | P0 | offline | Fragmentation, sizes/counts/EOF, auth faults, async rows, trailing errors, reset/cancel/retry races | done | done | n/a |
-| F-1103 | Scoped real-server profile matrix | P0 | live | V9 profiles first; exact accepted edition/release/mode/wire; unavailable profile pending, V8 later | wip | wip | pending |
+| F-1103 | Scoped real-server profile matrix | P0 | live | V9 profiles first; exact accepted edition/release/mode/wire; unavailable profile pending, V8 later | done | done | accepted |
 | F-1104 | Concurrency tests | P0 | both | multiple modes interleaved + `-race` | done | done | pending |
-| F-1105 | Performance baseline | P2 | live | Actual single-row/COPY workloads measured on the deployment (`TestLivePerformanceBaseline`, opt-in `KINGBASE_TEST_PERF=1`, log-only with `perf-<mode>.json`); explicitly deferrable outside release blockers | done | done | pending |
+| F-1105 | Performance baseline | P2 | live | Actual single-row/COPY workloads measured on the deployment (`TestLivePerformanceBaseline`, opt-in `KINGBASE_TEST_PERF=1`, log-only with `perf-<mode>.json`); explicitly deferrable outside release blockers | done | done | accepted |
 | F-1106 | Repository lint rules | P0 | offline | Run existing .golangci.yml once product module exists | done | done | n/a |
 | F-1107 | Toolchain/platform/package release contract | P0 | offline | Go 1.26.0; module github.com/cocosip/go-kingbase from Git origin; Apache-2.0; linux/windows/darwin amd64+arm64; stdlib-only core; CI runs Go 1.26.x; package smoke checks at T-051/T-053 | done | done | n/a |
 
@@ -174,7 +174,7 @@ For deployments whose native MySQL endpoint is established by V12/V15 (Architect
 
 ## 13. Live Verification Requirements
 
-The [V1–V19 evidence ledger](go-driver-live-profile.md#v1v19-evidence-ledger-2026-11-25-four-mode-run) records the 2026-11-25 four-mode run: V1–V6, V9, V10, V12, V14 and V16–V19 are evidenced on this deployment, V7 is partial (only SCRAM is enabled), V8 is deferred by operator decision (O8) because no listener offers TLS, and V11/V13/V15 remain later-scope items. No V9 profile is accepted while V7 stays partial; the TLS deferral is recorded as a scope decision (O8 in the [progress tracker](go-driver-development.md)), not as an accepted limitation. Not-applicable is allowed only for a named excluded profile/feature with reason, never lack of infrastructure. V11/V13 apply to later V8 scope; V15 and native cases of V8/V19 apply when M5 enters the release manifest. Authentication/COPY/notification cases follow enabled features; unsupported extensions remain unclaimed.
+The [V1–V19 evidence ledger](go-driver-live-profile.md#v1v19-evidence-ledger-2026-11-25-four-mode-run) records the 2026-11-25 and 2026-11-26 four-mode runs: V1–V6, V9, V10, V12, V14 and V16–V19 are evidenced on this deployment, V7 is evidenced for the enabled method set (only SCRAM is enabled), V8 is deferred by operator decision (O8) because no listener offers TLS, and V11/V13/V15 remain later-scope items. The four-instance profile is accepted as recorded in section 17; the TLS deferral is a scope decision (O8 in the [progress tracker](go-driver-development.md)), not an accepted limitation. Not-applicable is allowed only for a named excluded profile/feature with reason, never lack of infrastructure. V11/V13 apply to later V8 scope; V15 and native cases of V8/V19 apply when M5 enters the release manifest. Authentication/COPY/notification cases follow enabled features; unsupported extensions remain unclaimed.
 
 | ID | Item | Required evidence | Blocks |
 |---|---|---|---|
@@ -240,6 +240,7 @@ These are requested target profiles, not a support list. Exact product/edition/r
 
 | Profile | Requested deployment/mode | Wire | Release scope | Exact product/build | Acceptance |
 |---|---|---|---|---|---|
+| V9R001C010-4M | operator deployment: one V9 installation, four instances (pg/oracle/mysql/sqlserver) | pg | first-release target | `KingbaseES V009R001C010`, `server_version` 12.1, driver `b0ae780` | **accepted (scope-limited)** 2026-11-26 |
 | V9-A-PG | all-mode packaging initialized as PG | pg | first-release target | TBD | pending |
 | V9-A-ORA | all-mode packaging initialized as Oracle | pg | first-release target | TBD | pending |
 | V9-A-MY | all-mode packaging initialized as MySQL | pg | first-release target | TBD | pending |
@@ -250,4 +251,52 @@ These are requested target profiles, not a support list. Exact product/edition/r
 | V8-LATER | concrete V8 build/mode to be selected | pg | later, excluded initially | TBD | pending |
 | MYSQL-M5 | each confirmed native-endpoint family separately | mysql | conditional, excluded initially | TBD | pending |
 
-For every scoped (feature,profile) pair with live/both verification, the default is pending. Record overrides only with: feature ID, profile ID, status (pending/accepted/failed/not-applicable), exact product/build, command/test, output/artifact, UTC capture time, role/permissions and exclusion reason if N/A. No override records exist yet; therefore every pair remains pending. Aggregate Live stays pending until all applicable pairs are accepted. Offline-only feature Live=n/a is structural and needs no server record.
+For every scoped (feature,profile) pair with live/both verification, the default was pending; the
+override records below carry the accepted set. Each record names the profile, the covering live
+test, the artifact (`live/artifacts/<mode>/`, local and gitignored), the capture time
+(2026-11-26T04:30Z), the driver revision `b0ae780` and the role (`system` for the suite, plus a
+temporary ordinary login for the V2 capture). Aggregate Live is accepted for this profile only
+under the scope limits recorded in the [live ledger](go-driver-live-profile.md#accepted-profile-v9r001c010-four-mode-2026-11-26).
+
+| Feature(s) | Covering live test(s) | Profiles |
+|---|---|---|
+| F-201, F-202, F-207 | `TestLiveSmoke`, `TestLiveExplicitModeConflict`, `TestLiveCatalogAndBuiltins` | all four |
+| F-103, F-116, F-221, F-1001 | `TestLiveSmoke` (connect under budget, `Ping`, wire report, identity) | all four |
+| F-104 | `TestLiveApplicationName`, `TestLiveFallbackApplicationName` | all four |
+| F-113 | `TestLiveRuntimeParameterForwarding` | all four |
+| F-117 | `TestLiveSmoke` (startup encoding verification must pass for any connection) | all four |
+| F-214, F-215, F-216, F-217, F-220, F-307 | `TestLiveEvidenceMatrix`, `TestLiveCatalogBuiltinShapes`, `TestLiveCatalogAndBuiltins`, `TestLiveOrdinaryRoleCatalog` | all four |
+| F-218 | `TestLiveCatalogChangedOID`, `TestLiveCatalogPoolReuse`, `TestLiveCatalogLifecycle` | all four for the refreshed-OID probes; lifecycle probe on pg |
+| F-301, F-306, F-310 | `TestLiveBoundaryValues`, `TestLiveTimezoneAndDST`, `TestLiveEvidenceMatrix` boundary map | boundary map all four; the two focused probes on pg |
+| F-302, F-303, F-305, F-309 | `TestLiveModeTypeCodecs`, `TestLiveBinaryParameters` | all four |
+| F-304 | `TestLiveArraysAndBinaryPrepared` | pg/oracle/mysql; the SQLServer listener rejects the PG `ARRAY[]` literal (recorded) |
+| F-308 | `TestLiveColumnMetadata` | all four |
+| F-401, F-403, F-404, F-408 | `TestLiveSmoke`, `TestLiveTransactionPreparedAndNamed`, `TestLiveNumInputSQLServer`, `TestLiveModePlaceholderAndQuoting` | all four |
+| F-405 | `TestLiveBinaryParameters` | all four |
+| F-406 | `TestLiveMultipleResultSets` | all four |
+| F-407 | `TestLiveCancelAndRecovery` | all four |
+| F-501, F-502, F-504, F-505 | `TestLiveRoutineOutAssignment`, `TestLiveRoutineExecDiscardsStatus`, `TestLiveSQLServerRoutineOutUnsupported` | OUT assignment pg/oracle/mysql; the SQLServer limitation is measured |
+| F-503 | `TestLiveSQLServerRoutineConvenience` | sqlserver |
+| F-506 | `TestLiveCopyInAndCursor` | pg (cursor probe); COPY checks in all four |
+| F-601, F-602, F-603 | `TestLiveGeneratedID`, `TestLiveMySQLGeneratedID` | pg and mysql forms |
+| F-605 | `TestLiveSequenceOwnership` | all four |
+| F-701 | `TestLiveTransactionOptions`, `TestLiveReadOnlyTransactionEnforcement`, `TestLiveTransactionPreparedAndNamed` | all four |
+| F-702 | `TestLiveCopyInAndCursor` | all four |
+| F-703 | `TestLiveListenerNotification` | pg |
+| F-704 | `TestLiveNoticeHandler` | all four |
+| F-801 / F-803 | none | pending: those auth methods are not enabled on this deployment |
+| F-802 | every live connection authenticated with `scram-sha-256` | all four (enabled method set) |
+| F-804, F-805, F-243 | offline only | pending: live TLS is deferred by O8 (no TLS listener) |
+| F-901, F-903 | `TestLiveServerErrorFields` | all four |
+| F-1105 | `TestLivePerformanceBaseline` (`KINGBASE_TEST_PERF=1`, log-only) | all four |
+
+Live states that stay pending for this profile, with the reason:
+
+| Feature | Reason |
+|---|---|
+| F-106 (multiple hosts / target attributes) | needs two independent endpoints; the deployment is one host with four instances |
+| F-801, F-803 (cleartext/MD5, SM3) | not enabled by `sys_hba.conf`; implemented and replayed offline |
+| F-804, F-805, F-243 (TLS) | no TLS listener; deferred by O8 |
+| F-705, F-706, F-707, F-806 | formally deferred features, not part of the initial release |
+| F-1104 (multi-mode concurrency) | the suite runs one mode per process; cross-mode concurrency needs two DSNs in one process, which is recorded as a harness gap, not a driver gap |
+| F-241–F-249 (native MySQL) | conditional M5 scope; nothing is claimed from PG-wire evidence |
