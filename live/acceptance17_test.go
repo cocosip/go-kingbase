@@ -201,6 +201,55 @@ func TestLiveNoticeHandler(t *testing.T) {
 	}
 }
 
+// TestLiveMultipleResultSets proves F-406 on a real server: a multi-statement
+// simple query exposes each result set and ends cleanly on the same connection.
+func TestLiveMultipleResultSets(t *testing.T) {
+	_, conn, _ := liveDB(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	rows, err := conn.QueryContext(ctx, "SELECT 1; SELECT 2")
+	if err != nil {
+		t.Fatalf("QueryContext: %v", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var first int64
+	if !rows.Next() {
+		t.Fatalf("first result set has no row: %v", rows.Err())
+	}
+	if err := rows.Scan(&first); err != nil {
+		t.Fatalf("first Scan: %v", err)
+	}
+	if first != 1 {
+		t.Errorf("first value = %d, want 1", first)
+	}
+	if !rows.NextResultSet() {
+		t.Fatalf("no second result set: %v", rows.Err())
+	}
+	var second int64
+	if !rows.Next() {
+		t.Fatalf("second result set has no row: %v", rows.Err())
+	}
+	if err := rows.Scan(&second); err != nil {
+		t.Fatalf("second Scan: %v", err)
+	}
+	if second != 2 {
+		t.Errorf("second value = %d, want 2", second)
+	}
+	if rows.NextResultSet() {
+		t.Error("unexpected third result set")
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("result set iteration: %v", err)
+	}
+	if err := rows.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	var one int64
+	if err := conn.QueryRowContext(ctx, "SELECT 1").Scan(&one); err != nil || one != 1 {
+		t.Fatalf("query after multiple result sets = %d, %v, want 1", one, err)
+	}
+}
+
 // TestLiveServerErrorFields proves F-901/F-903 on a real server: a definite
 // server error keeps its fields and leaves the connection reusable.
 func TestLiveServerErrorFields(t *testing.T) {
