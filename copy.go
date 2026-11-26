@@ -25,7 +25,7 @@ var (
 	errCopyInClosed        = errors.New("kingbase: COPY statement is closed")
 	errCopyInProgress      = errors.New("kingbase: another COPY is already in progress on this connection")
 	errCopyOutsideTx       = errors.New("kingbase: COPY FROM STDIN is only supported inside a transaction")
-	errCopyBinaryFormat    = errors.New("kingbase: binary COPY is not supported")
+	errCopyBinaryFormat    = errors.New("kingbase: row-framed CopyIn does not accept a binary COPY; use CopyInRawBinary and send the payload yourself")
 	errCopyOutNotSupported = errors.New("kingbase: COPY TO is not supported")
 	errCopyNoCompletion    = errors.New("kingbase: COPY response ended without a completion tag")
 	// errCopyThroughExec reports a COPY statement sent through Query/Exec,
@@ -122,6 +122,16 @@ func isCopyOutStatement(query string) bool {
 // skipped, so only real SQL keywords remain; words nested in parentheses are
 // left out because a subquery cannot change the COPY direction.
 func sqlKeywords(query string) []string {
+	return scanKeywords(query, true)
+}
+
+// allSQLKeywords returns every unquoted keyword including the words inside
+// parentheses, which is how the COPY options are read.
+func allSQLKeywords(query string) []string {
+	return scanKeywords(query, false)
+}
+
+func scanKeywords(query string, topLevelOnly bool) []string {
 	var keywords []string
 	depth := 0
 	for i := 0; i < len(query); {
@@ -153,7 +163,7 @@ func sqlKeywords(query string) []string {
 			i++
 		case isIdentifierStart(c):
 			end := identifierEnd(query, i)
-			if depth == 0 {
+			if !topLevelOnly || depth == 0 {
 				keywords = append(keywords, strings.ToLower(query[i:end]))
 			}
 			i = end
@@ -212,6 +222,50 @@ func (c *conn) queryCopyOut(ctx context.Context, query string) (driver.Rows, err
 			return nil, uncertain(fmt.Errorf("kingbase: unexpected message %q before a COPY stream", typ))
 		}
 	}
+}
+
+// CopyInRaw returns a 'COPY ... FROM STDIN WITH (FORMAT text)' statement for
+// Tx.Prepare. Every Exec argument is one payload chunk written unchanged, so
+// the caller owns the row framing and the escaping; an explicit FORMAT selects
+// this raw mode. A zero-argument Exec still finishes the stream.
+func CopyInRaw(table string, columns ...string) string {
+	return "COPY " + QuoteIdentifier(table) + copyColumnList(columns) + " FROM STDIN WITH (FORMAT text)"
+}
+
+// CopyInRawSchema is CopyInRaw with an explicit schema-qualified target table.
+func CopyInRawSchema(schema, table string, columns ...string) string {
+	return "COPY " + QuoteIdentifier(schema) + "." + QuoteIdentifier(table) +
+		copyColumnList(columns) + " FROM STDIN WITH (FORMAT text)"
+}
+
+// CopyInRawBinary is CopyInRaw with the binary wire format. The caller supplies
+// the complete payload in the server's encoding, including the header and the
+// trailer; the driver never inspects, validates or rewrites those bytes.
+func CopyInRawBinary(table string, columns ...string) string {
+	return "COPY " + QuoteIdentifier(table) + copyColumnList(columns) + " FROM STDIN WITH (FORMAT binary)"
+}
+
+// CopyInRawBinarySchema is CopyInRawBinary with a schema-qualified target table.
+func CopyInRawBinarySchema(schema, table string, columns ...string) string {
+	return "COPY " + QuoteIdentifier(schema) + "." + QuoteIdentifier(table) +
+		copyColumnList(columns) + " FROM STDIN WITH (FORMAT binary)"
+}
+
+// copyInIsRaw reports whether the statement names an explicit COPY FORMAT, which
+// makes every Exec argument one raw payload chunk instead of a row. A column
+// named "format" does not match because the value after it is not a format name.
+func copyInIsRaw(query string) bool {
+	keywords := allSQLKeywords(query)
+	for i := 0; i+1 < len(keywords); i++ {
+		if keywords[i] != "format" {
+			continue
+		}
+		switch keywords[i+1] {
+		case "text", "csv", "binary":
+			return true
+		}
+	}
+	return false
 }
 
 // copyOutRows streams the payload of one COPY TO STDOUT response. Chunk
@@ -360,7 +414,8 @@ func (c *conn) prepareCopyIn(ctx context.Context, query string) (driver.Stmt, er
 		c.retire()
 		return nil, uncertain(fmt.Errorf("kingbase: send COPY: %w", err))
 	}
-	if err := c.awaitCopyInResponse(); err != nil {
+	raw := copyInIsRaw(query)
+	if err := c.awaitCopyInResponse(raw); err != nil {
 		return nil, err
 	}
 	ci := &copyIn{
@@ -368,6 +423,7 @@ func (c *conn) prepareCopyIn(ctx context.Context, query string) (driver.Stmt, er
 		buffer:   make([]byte, 0, copyBufferSize),
 		done:     make(chan struct{}),
 		affected: -1,
+		raw:      raw,
 	}
 	c.setActiveCopy(ci)
 	go ci.readResult()
@@ -378,7 +434,7 @@ func (c *conn) prepareCopyIn(ctx context.Context, query string) (driver.Stmt, er
 // error is a definite outcome and keeps the connection usable; anything the
 // driver does not stream (COPY TO, binary COPY, protocol garbage) retires the
 // connection instead of leaving a half-consumed copy stream behind.
-func (c *conn) awaitCopyInResponse() error {
+func (c *conn) awaitCopyInResponse(raw bool) error {
 	for {
 		typ, payload, err := c.reader.ReadMessage()
 		if err != nil {
@@ -399,7 +455,7 @@ func (c *conn) awaitCopyInResponse() error {
 				c.retire()
 				return uncertain(fmt.Errorf("kingbase: malformed CopyInResponse: %w", err))
 			}
-			if response.Format != 0 {
+			if response.Format != 0 && !raw {
 				c.retire()
 				return errCopyBinaryFormat
 			}
@@ -424,6 +480,7 @@ type copyIn struct {
 	conn   *conn
 	buffer []byte
 	done   chan struct{}
+	raw    bool
 
 	mu       sync.Mutex
 	err      error
@@ -490,6 +547,9 @@ func (ci *copyIn) ExecContext(ctx context.Context, args []driver.NamedValue) (dr
 	if len(args) == 0 {
 		return ci.finish()
 	}
+	if ci.raw {
+		return ci.execRaw(args)
+	}
 	for i, arg := range args {
 		if arg.Name != "" {
 			err := errors.New("kingbase: named parameters are not supported by COPY")
@@ -519,6 +579,47 @@ func (ci *copyIn) ExecContext(ctx context.Context, args []driver.NamedValue) (dr
 		if err := ci.flush(); err != nil {
 			return nil, ci.complete()
 		}
+	}
+	ci.disarm()
+	return driver.RowsAffected(0), nil
+}
+
+// execRaw writes one caller-supplied payload chunk without adding row framing.
+// A binary payload is opaque: the driver forwards it exactly as given.
+func (ci *copyIn) execRaw(args []driver.NamedValue) (driver.Result, error) {
+	if len(args) != 1 {
+		err := fmt.Errorf("kingbase: raw COPY takes one payload argument, got %d", len(args))
+		ci.abort(err)
+		_ = ci.complete()
+		return nil, err
+	}
+	if args[0].Name != "" {
+		err := errors.New("kingbase: named parameters are not supported by COPY")
+		ci.abort(err)
+		_ = ci.complete()
+		return nil, err
+	}
+	var chunk []byte
+	switch value := args[0].Value.(type) {
+	case []byte:
+		chunk = value
+	case string:
+		chunk = []byte(value)
+	default:
+		err := fmt.Errorf("kingbase: raw COPY payload must be []byte or string, got %T", args[0].Value)
+		ci.abort(err)
+		_ = ci.complete()
+		return nil, err
+	}
+	if len(chunk) > wire.MaxMessageSize {
+		err := errors.New("kingbase: COPY chunk exceeds the maximum message size")
+		ci.abort(err)
+		_ = ci.complete()
+		return nil, err
+	}
+	ci.buffer = append(ci.buffer, chunk...)
+	if err := ci.flush(); err != nil {
+		return nil, ci.complete()
 	}
 	ci.disarm()
 	return driver.RowsAffected(0), nil

@@ -283,6 +283,186 @@ func TestCopyOutStatementDetection(t *testing.T) {
 	}
 }
 
+// TestCopyInRawStatementHelpers pins the raw statement shapes: an explicit
+// FORMAT selects raw mode, and the schema variants stay qualified.
+func TestCopyInRawStatementHelpers(t *testing.T) {
+	if got, want := CopyInRaw("orders", "id", "total"), `COPY "orders" ("id", "total") FROM STDIN WITH (FORMAT text)`; got != want {
+		t.Errorf("CopyInRaw = %q, want %q", got, want)
+	}
+	if got, want := CopyInRawSchema("sales", "orders"), `COPY "sales"."orders" FROM STDIN WITH (FORMAT text)`; got != want {
+		t.Errorf("CopyInRawSchema = %q, want %q", got, want)
+	}
+	if got, want := CopyInRawBinary("orders", "id"), `COPY "orders" ("id") FROM STDIN WITH (FORMAT binary)`; got != want {
+		t.Errorf("CopyInRawBinary = %q, want %q", got, want)
+	}
+	if got, want := CopyInRawBinarySchema("sales", "orders"), `COPY "sales"."orders" FROM STDIN WITH (FORMAT binary)`; got != want {
+		t.Errorf("CopyInRawBinarySchema = %q, want %q", got, want)
+	}
+	for query, want := range map[string]bool{
+		CopyIn("t", "a"):                             false,
+		CopyInRaw("t", "a"):                          true,
+		CopyInRawBinary("t", "a"):                    true,
+		`COPY t (format) FROM STDIN`:                 false,
+		`COPY t (a) FROM STDIN WITH (FORMAT csv)`:    true,
+		`COPY t (a) FROM STDIN WITH (FORMAT text)`:   true,
+		`COPY t (a) FROM STDIN WITH (DELIMITER ';')`: false,
+	} {
+		if got := copyInIsRaw(query); got != want {
+			t.Errorf("copyInIsRaw(%q) = %t, want %t", query, got, want)
+		}
+	}
+}
+
+// TestCopyInRawWritesPayloadVerbatim proves raw mode forwards caller bytes
+// without adding row framing, in text and binary form.
+func TestCopyInRawWritesPayloadVerbatim(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		statement string
+		format    int8
+		chunks    []string
+		want      string
+	}{
+		{
+			name:      "text",
+			statement: CopyInRaw("t", "a"),
+			format:    0,
+			chunks:    []string{"1\ta\n", "2\tb\n"},
+			want:      "1\ta\n2\tb\n",
+		},
+		{
+			name:      "binary",
+			statement: CopyInRawBinary("t", "a"),
+			format:    1,
+			chunks:    []string{"KBCOPY\n\xff\r\n\x00", "\x00\x01payload", "\xff\xff"},
+			want:      "KBCOPY\n\xff\r\n\x00\x00\x01payload\xff\xff",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := testpeer.Start(t, func(peer *testpeer.Conn) {
+				if !startupOK(peer) {
+					return
+				}
+				if !peerBegin(peer) {
+					return
+				}
+				if _, ok := expectMessage(peer, wire.MsgQuery); !ok {
+					return
+				}
+				formats := []int16{int16(tc.format)}
+				if err := peer.WriteMessage(wire.MsgCopyInResponse, wire.EncodeCopyInResponse(tc.format, formats)); err != nil {
+					peer.Errorf("CopyInResponse: %v", err)
+					return
+				}
+				data, chunks, failed, err := readCopyStream(peer)
+				if err != nil {
+					peer.Errorf("copy stream: %v", err)
+					return
+				}
+				if failed != "" {
+					peer.Errorf("copy failed: %q", failed)
+					return
+				}
+				if data != tc.want {
+					peer.Errorf("copy data = %q, want %q", data, tc.want)
+				}
+				if chunks != len(tc.chunks) {
+					peer.Errorf("stream had %d chunks, want %d", chunks, len(tc.chunks))
+				}
+				_ = peer.CommandComplete("COPY 2")
+				_ = peer.ReadyForQuery(wire.StatusInTransaction)
+				waitTerminate(peer)
+			})
+			physical, err := connectPeer(t, srv, "")
+			if err != nil {
+				t.Fatalf("Connect: %v", err)
+			}
+			if _, err := physical.BeginTx(context.Background(), driver.TxOptions{}); err != nil {
+				t.Fatalf("BeginTx: %v", err)
+			}
+			prepared, err := physical.PrepareContext(context.Background(), tc.statement)
+			if err != nil {
+				t.Fatalf("PrepareContext: %v", err)
+			}
+			ci, ok := prepared.(*copyIn)
+			if !ok {
+				t.Fatalf("prepared statement is %T, want *copyIn", prepared)
+			}
+			for _, chunk := range tc.chunks {
+				if _, err := ci.Exec([]driver.Value{chunk}); err != nil {
+					t.Fatalf("Exec(%q): %v", chunk, err)
+				}
+			}
+			result, err := ci.Exec(nil)
+			if err != nil {
+				t.Fatalf("finish Exec: %v", err)
+			}
+			if affected, err := result.RowsAffected(); err != nil || affected != 2 {
+				t.Errorf("RowsAffected = %d, %v, want 2", affected, err)
+			}
+		})
+	}
+}
+
+// TestCopyInRawRejectsBadPayload proves a non-payload argument aborts the
+// stream instead of importing half a table.
+func TestCopyInRawRejectsBadPayload(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []driver.Value
+	}{
+		{name: "two arguments", args: []driver.Value{"a", "b"}},
+		{name: "non payload", args: []driver.Value{int64(7)}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := testpeer.Start(t, func(peer *testpeer.Conn) {
+				if !startupOK(peer) {
+					return
+				}
+				if !peerBegin(peer) {
+					return
+				}
+				if _, ok := expectMessage(peer, wire.MsgQuery); !ok {
+					return
+				}
+				if err := peer.WriteMessage(wire.MsgCopyInResponse, wire.EncodeCopyInResponse(0, []int16{0})); err != nil {
+					peer.Errorf("CopyInResponse: %v", err)
+					return
+				}
+				_, _, failed, err := readCopyStream(peer)
+				if err != nil {
+					peer.Errorf("copy stream: %v", err)
+					return
+				}
+				if failed == "" {
+					peer.Errorf("stream was not aborted with CopyFail")
+				}
+				_ = peer.ErrorResponse(
+					wire.ErrorField{Code: wire.ErrorSeverity, Value: testSeverity},
+					wire.ErrorField{Code: wire.ErrorCode, Value: "22P04"},
+					wire.ErrorField{Code: wire.ErrorMessage, Value: "COPY aborted by the client"},
+				)
+				_ = peer.ReadyForQuery(wire.StatusFailedTransaction)
+				drainUntilTerminate(peer)
+			})
+			physical, err := connectPeer(t, srv, "")
+			if err != nil {
+				t.Fatalf("Connect: %v", err)
+			}
+			if _, err := physical.BeginTx(context.Background(), driver.TxOptions{}); err != nil {
+				t.Fatalf("BeginTx: %v", err)
+			}
+			prepared, err := physical.PrepareContext(context.Background(), CopyInRaw("t", "a"))
+			if err != nil {
+				t.Fatalf("PrepareContext: %v", err)
+			}
+			if _, err := prepared.(driver.StmtExecContext).ExecContext(context.Background(), legacyNamedValues(tc.args)); err == nil {
+				t.Fatal("raw COPY accepted an invalid payload")
+			}
+		})
+	}
+}
+
 // peerCopyOutChunks answers one COPY TO STDOUT statement with the given chunks,
 // then leaves the session idle and answers one probe query.
 func peerCopyOutChunks(peer *testpeer.Conn, format int8, chunks ...string) bool {
