@@ -233,10 +233,10 @@ func (r *rows) Next(dest []driver.Value) error {
 			return io.EOF
 		case wire.MsgRowDescription:
 			r.fail()
-			return uncertain(fmt.Errorf("kingbase: multiple result sets are not implemented yet"))
+			return uncertain(errUnexpectedRowDescription)
 		case wire.MsgCopyInResponse, wire.MsgCopyData, wire.MsgCopyDone:
 			r.fail()
-			return uncertain(fmt.Errorf("kingbase: COPY is not implemented yet"))
+			return uncertain(errUnexpectedCopyResponse)
 		default:
 			r.fail()
 			return uncertain(fmt.Errorf("kingbase: unexpected message %q while reading rows", typ))
@@ -315,7 +315,7 @@ func (r *rows) NextResultSet() error {
 			return io.EOF
 		case wire.MsgCopyInResponse, wire.MsgCopyData, wire.MsgCopyDone:
 			r.fail()
-			return uncertain(fmt.Errorf("kingbase: COPY is not implemented yet"))
+			return uncertain(errUnexpectedCopyResponse)
 		default:
 			r.fail()
 			return uncertain(fmt.Errorf("kingbase: unexpected message %q between result sets", typ))

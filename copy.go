@@ -27,6 +27,12 @@ var (
 	errCopyBinaryFormat    = errors.New("kingbase: binary COPY is not supported")
 	errCopyOutNotSupported = errors.New("kingbase: COPY TO is not supported")
 	errCopyNoCompletion    = errors.New("kingbase: COPY response ended without a completion tag")
+	// errCopyThroughExec reports a COPY statement sent through Query/Exec,
+	// where the driver has no copy stream to hand the server's data to.
+	errCopyThroughExec = errors.New("kingbase: COPY statements are not supported through Query/Exec; use CopyIn on a transaction and Exec its rows")
+	// errUnexpectedCopyResponse reports a COPY response on a command the driver
+	// did not start a copy stream for, so the payload cannot be consumed.
+	errUnexpectedCopyResponse = errors.New("kingbase: unexpected COPY response")
 )
 
 // CopyIn returns a 'COPY ... FROM STDIN' statement for Tx.Prepare. The table is

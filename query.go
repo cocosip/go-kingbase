@@ -15,12 +15,20 @@ import (
 var (
 	_ driver.QueryerContext = (*conn)(nil)
 	_ driver.ExecerContext  = (*conn)(nil)
+
+	// errUnexpectedRowDescription reports a second RowDescription arriving
+	// before the current result set completed; additional result sets are
+	// consumed through NextResultSet instead.
+	errUnexpectedRowDescription = errors.New("kingbase: unexpected RowDescription before the current result set completed")
 )
 
 // QueryContext runs a statement and returns its rows. Arguments use the
 // extended protocol; a statement without arguments uses the simple query
 // protocol.
 func (c *conn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
+	if isCopyStatement(query) {
+		return nil, errCopyThroughExec
+	}
 	plan, err := c.rewriteParameters(query)
 	if err != nil {
 		return nil, err
@@ -47,6 +55,9 @@ func (c *conn) QueryContext(ctx context.Context, query string, args []driver.Nam
 
 // ExecContext runs a statement and returns its completion result.
 func (c *conn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
+	if isCopyStatement(query) {
+		return nil, errCopyThroughExec
+	}
 	args, outputs := extractOutArguments(args)
 	if len(outputs) > 0 {
 		return c.execRoutineWithOutputs(ctx, query, args, outputs)
@@ -373,7 +384,7 @@ func (c *conn) awaitFirstResult() ([]wire.ColumnDescription, bool, error) {
 			return nil, false, commandError(serverErr, c.drainToReady())
 		case wire.MsgCopyInResponse, wire.MsgCopyData, wire.MsgCopyDone:
 			c.retire()
-			return nil, false, fmt.Errorf("kingbase: COPY is not implemented yet")
+			return nil, false, errUnexpectedCopyResponse
 		default:
 			c.retire()
 			return nil, false, fmt.Errorf("kingbase: unexpected message %q before a result", typ)
@@ -494,7 +505,7 @@ func (c *conn) awaitExtendedDescription() ([]wire.ColumnDescription, bool, error
 			return nil, true, commandError(serverErr, c.drainToReady())
 		case wire.MsgCopyInResponse, wire.MsgCopyData, wire.MsgCopyDone:
 			c.retire()
-			return nil, false, fmt.Errorf("kingbase: COPY is not implemented yet")
+			return nil, false, errUnexpectedCopyResponse
 		default:
 			c.retire()
 			return nil, false, fmt.Errorf("kingbase: unexpected message %q before a result", typ)
@@ -596,7 +607,7 @@ func (c *conn) collectCommandResult(capture bool) (driver.Result, error) {
 			return result, nil
 		case wire.MsgCopyInResponse, wire.MsgCopyData, wire.MsgCopyDone:
 			c.retire()
-			return nil, fmt.Errorf("kingbase: COPY is not implemented yet")
+			return nil, errUnexpectedCopyResponse
 		default:
 			c.retire()
 			return nil, fmt.Errorf("kingbase: unexpected message %q during command", typ)
@@ -644,7 +655,7 @@ func (c *conn) drainToReady() error {
 		case wire.MsgCopyInResponse, wire.MsgCopyData, wire.MsgCopyDone:
 			c.retire()
 			if firstErr == nil {
-				firstErr = fmt.Errorf("kingbase: COPY is not implemented yet")
+				firstErr = errUnexpectedCopyResponse
 			}
 			return firstErr
 		default:
@@ -689,7 +700,7 @@ func (c *conn) drainCurrentResult() (bool, error) {
 			return true, nil
 		case wire.MsgRowDescription:
 			c.retire()
-			return false, fmt.Errorf("kingbase: multiple result sets are not implemented yet")
+			return false, errUnexpectedRowDescription
 		default:
 			c.retire()
 			return false, fmt.Errorf("kingbase: unexpected message %q while draining rows", typ)

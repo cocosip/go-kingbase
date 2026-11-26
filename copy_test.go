@@ -246,6 +246,75 @@ func TestCopyInRejectsCopyOut(t *testing.T) {
 	}
 }
 
+// TestCopyStatementThroughQueryExecRequiresHelper pins the pre-send rejection
+// of a COPY statement sent through Query/Exec. The CopyIn helper owns the copy
+// stream, so the driver answers before the wire instead of misjudging the
+// server's COPY response, and the session stays usable.
+func TestCopyStatementThroughQueryExecRequiresHelper(t *testing.T) {
+	srv := testpeer.Start(t, func(peer *testpeer.Conn) {
+		if !startupOK(peer) {
+			return
+		}
+		if _, ok := expectMessage(peer, wire.MsgQuery); !ok {
+			return
+		}
+		if err := peer.RowDescription([]wire.ColumnDescription{
+			{Name: "?column?", TypeOID: 23, TypeLen: 4, TypeMod: -1, Format: 0},
+		}); err != nil {
+			peer.Errorf("RowDescription: %v", err)
+			return
+		}
+		if err := peer.DataRow([][]byte{[]byte("1")}); err != nil {
+			peer.Errorf("DataRow: %v", err)
+			return
+		}
+		if err := peer.CommandComplete("SELECT 1"); err != nil {
+			peer.Errorf("CommandComplete: %v", err)
+			return
+		}
+		if err := peer.ReadyForQuery(wire.StatusIdle); err != nil {
+			peer.Errorf("ReadyForQuery: %v", err)
+			return
+		}
+		waitTerminate(peer)
+	})
+
+	physical, err := connectPeer(t, srv, "")
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	for _, query := range []string{
+		"COPY t FROM STDIN",
+		"  copy t (a) from stdin",
+		"COPY t TO STDOUT",
+	} {
+		if _, err := physical.ExecContext(context.Background(), query, nil); !errors.Is(err, errCopyThroughExec) {
+			t.Fatalf("ExecContext(%q) error = %v, want %v", query, err, errCopyThroughExec)
+		}
+		if _, err := physical.QueryContext(context.Background(), query, nil); !errors.Is(err, errCopyThroughExec) {
+			t.Fatalf("QueryContext(%q) error = %v, want %v", query, err, errCopyThroughExec)
+		}
+	}
+	if physical.netConn == nil {
+		t.Fatal("a rejected COPY statement retired the connection")
+	}
+	queryRows, err := physical.QueryContext(context.Background(), "SELECT 1", nil)
+	if err != nil {
+		t.Fatalf("QueryContext after rejection: %v", err)
+	}
+	values := make([]driver.Value, 1)
+	if err := queryRows.Next(values); err != nil {
+		t.Fatalf("Next: %v", err)
+	}
+	if values[0] != int64(1) {
+		t.Errorf("decoded value = %#v, want int64(1)", values[0])
+	}
+	if err := queryRows.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	_ = physical.Close()
+}
+
 func TestCopyInRejectsBinaryFormat(t *testing.T) {
 	srv := testpeer.Start(t, func(peer *testpeer.Conn) {
 		if !startupOK(peer) {
