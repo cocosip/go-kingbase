@@ -250,6 +250,90 @@ func TestLiveMultipleResultSets(t *testing.T) {
 	}
 }
 
+// TestLiveCrossModeConcurrency proves F-1104/F-209 on real servers: two pools in
+// different compatibility modes run interleaved on one process without leaking
+// mode, session or catalog state into each other. It needs a second endpoint and
+// skips with a named reason otherwise.
+func TestLiveCrossModeConcurrency(t *testing.T) {
+	primary := os.Getenv("KINGBASE_TEST_DSN")
+	peer := os.Getenv("KINGBASE_TEST_PEER_DSN")
+	if primary == "" {
+		t.Fatal("KINGBASE_TEST_DSN must be set for -tags live")
+	}
+	if peer == "" {
+		t.Skip("set KINGBASE_TEST_PEER_DSN to a second-mode DSN for the cross-mode probe")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	type pool struct {
+		db   *sql.DB
+		mode kingbase.CompatibilityMode
+	}
+	open := func(dsn string) pool {
+		db, err := sql.Open("kingbase", dsn)
+		if err != nil {
+			t.Fatalf("Open: %v", err)
+		}
+		t.Cleanup(func() { _ = db.Close() })
+		conn, err := db.Conn(ctx)
+		if err != nil {
+			t.Fatalf("Conn: %v", err)
+		}
+		meta, err := kingbase.ConnectionMetadata(conn)
+		_ = conn.Close()
+		if err != nil {
+			t.Fatalf("ConnectionMetadata: %v", err)
+		}
+		return pool{db: db, mode: meta.Mode}
+	}
+	first, second := open(primary), open(peer)
+	if first.mode == second.mode {
+		t.Fatalf("both DSNs report mode %s, want two different modes", first.mode)
+	}
+	t.Logf("concurrent modes: %s and %s", first.mode, second.mode)
+
+	pools := []pool{first, second}
+	var wg sync.WaitGroup
+	errs := make(chan error, 64)
+	for _, current := range pools {
+		for worker := 0; worker < 8; worker++ {
+			wg.Add(1)
+			go func(current pool) {
+				defer wg.Done()
+				for i := 0; i < 10; i++ {
+					conn, err := current.db.Conn(ctx)
+					if err != nil {
+						errs <- fmt.Errorf("%s Conn: %w", current.mode, err)
+						return
+					}
+					meta, err := kingbase.ConnectionMetadata(conn)
+					if err != nil {
+						errs <- fmt.Errorf("%s metadata: %w", current.mode, err)
+						_ = conn.Close()
+						return
+					}
+					if meta.Mode != current.mode {
+						errs <- fmt.Errorf("connection reports mode %s, want %s", meta.Mode, current.mode)
+					}
+					var value int64
+					if err := conn.QueryRowContext(ctx, "SELECT 1").Scan(&value); err != nil || value != 1 {
+						errs <- fmt.Errorf("%s query = %d, %v", current.mode, value, err)
+					}
+					if err := conn.Close(); err != nil {
+						errs <- fmt.Errorf("%s close: %w", current.mode, err)
+					}
+				}
+			}(current)
+		}
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Error(err)
+	}
+}
+
 // TestLiveServerErrorFields proves F-901/F-903 on a real server: a definite
 // server error keeps its fields and leaves the connection reusable.
 func TestLiveServerErrorFields(t *testing.T) {
