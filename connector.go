@@ -59,6 +59,17 @@ func newConnector(cfg *Config) *Connector {
 	return connector
 }
 
+// NewConnector returns a reusable driver.Connector for sql.OpenDB. It is the
+// public path for a programmatically built Config, for example one carrying a
+// Config.NoticeHandler, which a DSN cannot express. The configuration is
+// deep-copied here, so later changes to cfg do not affect opened connections.
+func NewConnector(cfg *Config) (*Connector, error) {
+	if cfg == nil {
+		return nil, errors.New("kingbase: NewConnector requires a configuration")
+	}
+	return newConnector(cfg), nil
+}
+
 // Driver returns the owning driver.
 func (c *Connector) Driver() driver.Driver {
 	return &Driver{}

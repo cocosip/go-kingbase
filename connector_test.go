@@ -13,6 +13,36 @@ import (
 	"github.com/cocosip/go-kingbase/internal/wire"
 )
 
+func TestNewConnectorPublicPath(t *testing.T) {
+	if _, err := NewConnector(nil); err == nil {
+		t.Error("NewConnector(nil) succeeded, want an error")
+	}
+	srv := testpeer.Start(t, func(peer *testpeer.Conn) {
+		if !startupOK(peer) {
+			return
+		}
+		noticeScript(peer)
+	})
+	cfg := peerConfig(t, srv, "")
+	var notices []Notice
+	cfg.NoticeHandler = func(notice Notice) { notices = append(notices, notice) }
+	connector, err := NewConnector(cfg)
+	if err != nil {
+		t.Fatalf("NewConnector: %v", err)
+	}
+	// The public path must be usable with sql.OpenDB, and the handler captured
+	// before construction must survive the snapshot.
+	cfg.NoticeHandler = nil
+	db := sql.OpenDB(connector)
+	defer func() { _ = db.Close() }()
+	if _, err := db.ExecContext(context.Background(), "SELECT 0"); err != nil {
+		t.Fatalf("ExecContext: %v", err)
+	}
+	if len(notices) != 1 || notices[0].Message != testNoticeMessage || notices[0].Code != testNoticeCode {
+		t.Fatalf("notices = %+v, want one %q notice", notices, testNoticeMessage)
+	}
+}
+
 func TestConnectorPinsConfigurationSnapshot(t *testing.T) {
 	srv := testpeer.Start(t, func(peer *testpeer.Conn) {
 		if !startupOK(peer) {
