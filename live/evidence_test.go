@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"runtime/debug"
 	"strings"
 	"testing"
 	"time"
@@ -36,13 +38,21 @@ func TestLiveEvidenceMatrix(t *testing.T) {
 	defer cancel()
 
 	report := map[string]any{
-		"mode":           meta.Mode.String(),
-		"mode_source":    meta.ModeSource.String(),
-		"mode_verified":  meta.ModeVerified,
-		"wire_protocol":  meta.WireProtocol.String(),
-		"release":        meta.Release,
-		"server_version": meta.ServerVersion,
-		"timestamp":      time.Now().UTC().Format(time.RFC3339),
+		"profile":         profileLabel(meta.Mode),
+		"mode":            meta.Mode.String(),
+		"mode_source":     meta.ModeSource.String(),
+		"mode_verified":   meta.ModeVerified,
+		"wire_protocol":   meta.WireProtocol.String(),
+		"release":         meta.Release,
+		"server_version":  meta.ServerVersion,
+		"catalog_status":  catalogStatusName(meta.CatalogStatus),
+		"tls_mode":        tlsModeName(dsn),
+		"driver_revision": driverRevision(),
+		"go_version":      runtime.Version(),
+		"platform":        runtime.GOOS + "/" + runtime.GOARCH,
+		"host":            hostName(),
+		"operator":        os.Getenv("KINGBASE_TEST_OPERATOR"),
+		"timestamp":       time.Now().UTC().Format(time.RFC3339),
 	}
 	record := func(key string, value any) { report[key] = value }
 
@@ -121,6 +131,75 @@ func TestLiveEvidenceMatrix(t *testing.T) {
 		t.Logf("evidence written to %s", path)
 	}
 	t.Logf("mode=%s release=%q version=%q", meta.Mode, meta.Release, meta.ServerVersion)
+}
+
+// profileLabel names the acceptance profile under test: KINGBASE_TEST_PROFILE
+// when set, otherwise the reported compatibility mode.
+func profileLabel(mode kingbase.CompatibilityMode) string {
+	if label := os.Getenv("KINGBASE_TEST_PROFILE"); label != "" {
+		return label
+	}
+	return mode.String()
+}
+
+// driverRevision reports the revision of the driver under test. The runner may
+// pin it with KINGBASE_TEST_REVISION; otherwise the VCS stamp of the test binary
+// is used, so an artifact names the code instead of a hand-written claim.
+func driverRevision() string {
+	if revision := os.Getenv("KINGBASE_TEST_REVISION"); revision != "" {
+		return revision
+	}
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "unknown"
+	}
+	revision, modified := "", false
+	for _, setting := range info.Settings {
+		switch setting.Key {
+		case "vcs.revision":
+			revision = setting.Value
+		case "vcs.modified":
+			modified = setting.Value == "true"
+		}
+	}
+	switch {
+	case revision == "":
+		return "unknown"
+	case modified:
+		return revision + "+dirty"
+	default:
+		return revision
+	}
+}
+
+// catalogStatusName spells the catalog snapshot shape for the manifest.
+func catalogStatusName(status kingbase.CatalogStatus) string {
+	switch status {
+	case kingbase.CatalogFull:
+		return "full"
+	case kingbase.CatalogPartial:
+		return "partial"
+	default:
+		return "unknown"
+	}
+}
+
+// tlsModeName reports the configured trust policy without echoing the DSN.
+func tlsModeName(dsn string) string {
+	cfg, err := kingbase.ParseConfig(dsn)
+	if err != nil || cfg == nil {
+		return "unparsed"
+	}
+	return cfg.SSLMode.String()
+}
+
+// hostName reports the test host, keeping manifest records attributable.
+func hostName() string {
+	name, err := os.Hostname()
+	if err != nil || name == "" {
+		return "unknown"
+	}
+	return name
 }
 
 // captureCatalog runs the driver's qualified catalog query and returns the
@@ -207,7 +286,7 @@ func builtinShapes(ctx context.Context, conn *sql.Conn) (map[string]string, erro
 // captureSettings records the source/context of the mode and timezone GUCs.
 func captureSettings(ctx context.Context, conn *sql.Conn) (map[string]string, error) {
 	rows, err := conn.QueryContext(ctx,
-		"SELECT name, setting, source, context FROM pg_catalog.pg_settings WHERE name IN ('database_mode','compatdb_mode','TimeZone')")
+		"SELECT name, setting, source, context FROM pg_catalog.pg_settings WHERE name IN ('database_mode','compatdb_mode','compatible_level','TimeZone')")
 	if err != nil {
 		return nil, err
 	}
