@@ -20,11 +20,12 @@ mode-specific codecs, routine INOUT/`sql.Out` where the listener returns an
 output row, transactions, COPY IN, cursors, listeners, metadata, generated IDs)
 and passes the offline suite plus a live acceptance harness. No public release
 or production support claim exists yet: the M3 evidence run recorded V1–V19
-observations, but V7 (extra auth methods) and V8 (TLS) cannot be closed on this
-deployment, which enables only SCRAM and offers no TLS listener. The native
-MySQL transport, V8R6, binary COPY and extra auth extensions remain out of
-scope. The specification, feature matrix and delivery plan are the source of
-truth for scope and acceptance:
+observations, but V7 stays partial (the deployment enables only SCRAM) and live
+TLS acceptance (V8) is deferred by operator decision because the deployment has
+no TLS listener — the TLS policy is implemented and covered offline only, with no
+plaintext fallback. The native MySQL transport, V8R6, binary COPY and extra auth
+extensions remain out of scope. The specification, feature matrix and delivery
+plan are the source of truth for scope and acceptance:
 
 - [Architecture design](docs/go-driver-architecture-design.md)
 - [Capability matrix](docs/go-driver-capabilities.md)
@@ -41,6 +42,9 @@ truth for scope and acceptance:
   built-in OID table.
 - No automatic protocol/port fallback, no reconnect across protocols, no
   duplicate connection pool.
+- `COPY ... FROM STDIN` must run through the `CopyIn` helper on a transaction;
+  `Query`/`Exec` reject a COPY statement before sending it, because only the
+  helper owns the copy stream.
 
 ## Development
 

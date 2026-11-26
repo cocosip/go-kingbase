@@ -1,7 +1,7 @@
 # KingbaseES Go Driver — Capability Matrix
 
-> Status: initial PG-wire scope implemented and tested offline; live acceptance in progress on a V009R001C010 four-mode deployment, no accepted profile yet
-> Date: 2026-11-25
+> Status: initial PG-wire scope implemented and tested offline; live acceptance in progress on a V009R001C010 four-mode deployment, no accepted profile yet; live TLS acceptance is deferred by operator decision (O8)
+> Date: 2026-11-25 (TLS deferral recorded 2026-11-26)
 > Companion documents: [Architecture Design](go-driver-architecture-design.md) · [Development Plan and Progress](go-driver-development.md)
 
 ## Reading Guide
@@ -10,6 +10,7 @@
 - wireProtocol=pg is default; mysql is explicit conditional M5. No automatic handshake selection, reconnect or port fallback.
 - PG catalog is a qualified server capture; static SDK OID tables are research only. Product identity and supported release capabilities are separate from a PostgreSQL-style kernel version.
 - P0/P1 are required for features/profiles included in the release manifest; P1 may use only an explicitly specified safe limitation. P2 may be excluded/deferred with reason; an enabled P2 success claim requires the same applicable proof. V8, M5 and deferred COPY/auth extensions are outside the initial PG release until separately accepted.
+- TLS live acceptance is deferred by operator decision (O8): the reference deployment has no TLS listener, so F-804/F-805 stay offline-only proof and V8 cannot be closed on it. The TLS code path stays implemented and tested offline; no plaintext fallback and no support claim is derived from that.
 - offline = unit/replay; live = actual server; both = both required. Impl/offline/live statuses below are independent: todo/pending/pending initially. n/a live means the requirement is offline-only, not that a missing server passed.
 - Aggregate live accepted requires all applicable profiles in the release manifest. A blocked/unavailable profile stays pending and cannot be advertised. Tests/provenance live in the progress tracker, with per-profile records in section 17.
 
@@ -73,7 +74,7 @@ DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup excha
 | F-307 | Actual uppercase DatabaseTypeName | P1 | both | Backend/catalog name without length; no unified PG relabel; absent OID empty | done | done | pending |
 | F-308 | Honest column metadata | P1 | both | Nullable known/unknown ok flags; outer joins/expressions; real ScanType, byte/character lengths and precision | done | done | pending |
 | F-309 | YEAR standard value | P1 | both | int64 for validated live forms; malformed/truncated/overflow input rejected by the server domain; MySQL-mode live YYYY/YYYY-MM-DD forms pass through the validated int4 domain link | done | done | pending |
-| F-310 | Numeric/temporal conversion boundaries | P0 | both | Full uint64/decimal/NaN/infinity/zero/BC/precision/negative-time/DST/locale cases; no truncation. MySQL uint4 checks the 32-bit bound and uint8 stays exact text up to 2^64-1 | wip | pending | pending |
+| F-310 | Numeric/temporal conversion boundaries | P0 | both | Full uint64/decimal/NaN/infinity/zero/BC/precision/negative-time/DST/locale cases; no truncation. MySQL uint4 checks the 32-bit bound and uint8 stays exact text up to 2^64-1 | done | done | pending |
 
 ## 5. Execution and Binding
 
@@ -173,7 +174,7 @@ For deployments whose native MySQL endpoint is established by V12/V15 (Architect
 
 ## 13. Live Verification Requirements
 
-The [V1–V19 evidence ledger](go-driver-live-profile.md#v1v19-evidence-ledger-2026-11-25-four-mode-run) records the 2026-11-25 four-mode run: V1–V6, V9, V10, V12, V14 and V16–V19 are evidenced on this deployment, V7 is partial (only SCRAM is enabled), V8 is blocked by infrastructure because no listener offers TLS, and V11/V13/V15 remain later-scope items. No V9 profile is accepted while V7/V8 stay open. Not-applicable is allowed only for a named excluded profile/feature with reason, never lack of infrastructure. V11/V13 apply to later V8 scope; V15 and native cases of V8/V19 apply when M5 enters the release manifest. Authentication/COPY/notification cases follow enabled features; unsupported extensions remain unclaimed.
+The [V1–V19 evidence ledger](go-driver-live-profile.md#v1v19-evidence-ledger-2026-11-25-four-mode-run) records the 2026-11-25 four-mode run: V1–V6, V9, V10, V12, V14 and V16–V19 are evidenced on this deployment, V7 is partial (only SCRAM is enabled), V8 is deferred by operator decision (O8) because no listener offers TLS, and V11/V13/V15 remain later-scope items. No V9 profile is accepted while V7 stays partial; the TLS deferral is recorded as a scope decision (O8 in the [progress tracker](go-driver-development.md)), not as an accepted limitation. Not-applicable is allowed only for a named excluded profile/feature with reason, never lack of infrastructure. V11/V13 apply to later V8 scope; V15 and native cases of V8/V19 apply when M5 enters the release manifest. Authentication/COPY/notification cases follow enabled features; unsupported extensions remain unclaimed.
 
 | ID | Item | Required evidence | Blocks |
 |---|---|---|---|

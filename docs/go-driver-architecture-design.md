@@ -1,10 +1,10 @@
 # KingbaseES Go Driver — Architecture Design
 
-> Status: corrected requirements and interface contract; scaffold (T-001) complete, driver behaviour and live acceptance pending
-> Date: 2026-11-24
+> Status: corrected requirements and interface contract; the initial PG-wire scope is implemented, M0/M1/M2 are complete with named offline proof, and live profile acceptance (M3) is the remaining gate
+> Date: 2026-11-24 (status line refreshed 2026-11-26)
 > Companion documents: [Capability Matrix](go-driver-capabilities.md) · [Development Plan and Progress](go-driver-development.md)
 > Premise: an independent implementation, with no vendor implementation copied. Source inspection has informed this specification, so it is not evidence of a formal clean-room process. Vendor source and generated OID lists are research evidence, not live-server acceptance.
-> Implementation: T-001 scaffold is committed; every driver-behaviour task is still `todo` and specification changes are not implementation evidence.
+> Implementation: the scaffold, connection/query/catalog/mode layers and the M4 quality items are committed and pass the offline suite ([progress tracker](go-driver-development.md)); no V9 profile is accepted yet, and live TLS acceptance is deferred by operator decision (O8 in the progress tracker).
 
 ## 1. Goals and Confirmed Requirements
 
@@ -83,7 +83,7 @@ The 466 extra names break down as `sys_*` 183, other `pg_*` 157, `pg_toast_*` 41
 
 ### 2.5 Gaps in the vendor implementation (do not replicate)
 
-A site-by-site code review found the following inconsistencies or defects. These requirements avoid reproducing them; implementation and acceptance are pending:
+A site-by-site code review found the following inconsistencies or defects. These requirements avoid reproducing them; the M0–M2 slices implement the choices below with named offline proof, while live acceptance remains the M3 gate:
 
 | # | Location | Observation | Our choice |
 |---|---|---|---|
@@ -387,13 +387,15 @@ Listener delivery is read/pull-driven with a bounded queue (default 256). On ove
 
 ## 12. Authentication and TLS
 
-Authentication is planned, not implemented. Initial PG targets cleartext, MD5, SCRAM-SHA-256 with server-signature verification and the evidenced SM3 method. Enable only implemented/verified message forms. GSS/SSPI, SCRAM-PLUS/channel binding and other extensions are deferred F-806, with explicit unsupported errors and no downgrade.
+Authentication is implemented offline for the initial PG targets: cleartext, MD5, SCRAM-SHA-256 with server-signature verification and the evidenced SM3 method (`internal/auth`, `internal/sm3`, scripted testpeer replay). Enable only implemented/verified message forms. GSS/SSPI, SCRAM-PLUS/channel binding and other extensions are deferred F-806, with explicit unsupported errors and no downgrade.
 
 SCRAM acceptance covers server nonce extension, duplicate/malformed attributes, bounded iteration count, salt/base64 failures, invalid signature and truncation. Bound message size and cryptographic work; never log secrets. V7 accepts each enabled method per product/profile.
 
 For PG preserve sampled official Go R003/R004 semantics: require encrypts without hostname verification, but an explicitly configured existing sslrootcert enables CA-chain verification. Explicit missing trust material is an error here, not silently removed as in legacy code. verify-ca verifies chain; verify-full also verifies hostname/IP; disable requests no TLS. Use verify-ca/full when verification is required rather than relying on require's historical behaviour (R5). Never fall back from requested TLS to plaintext.
 
 Read configured material at physical connect. Strict sampled POSIX secret permissions apply to sslkey only, not public sslcert/root certificates; Windows handling is separate. Tests include readable public certificates, unsafe private keys, missing/invalid material, key mismatch, untrusted/expired chain and wrong hostname. §14 records strict-missing-file migration differences.
+
+Live TLS acceptance is deferred by operator decision (O8 in the [progress tracker](go-driver-development.md)): the reference deployment offers no TLS listener, so the trust/verification policy measured by the offline suite (F-804/F-805 offline done) stays unaccepted live and no TLS support claim is published until a TLS-enabled deployment is confirmed.
 
 MySQL TLS is independently accepted in V8/V15 with the same configured trust policy. SM3 password authentication does not establish national-crypto TLS/certificate support. Runtime TLS-version/cipher policy is verified against the Go 1.26.0 baseline.
 
@@ -472,9 +474,9 @@ Implementation, offline proof and live acceptance are separate [progress](go-dri
 |---|---|---|
 | O1 | published module identity/oid migration | resolved: github.com/cocosip/go-kingbase from Git origin; package kingbase with driver registration kingbase (the vendor sample package name gokb is not reused); oid subpackage omitted per §14 |
 | O2 | public scalar/temporal contract | resolved in specification: standard driver values, date time.Time/time text, no implicit civil/sql.NullBool |
-| O3 | qualified catalog access | pending V2; no built-in escape hatch; fail if required metadata unavailable |
+| O3 | qualified catalog access | resolved: V2 evidenced on the V009R001C010 four-mode deployment; no built-in escape hatch; the driver fails closed if required metadata is unavailable |
 | O4 | V8 support | later scope, V11/V13 before enabling; no universal no-special-code assertion |
-| O5 | live-profile availability | pending; required V9 evidence blocks M3, not offline work |
+| O5 | live-profile availability | resolved (no accepted profile): V1–V19 evidence recorded on one V009R001C010 deployment; live TLS acceptance deferred by operator decision (O8), so M3 stays open rather than approved |
 | O6 | MySQL backend release | conditional M5 after V12/V15/native-bootstrap/reset evidence; excluded from initial PG claims |
 | O7 | minimum Go/platform/license/toolchain | resolved: Go 1.26.0; Apache-2.0 with NOTICE; stdlib-only core; linux/windows/darwin amd64+arm64; CI runs Go 1.26.x with golangci-lint v2.14.0 (§13.1) |
 

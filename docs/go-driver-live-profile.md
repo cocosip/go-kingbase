@@ -94,14 +94,14 @@ catalog. A temporary ordinary login role was also created per mode; it
 connected with its own credentials and completed catalog initialization plus a
 builtin query, which is ordinary-role access evidence but not the raw
 catalog-shape capture V2 requires. `sslmode=require` was rejected by all four
-listeners of this deployment because they did not offer TLS; V8 remains
-unverified and requires a TLS-enabled deployment, not a fallback.
+listeners of this deployment because they did not offer TLS; live TLS acceptance
+(V8) is therefore deferred by operator decision (O8), not replaced by a fallback.
 
 The same four-listener deployment was re-exercised on 2026-11-25 for profile
 behaviour. `sys_hba.conf` on every instance enables `scram-sha-256` for the
 172.16.2.0/24 client subnet (peer auth stays local-only), so SCRAM is the enabled
-live auth method for this profile; no listener offers TLS, so V8 remains
-unverified by infrastructure rather than by fallback. Observed profile facts that
+live auth method for this profile; no listener offers TLS, so live TLS acceptance
+(V8) is deferred by operator decision (O8) rather than replaced by a fallback. Observed profile facts that
 drive the mode-specific code: every listener rejects a bare `?` and accepts `$n`;
 double-quoted identifiers work in all modes, MySQL also accepts backticks and
 SQLServer brackets, while Oracle and SQLServer reject backticks and MySQL
@@ -132,7 +132,8 @@ exposes `sys.tinyint b/1`, `sys.uint4 b/4`, `sys.year d/4 base=int4` and
 `sys.bit b/-1`, SQLServer exposes `sys.tinyint b/1`, `sys.bit b/1`,
 `sys.money b/8`, `sys.smalldatetime b/8` and Oracle exposes
 `pg_catalog.tinyint b/1`. `sslmode=require` fails on every port with
-`server does not support TLS`, so V8 stays unverified by infrastructure. A
+`server does not support TLS`, so live TLS acceptance (V8) is deferred by
+operator decision (O8). A
 read-only transaction rejected `CREATE TABLE` with SQLSTATE 25006 in every mode
 and the connection recovered, while a normal transaction committed. Boundary
 values: high-precision numeric and `18446744073709551615` stay exact text where
@@ -154,10 +155,11 @@ timestamp that carries the wall-clock text as a session-timezone instant (so the
 driver keeps it opaque); `year` resolves through `int4`, and `money` is 4-decimal text with a 10^4-scaled int64 binary payload. These are profile-behaviour observations, not an
 accepted profile.
 
-Still missing for acceptance: the raw catalog query/shape/error capture as an
-ordinary role, V1 fallback cases, V5 routine/OUT/status forms, auth/TLS matrix,
-V12 deployment confirmation, V14 storage scope, V16 initialization budget, the
-mid-reader part of V17, and the full V19 session/reset matrix.
+Still missing for acceptance after the 2026-11-25 ledger below: the V7 method set
+the operator enables on the deployment (only `scram-sha-256` is enabled today), and
+the per-pair override records with their linked artifacts. Live TLS (V8) is deferred
+by operator decision (O8). Every other ledger item is evidenced; a catalog snapshot
+never refreshing mid-reader is the driver's documented boundary, not a missing case.
 
 ## Acceptance ledger
 
@@ -205,7 +207,7 @@ evidenced.
 | V5 | evidenced (scope-limited) | `TestLiveRoutineOutAssignment` passes for PG/Oracle/MySQL direct and prepared `sql.Out`; `TestLiveSQLServerRoutineOutUnsupported` records the measured SQLServer parameterized-CALL limitation; `TestLiveRoutineExecDiscardsStatus` shows the SQLServer status is discarded without failure; `TestLiveSQLServerRoutineConvenience` covers the bare-name `EXEC`; `TestLiveCopyInAndCursor` covers refcursor fetch/close on the PG profile. Non-PG refcursor creation is not offered by these listeners. |
 | V6 | evidenced | `TestLiveGeneratedID` (PG form) and `TestLiveMySQLGeneratedID` (LAST_INSERT_ID form, including a tinyint identity) pass; rejection/overflow forms are covered by the offline generated-ID suite. |
 | V7 | partial | `sys_hba.conf` enables `scram-sha-256` for the client subnet and every connection authenticated; cleartext/MD5/SM3 login transcripts are not enabled on this deployment, so those methods remain unverified. |
-| V8 | blocked (infrastructure) | Every listener rejects `sslmode=require` with `server does not support TLS`; the driver's policy is measured, but a TLS-enabled deployment is required to close this item. No fallback is accepted. |
+| V8 | deferred (operator decision O8) | Every listener rejects `sslmode=require` with `server does not support TLS`. The trust/material policy is exercised offline only, and live TLS acceptance is deferred for this phase by operator decision; no fallback is accepted and no TLS support claim is published. |
 | V9 | evidenced | `TestLiveCopyInAndCursor` passes COPY IN escaping/NULL and cursor handling in every mode; `TestLiveListenerNotification` passes PG LISTEN/NOTIFY delivery. |
 | V10 | evidenced | `TestLiveModeTypeCodecs` checks YEAR and the mode-specific text/binary forms in the same run; binary and text values agree for tinyint, uint4, uint8, money, bit and datetime where a codec is claimed. |
 | V11 | out of scope | Later V8R6 profile scope; the driver cannot inherit this V9 evidence for it. |
@@ -218,6 +220,7 @@ evidenced.
 | V18 | evidenced | `TestLiveBoundaryValues`, `TestLiveTimezoneAndDST` and the artifact's boundary map cover exact numeric/uint64 text, NaN/±Infinity, interval, DST/timezone meaning, and the mode tinyint/year/datetime/money/bit/smalldatetime forms. Session lexical settings are covered by `TestLiveModePlaceholderAndQuoting` and the offline lexical suite. |
 | V19 | evidenced (scope-limited) | `TestLiveTransactionOptions`, `TestLiveReadOnlyTransactionEnforcement`, `TestLiveCancelAndRecovery`, `TestLiveTransactionPreparedAndNamed` and the artifact's transaction/recovery check pass; transaction-state reset and close/drain races are covered by the offline session suite. Backend-handle exposure is not promised by the driver. |
 
-Acceptance decision: **not accepted**. V7 is partial (only SCRAM enabled by the
-deployment) and V8 is blocked by the missing TLS listener; both are
-infrastructure facts recorded as-is, not driver gaps and not fallbacks.
+Acceptance decision: **not accepted**. V7 is partial (only SCRAM is enabled by the
+deployment) and V8 is deferred by operator decision (O8: the deployment has no TLS
+listener). Both are recorded as-is: an infrastructure fact and a scope decision,
+not driver gaps and not fallbacks.
