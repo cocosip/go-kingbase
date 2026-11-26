@@ -1,9 +1,11 @@
 package kingbase
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -324,7 +326,7 @@ func TestCopyInRawWritesPayloadVerbatim(t *testing.T) {
 		want      string
 	}{
 		{
-			name:      "text",
+			name:      pgTypeText,
 			statement: CopyInRaw("t", "a"),
 			format:    0,
 			chunks:    []string{"1\ta\n", "2\tb\n"},
@@ -460,6 +462,373 @@ func TestCopyInRawRejectsBadPayload(t *testing.T) {
 				t.Fatal("raw COPY accepted an invalid payload")
 			}
 		})
+	}
+}
+
+// TestCopyInBinaryStatement proves the helper marks the statement and that the
+// parser recovers the relation and column list, or refuses the statement.
+func TestCopyInBinaryStatement(t *testing.T) {
+	statement := CopyInBinary("orders", "id", "note")
+	want := `COPY "orders" ("id", "note") FROM STDIN WITH (FORMAT binary) /* kingbase:binary-rows */`
+	if statement != want {
+		t.Fatalf("CopyInBinary = %q, want %q", statement, want)
+	}
+	relation, columns, marked, err := copyBinaryStatement(statement)
+	if err != nil || !marked || relation != `"orders"` || len(columns) != 2 ||
+		columns[0] != "id" || columns[1] != "note" {
+		t.Fatalf("copyBinaryStatement = %q, %v, %t, %v", relation, columns, marked, err)
+	}
+	if relation, _, marked, err := copyBinaryStatement(`COPY "sales"."orders" ("id") FROM STDIN WITH (FORMAT binary, DELIMITER ',') ` + copyBinaryMarker); err != nil ||
+		!marked || relation != `"sales"."orders"` {
+		t.Fatalf("qualified statement = %q, %t, %v", relation, marked, err)
+	}
+	if _, _, marked, err := copyBinaryStatement(CopyInRawBinary("orders", "id")); marked || err != nil {
+		t.Fatalf("raw statement parsed as typed: %t, %v", marked, err)
+	}
+	for _, bad := range []string{
+		`COPY "t" FROM STDIN WITH (FORMAT binary) ` + copyBinaryMarker,
+		`COPY "t" ("a") FROM STDIN WITH (FORMAT text) ` + copyBinaryMarker,
+		`COPY "t" ("a") FROM STDIN ` + copyBinaryMarker,
+		`INSERT INTO "t" ("a") VALUES ($1) ` + copyBinaryMarker,
+		`COPY "t" ("a") FROM '/tmp/in.csv' WITH (FORMAT binary) ` + copyBinaryMarker,
+	} {
+		if _, _, _, err := copyBinaryStatement(bad); err == nil {
+			t.Errorf("copyBinaryStatement(%q) accepted a malformed statement", bad)
+		}
+	}
+}
+
+// TestCopyInBinaryKinds pins the catalog mapping, including the two storage forms
+// of a date and the types that stay unsupported.
+func TestCopyInBinaryKinds(t *testing.T) {
+	for _, tc := range []struct {
+		typname string
+		typlen  int64
+		want    copyKind
+	}{
+		{"int2", 2, copyInt2},
+		{pgTypeInt4, 4, copyInt4},
+		{"int8", 8, copyInt8},
+		{"float4", 4, copyFloat4},
+		{"float8", 8, copyFloat8},
+		{"bool", 1, copyBool},
+		{pgTypeText, -1, copyText},
+		{"varcharbyte", -1, copyText},
+		{"bytea", -1, copyBytea},
+		{"date", 4, copyDateDays},
+		{"date", 8, copyDateMicros},
+		{"timestamp", 8, copyTimestamp},
+		{"timestamptz", 8, copyTimestamptz},
+		{"time", 8, copyTime},
+		{"uuid", 16, copyUUID},
+		{"json", -1, copyJSON},
+		{"jsonb", -1, copyJSONB},
+	} {
+		kind, ok := copyKindForType(tc.typname, tc.typlen)
+		if !ok || kind != tc.want {
+			t.Errorf("copyKindForType(%q, %d) = %v, %t, want %v", tc.typname, tc.typlen, kind, ok, tc.want)
+		}
+	}
+	for _, typname := range []string{"numeric", "interval", "rowversion", "int4range", "_int4"} {
+		if _, ok := copyKindForType(typname, -1); ok {
+			t.Errorf("copyKindForType(%q) accepted a type without an encoder", typname)
+		}
+	}
+}
+
+// catalogResponse describes the three columns of the binary COPY resolution query.
+func catalogResponse(rows ...[]string) ([]wire.ColumnDescription, [][][]byte) {
+	columns := []wire.ColumnDescription{
+		{Name: "attname", TypeOID: 25, TypeLen: -1},
+		{Name: "typname", TypeOID: 19, TypeLen: -1},
+		{Name: "typlen", TypeOID: 21, TypeLen: 2},
+	}
+	data := make([][][]byte, len(rows))
+	for i, row := range rows {
+		data[i] = [][]byte{[]byte(row[0]), []byte(row[1]), []byte(row[2])}
+	}
+	return columns, data
+}
+
+// peerBinaryCatalog answers the column resolution query and then the COPY
+// statement that follows it.
+func peerBinaryCatalog(peer *testpeer.Conn, rows [][]string, stream func(*testpeer.Conn)) bool {
+	if _, ok := expectMessage(peer, wire.MsgQuery); !ok {
+		return false
+	}
+	columns, data := catalogResponse(rows...)
+	if err := peer.SendResult(columns, data, "SELECT 0", wire.StatusInTransaction); err != nil {
+		peer.Errorf("catalog result: %v", err)
+		return false
+	}
+	if _, ok := expectMessage(peer, wire.MsgQuery); !ok {
+		return false
+	}
+	if err := peer.WriteMessage(wire.MsgCopyInResponse, wire.EncodeCopyInResponse(1, []int16{1})); err != nil {
+		peer.Errorf("CopyInResponse: %v", err)
+		return false
+	}
+	stream(peer)
+	return true
+}
+
+// TestCopyInBinaryStream proves the wire shape after the catalog lookup: one
+// header, length-prefixed fields in declared order, NULL as -1 and the trailer
+// before CopyDone.
+func TestCopyInBinaryStream(t *testing.T) {
+	want := []byte("KBCOPY\n\xff\r\n\x00")
+	want = append(want, 0, 0, 0, 0, 0, 0, 0, 0) // flags, header extension length
+	want = append(want, 0, 4)                   // four fields
+	want = append(want, 0, 0, 0, 4, 0, 0, 0, 7) // integer 7
+	want = append(want, 0, 0, 0, 2, 'h', 'i')   // text "hi"
+	want = append(want, 0, 0, 0, 1, 1)          // boolean true
+	want = append(want, 0xff, 0xff, 0xff, 0xff) // NULL
+	want = append(want, 0xff, 0xff)             // trailer
+
+	srv := testpeer.Start(t, func(peer *testpeer.Conn) {
+		if !startupOK(peer) {
+			return
+		}
+		if !peerBegin(peer) {
+			return
+		}
+		if !peerBinaryCatalog(peer, [][]string{
+			{"a", pgTypeInt4, "4"},
+			{"b", pgTypeText, "-1"},
+			{"c", "bool", "1"},
+			{"d", pgTypeText, "-1"},
+		}, func(peer *testpeer.Conn) {
+			data, _, failed, err := readCopyStream(peer)
+			if err != nil {
+				peer.Errorf("copy stream: %v", err)
+				return
+			}
+			if failed != "" {
+				peer.Errorf("copy failed: %q", failed)
+				return
+			}
+			if !bytes.Equal([]byte(data), want) {
+				peer.Errorf("copy payload = %x, want %x", data, want)
+			}
+			_ = peer.CommandComplete("COPY 1")
+			_ = peer.ReadyForQuery(wire.StatusInTransaction)
+			drainUntilTerminate(peer)
+		}) {
+			return
+		}
+	})
+
+	physical, err := connectPeer(t, srv, "")
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	if _, err := physical.BeginTx(context.Background(), driver.TxOptions{}); err != nil {
+		t.Fatalf("BeginTx: %v", err)
+	}
+	prepared, err := physical.PrepareContext(context.Background(), CopyInBinary("t", "a", "b", "c", "d"))
+	if err != nil {
+		t.Fatalf("PrepareContext: %v", err)
+	}
+	ci := prepared.(*copyIn)
+	if _, err := ci.Exec([]driver.Value{int64(7), "hi", true, nil}); err != nil {
+		t.Fatalf("Exec row: %v", err)
+	}
+	if _, err := ci.Exec(nil); err != nil {
+		t.Fatalf("finish Exec: %v", err)
+	}
+}
+
+// TestCopyInBinaryTemporal proves the date and timestamp encodings against
+// literal epoch counts, so an off-by-one day or a microsecond slip fails.
+func TestCopyInBinaryTemporal(t *testing.T) {
+	const (
+		wantDays = 9498                                 // 2000-01-01 → 2026-01-02
+		wantTime = int64(820627200000000 + 11045000000) // 03:04:05 since the epoch
+	)
+	days, err := encodeCopyBinaryValue(copyDateDays, time.Date(2026, 1, 2, 15, 4, 5, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("encode date: %v", err)
+	}
+	if got := int64(binary.BigEndian.Uint32(days)); got != wantDays {
+		t.Errorf("date days = %d, want %d", got, wantDays)
+	}
+	stamp, err := encodeCopyBinaryValue(copyTimestamp, time.Date(2026, 1, 2, 3, 4, 5, 0, time.FixedZone("x", 3600)))
+	if err != nil {
+		t.Fatalf("encode timestamp: %v", err)
+	}
+	if got := int64(binary.BigEndian.Uint64(stamp)); got != wantTime {
+		t.Errorf("timestamp micros = %d, want %d", got, wantTime)
+	}
+	// The eight-byte date form keeps the instant, not just the day.
+	zoned, err := encodeCopyBinaryValue(copyDateMicros, time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("encode eight-byte date: %v", err)
+	}
+	if got := int64(binary.BigEndian.Uint64(zoned)); got != wantTime {
+		t.Errorf("eight-byte date micros = %d, want %d", got, wantTime)
+	}
+}
+
+// TestCopyInBinaryRejectsBadRow proves a value that does not fit its column
+// aborts the stream instead of importing a corrupt row.
+func TestCopyInBinaryRejectsBadRow(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []driver.Value
+	}{
+		{name: "out of range", args: []driver.Value{int64(1 << 40)}},
+		{name: "wrong type", args: []driver.Value{"abc"}},
+		{name: "wrong count", args: []driver.Value{int64(1), int64(2)}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := testpeer.Start(t, func(peer *testpeer.Conn) {
+				if !startupOK(peer) {
+					return
+				}
+				if !peerBegin(peer) {
+					return
+				}
+				peerBinaryCatalog(peer, [][]string{{"a", pgTypeInt4, "4"}}, func(peer *testpeer.Conn) {
+					_, _, failed, err := readCopyStream(peer)
+					if err != nil {
+						peer.Errorf("copy stream: %v", err)
+						return
+					}
+					if failed == "" {
+						peer.Errorf("stream was not aborted with CopyFail")
+					}
+					_ = peer.ErrorResponse(
+						wire.ErrorField{Code: wire.ErrorSeverity, Value: testSeverity},
+						wire.ErrorField{Code: wire.ErrorCode, Value: "22P04"},
+						wire.ErrorField{Code: wire.ErrorMessage, Value: "COPY aborted by the client"},
+					)
+					_ = peer.ReadyForQuery(wire.StatusFailedTransaction)
+					drainUntilTerminate(peer)
+				})
+			})
+			physical, err := connectPeer(t, srv, "")
+			if err != nil {
+				t.Fatalf("Connect: %v", err)
+			}
+			if _, err := physical.BeginTx(context.Background(), driver.TxOptions{}); err != nil {
+				t.Fatalf("BeginTx: %v", err)
+			}
+			prepared, err := physical.PrepareContext(context.Background(), CopyInBinary("t", "a"))
+			if err != nil {
+				t.Fatalf("PrepareContext: %v", err)
+			}
+			if _, err := prepared.(driver.StmtExecContext).ExecContext(context.Background(), legacyNamedValues(tc.args)); err == nil {
+				t.Fatal("typed binary COPY accepted a row that does not match its column")
+			}
+		})
+	}
+}
+
+// TestCopyInBinaryRejectsUnsupportedType proves a column without a binary
+// encoder fails at prepare, before any COPY byte is sent.
+func TestCopyInBinaryRejectsUnsupportedType(t *testing.T) {
+	srv := testpeer.Start(t, func(peer *testpeer.Conn) {
+		if !startupOK(peer) {
+			return
+		}
+		if !peerBegin(peer) {
+			return
+		}
+		if _, ok := expectMessage(peer, wire.MsgQuery); !ok {
+			return
+		}
+		columns, data := catalogResponse([]string{"a", "numeric", "-1"})
+		_ = peer.SendResult(columns, data, "SELECT 0", wire.StatusInTransaction)
+		drainUntilTerminate(peer)
+	})
+	physical, err := connectPeer(t, srv, "")
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	if _, err := physical.BeginTx(context.Background(), driver.TxOptions{}); err != nil {
+		t.Fatalf("BeginTx: %v", err)
+	}
+	_, err = physical.PrepareContext(context.Background(), CopyInBinary("t", "a"))
+	if err == nil || !strings.Contains(err.Error(), "no binary encoder") {
+		t.Fatalf("PrepareContext error = %v, want a missing encoder", err)
+	}
+}
+
+// TestCopyInBinaryRejectsTextResponse proves a typed statement never writes
+// binary rows into a text stream.
+func TestCopyInBinaryRejectsTextResponse(t *testing.T) {
+	srv := testpeer.Start(t, func(peer *testpeer.Conn) {
+		if !startupOK(peer) {
+			return
+		}
+		if !peerBegin(peer) {
+			return
+		}
+		if _, ok := expectMessage(peer, wire.MsgQuery); !ok {
+			return
+		}
+		columns, data := catalogResponse([]string{"a", pgTypeInt4, "4"})
+		_ = peer.SendResult(columns, data, "SELECT 0", wire.StatusInTransaction)
+		if _, ok := expectMessage(peer, wire.MsgQuery); !ok {
+			return
+		}
+		_ = peer.WriteMessage(wire.MsgCopyInResponse, wire.EncodeCopyInResponse(0, []int16{0}))
+		drainUntilTerminate(peer)
+	})
+	physical, err := connectPeer(t, srv, "")
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	if _, err := physical.BeginTx(context.Background(), driver.TxOptions{}); err != nil {
+		t.Fatalf("BeginTx: %v", err)
+	}
+	if _, err := physical.PrepareContext(context.Background(), CopyInBinary("t", "a")); !errors.Is(err, errCopyTypedFormat) {
+		t.Fatalf("PrepareContext error = %v, want %v", err, errCopyTypedFormat)
+	}
+}
+
+// TestCopyInBinaryEmptyStream proves a typed statement that imports no row still
+// sends the header and the trailer.
+func TestCopyInBinaryEmptyStream(t *testing.T) {
+	want := append(append([]byte{}, copyBinaryHeader...), 0xff, 0xff)
+	srv := testpeer.Start(t, func(peer *testpeer.Conn) {
+		if !startupOK(peer) {
+			return
+		}
+		if !peerBegin(peer) {
+			return
+		}
+		peerBinaryCatalog(peer, [][]string{{"a", pgTypeInt4, "4"}}, func(peer *testpeer.Conn) {
+			data, _, failed, err := readCopyStream(peer)
+			if err != nil {
+				peer.Errorf("copy stream: %v", err)
+				return
+			}
+			if failed != "" {
+				peer.Errorf("copy failed: %q", failed)
+				return
+			}
+			if !bytes.Equal([]byte(data), want) {
+				peer.Errorf("copy payload = %x, want %x", data, want)
+			}
+			_ = peer.CommandComplete("COPY 0")
+			_ = peer.ReadyForQuery(wire.StatusInTransaction)
+			drainUntilTerminate(peer)
+		})
+	})
+	physical, err := connectPeer(t, srv, "")
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	if _, err := physical.BeginTx(context.Background(), driver.TxOptions{}); err != nil {
+		t.Fatalf("BeginTx: %v", err)
+	}
+	prepared, err := physical.PrepareContext(context.Background(), CopyInBinary("t", "a"))
+	if err != nil {
+		t.Fatalf("PrepareContext: %v", err)
+	}
+	if _, err := prepared.(driver.StmtExecContext).ExecContext(context.Background(), nil); err != nil {
+		t.Fatalf("finish Exec: %v", err)
 	}
 }
 

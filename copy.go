@@ -25,6 +25,7 @@ var (
 	errCopyInClosed        = errors.New("kingbase: COPY statement is closed")
 	errCopyInProgress      = errors.New("kingbase: another COPY is already in progress on this connection")
 	errCopyOutsideTx       = errors.New("kingbase: COPY FROM STDIN is only supported inside a transaction")
+	errCopyTypedFormat     = errors.New("kingbase: typed binary COPY was answered with a text COPY response")
 	errCopyBinaryFormat    = errors.New("kingbase: row-framed CopyIn does not accept a binary COPY; use CopyInRawBinary and send the payload yourself")
 	errCopyOutNotSupported = errors.New("kingbase: COPY TO is not supported")
 	errCopyNoCompletion    = errors.New("kingbase: COPY response ended without a completion tag")
@@ -405,6 +406,12 @@ func (c *conn) prepareCopyIn(ctx context.Context, query string) (driver.Stmt, er
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	// A malformed typed-binary statement fails before anything is sent.
+	types, typed, err := c.copyBinaryKinds(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	raw := !typed && copyInIsRaw(query)
 	// The prepare context covers only handing the statement to the server; row
 	// contexts bound the stream, so no deadline or cancel watcher stays armed
 	// here.
@@ -414,9 +421,13 @@ func (c *conn) prepareCopyIn(ctx context.Context, query string) (driver.Stmt, er
 		c.retire()
 		return nil, uncertain(fmt.Errorf("kingbase: send COPY: %w", err))
 	}
-	raw := copyInIsRaw(query)
-	if err := c.awaitCopyInResponse(raw); err != nil {
+	format, err := c.awaitCopyInResponse(raw || typed)
+	if err != nil {
 		return nil, err
+	}
+	if typed && format != 1 {
+		c.retire()
+		return nil, errCopyTypedFormat
 	}
 	ci := &copyIn{
 		conn:     c,
@@ -424,6 +435,8 @@ func (c *conn) prepareCopyIn(ctx context.Context, query string) (driver.Stmt, er
 		done:     make(chan struct{}),
 		affected: -1,
 		raw:      raw,
+		typed:    typed,
+		kinds:    types,
 	}
 	c.setActiveCopy(ci)
 	go ci.readResult()
@@ -434,17 +447,17 @@ func (c *conn) prepareCopyIn(ctx context.Context, query string) (driver.Stmt, er
 // error is a definite outcome and keeps the connection usable; anything the
 // driver does not stream (COPY TO, binary COPY, protocol garbage) retires the
 // connection instead of leaving a half-consumed copy stream behind.
-func (c *conn) awaitCopyInResponse(raw bool) error {
+func (c *conn) awaitCopyInResponse(raw bool) (int8, error) {
 	for {
 		typ, payload, err := c.reader.ReadMessage()
 		if err != nil {
 			c.retire()
-			return uncertain(fmt.Errorf("kingbase: read COPY response: %w", err))
+			return 0, uncertain(fmt.Errorf("kingbase: read COPY response: %w", err))
 		}
 		if handled, err := c.handleAsync(typ, payload); handled {
 			if err != nil {
 				c.retire()
-				return uncertain(err)
+				return 0, uncertain(err)
 			}
 			continue
 		}
@@ -453,23 +466,90 @@ func (c *conn) awaitCopyInResponse(raw bool) error {
 			response, err := wire.DecodeCopyInResponse(payload)
 			if err != nil {
 				c.retire()
-				return uncertain(fmt.Errorf("kingbase: malformed CopyInResponse: %w", err))
+				return 0, uncertain(fmt.Errorf("kingbase: malformed CopyInResponse: %w", err))
 			}
 			if response.Format != 0 && !raw {
 				c.retire()
-				return errCopyBinaryFormat
+				return 0, errCopyBinaryFormat
 			}
-			return nil
+			return response.Format, nil
 		case wire.MsgCopyOutResponse:
 			c.retire()
-			return errCopyOutNotSupported
+			return 0, errCopyOutNotSupported
 		case wire.MsgErrorResponse:
-			return c.classifyCommandError(commandError(serverError(payload), c.drainToReady()))
+			return 0, c.classifyCommandError(commandError(serverError(payload), c.drainToReady()))
 		default:
 			c.retire()
-			return uncertain(fmt.Errorf("kingbase: unexpected message %q before COPY data", typ))
+			return 0, uncertain(fmt.Errorf("kingbase: unexpected message %q before COPY data", typ))
 		}
 	}
+}
+
+// copyBinaryKinds resolves a typed binary statement's target columns to their
+// storage types through the qualified catalog query, so a mode-specific mapping
+// is honoured instead of guessed.
+func (c *conn) copyBinaryKinds(ctx context.Context, query string) ([]copyKind, bool, error) {
+	relation, columns, marked, err := copyBinaryStatement(query)
+	if err != nil {
+		return nil, marked, err
+	}
+	if !marked {
+		return nil, false, nil
+	}
+	kinds, unsupported, err := c.copyBinaryColumnKinds(ctx, relation)
+	if err != nil {
+		return nil, true, err
+	}
+	resolved := make([]copyKind, 0, len(columns))
+	for _, column := range columns {
+		kind, ok := kinds[column]
+		if !ok {
+			if typname, known := unsupported[column]; known {
+				return nil, true, fmt.Errorf("kingbase: binary COPY column %q stores %s, which has no binary encoder", column, typname)
+			}
+			return nil, true, fmt.Errorf("kingbase: binary COPY column %q is not in relation %s", column, relation)
+		}
+		resolved = append(resolved, kind)
+	}
+	return resolved, true, nil
+}
+
+// copyBinaryColumnKinds reads the relation's storage types. A type without an
+// encoder is reported by name instead of failing silently.
+func (c *conn) copyBinaryColumnKinds(ctx context.Context, relation string) (map[string]copyKind, map[string]string, error) {
+	rows, err := c.querySimple(ctx, copyBinaryColumnQuery(relation))
+	if err != nil {
+		return nil, nil, fmt.Errorf("kingbase: resolve binary COPY columns: %w", err)
+	}
+	kinds := make(map[string]copyKind)
+	unsupported := make(map[string]string)
+	values := make([]driver.Value, 3)
+	for {
+		err := rows.Next(values)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			_ = rows.Close()
+			return nil, nil, fmt.Errorf("kingbase: read binary COPY columns: %w", err)
+		}
+		name := catalogString(values[0])
+		typname := catalogString(values[1])
+		typlen, err := catalogInt(values[2])
+		if err != nil {
+			_ = rows.Close()
+			return nil, nil, fmt.Errorf("kingbase: invalid length for binary COPY column %q: %v", name, err)
+		}
+		if kind, ok := copyKindForType(typname, typlen); ok {
+			kinds[name] = kind
+			continue
+		}
+		unsupported[name] = typname
+	}
+	if err := rows.Close(); err != nil {
+		return nil, nil, fmt.Errorf("kingbase: close binary COPY column query: %w", err)
+	}
+	return kinds, unsupported, nil
 }
 
 // copyIn is one COPY FROM STDIN stream. The completion read runs on its own
@@ -481,6 +561,9 @@ type copyIn struct {
 	buffer []byte
 	done   chan struct{}
 	raw    bool
+	typed  bool
+	kinds  []copyKind
+	header bool
 
 	mu       sync.Mutex
 	err      error
@@ -546,6 +629,9 @@ func (ci *copyIn) ExecContext(ctx context.Context, args []driver.NamedValue) (dr
 	ci.arm(ctx)
 	if len(args) == 0 {
 		return ci.finish()
+	}
+	if ci.typed {
+		return ci.execTyped(args)
 	}
 	if ci.raw {
 		return ci.execRaw(args)
@@ -625,6 +711,44 @@ func (ci *copyIn) execRaw(args []driver.NamedValue) (driver.Result, error) {
 	return driver.RowsAffected(0), nil
 }
 
+// execTyped writes one binary row for a statement built by CopyInBinary: the
+// file header once, then the row. A value that does not match its declared type
+// aborts the stream, so a partial row is never imported.
+func (ci *copyIn) execTyped(args []driver.NamedValue) (driver.Result, error) {
+	for _, arg := range args {
+		if arg.Name != "" {
+			err := errors.New("kingbase: named parameters are not supported by COPY")
+			ci.abort(err)
+			_ = ci.complete()
+			return nil, err
+		}
+	}
+	if !ci.header {
+		ci.buffer = append(ci.buffer, copyBinaryHeader...)
+		ci.header = true
+	}
+	next, err := appendCopyBinaryRow(ci.buffer, ci.kinds, args)
+	if err != nil {
+		ci.abort(err)
+		_ = ci.complete()
+		return nil, err
+	}
+	ci.buffer = next
+	if len(ci.buffer) > wire.MaxMessageSize {
+		err := errors.New("kingbase: COPY row exceeds the maximum message size")
+		ci.abort(err)
+		_ = ci.complete()
+		return nil, err
+	}
+	if len(ci.buffer) >= copyBufferSize {
+		if err := ci.flush(); err != nil {
+			return nil, ci.complete()
+		}
+	}
+	ci.disarm()
+	return driver.RowsAffected(0), nil
+}
+
 // Close flushes buffered rows and completes the import. Import failures are
 // reported here because a statement close is the last chance to surface them.
 func (ci *copyIn) Close() error {
@@ -658,6 +782,13 @@ func (ci *copyIn) shutdown() {
 // finish flushes, sends CopyDone and waits for the server's terminal state.
 func (ci *copyIn) finish() (driver.Result, error) {
 	ci.closed = true
+	if ci.typed {
+		if !ci.header {
+			ci.buffer = append(ci.buffer, copyBinaryHeader...)
+			ci.header = true
+		}
+		ci.buffer = appendCopyBinaryTrailer(ci.buffer)
+	}
 	if err := ci.flush(); err != nil {
 		return nil, ci.complete()
 	}
