@@ -1,6 +1,6 @@
 //go:build live
 
-package live
+package live_test
 
 import (
 	"context"

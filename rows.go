@@ -234,7 +234,7 @@ func (r *rows) Next(dest []driver.Value) error {
 		case wire.MsgRowDescription:
 			r.fail()
 			return uncertain(errUnexpectedRowDescription)
-		case wire.MsgCopyInResponse, wire.MsgCopyData, wire.MsgCopyDone:
+		case wire.MsgCopyInResponse, wire.MsgCopyOutResponse, wire.MsgCopyData, wire.MsgCopyDone:
 			r.fail()
 			return uncertain(errUnexpectedCopyResponse)
 		default:
@@ -313,7 +313,7 @@ func (r *rows) NextResultSet() error {
 			}
 			r.conn.endCommand()
 			return io.EOF
-		case wire.MsgCopyInResponse, wire.MsgCopyData, wire.MsgCopyDone:
+		case wire.MsgCopyInResponse, wire.MsgCopyOutResponse, wire.MsgCopyData, wire.MsgCopyDone:
 			r.fail()
 			return uncertain(errUnexpectedCopyResponse)
 		default:

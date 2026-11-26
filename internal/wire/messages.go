@@ -372,6 +372,12 @@ func DecodeCommandComplete(payload []byte) (string, error) {
 	return tag, d.end()
 }
 
+// DecodeCopyOutResponse decodes a CopyOutResponse message. Its layout matches
+// CopyInResponse: one overall format byte followed by the per-column formats.
+func DecodeCopyOutResponse(payload []byte) (CopyInResponse, error) {
+	return DecodeCopyInResponse(payload)
+}
+
 // DecodeCopyInResponse decodes a CopyInResponse message.
 func DecodeCopyInResponse(payload []byte) (CopyInResponse, error) {
 	d := decoder{data: payload}

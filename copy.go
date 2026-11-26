@@ -5,6 +5,7 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"sync"
 	"time"
@@ -30,6 +31,18 @@ var (
 	// errCopyThroughExec reports a COPY statement sent through Query/Exec,
 	// where the driver has no copy stream to hand the server's data to.
 	errCopyThroughExec = errors.New("kingbase: COPY statements are not supported through Query/Exec; use CopyIn on a transaction and Exec its rows")
+	// errCopyOutThroughExec reports a COPY TO STDOUT statement sent through
+	// Exec, where its payload would be discarded.
+	errCopyOutThroughExec = errors.New("kingbase: COPY TO STDOUT must be read through Query, not Exec")
+	// errCopyOutWithArgs reports a COPY TO STDOUT statement carrying statement
+	// arguments; the COPY grammar has no placeholders, so this is a caller bug.
+	errCopyOutWithArgs = errors.New("kingbase: COPY TO STDOUT does not accept statement arguments")
+	// errCopyOutPrepared reports a prepared COPY TO STDOUT statement: the
+	// extended protocol cannot stream its payload back to the caller.
+	errCopyOutPrepared = errors.New("kingbase: COPY TO STDOUT cannot be prepared; run it through QueryContext on a connection")
+	// errCopyOutWithoutData reports a COPY that completed without sending a
+	// payload, such as a server-side COPY to a file the driver does not inspect.
+	errCopyOutWithoutData = errors.New("kingbase: COPY completed without returning data; server-side COPY TO a file is not supported")
 	// errUnexpectedCopyResponse reports a COPY response on a command the driver
 	// did not start a copy stream for, so the payload cannot be consumed.
 	errUnexpectedCopyResponse = errors.New("kingbase: unexpected COPY response")
@@ -87,10 +100,245 @@ func isCopyStatement(query string) bool {
 	return len(query) >= 4 && strings.EqualFold(query[:4], "COPY")
 }
 
+// isCopyOutStatement reports whether the statement streams server data to the
+// client (COPY ... TO STDOUT). The direction keyword is matched outside quoted
+// text, identifiers, comments and parenthesized subqueries, so a column named
+// "to" or a subquery returning 'STDOUT' never changes the answer.
+func isCopyOutStatement(query string) bool {
+	if !isCopyStatement(query) {
+		return false
+	}
+	tokens := sqlKeywords(query)
+	for i := 0; i+1 < len(tokens); i++ {
+		if tokens[i] == "to" {
+			return tokens[i+1] == "stdout"
+		}
+	}
+	return false
+}
+
+// sqlKeywords returns the lowercase unquoted keywords of a statement in order.
+// String literals, quoted identifiers, comments and dollar-quoted bodies are
+// skipped, so only real SQL keywords remain; words nested in parentheses are
+// left out because a subquery cannot change the COPY direction.
+func sqlKeywords(query string) []string {
+	var keywords []string
+	depth := 0
+	for i := 0; i < len(query); {
+		c := query[i]
+		switch {
+		case c == '-' && i+1 < len(query) && query[i+1] == '-':
+			if end := strings.IndexByte(query[i:], '\n'); end >= 0 {
+				i += end + 1
+			} else {
+				i = len(query)
+			}
+		case c == '/' && i+1 < len(query) && query[i+1] == '*':
+			i = skipBlockComment(query, i)
+		case c == '\'' || c == '"':
+			i = skipQuoted(query, i, false)
+		case c == '$':
+			if end, ok := dollarQuoteAt(query, i); ok {
+				i = end
+			} else {
+				i++
+			}
+		case c == '(':
+			depth++
+			i++
+		case c == ')':
+			if depth > 0 {
+				depth--
+			}
+			i++
+		case isIdentifierStart(c):
+			end := identifierEnd(query, i)
+			if depth == 0 {
+				keywords = append(keywords, strings.ToLower(query[i:end]))
+			}
+			i = end
+		default:
+			i++
+		}
+	}
+	return keywords
+}
+
+// queryCopyOut runs 'COPY ... TO STDOUT' and returns the server payload as a
+// chunk stream. Each Next call yields one protocol chunk; concatenating the
+// chunks yields the COPY payload, which is text or binary according to the
+// statement.
+func (c *conn) queryCopyOut(ctx context.Context, query string) (driver.Rows, error) {
+	if err := c.beginCommand(ctx); err != nil {
+		return nil, err
+	}
+	c.commandSent = true
+	if err := c.writer.WriteMessage(wire.MsgQuery, wire.EncodeQuery(query)); err != nil {
+		c.retire()
+		return nil, fmt.Errorf("kingbase: send query: %w", err)
+	}
+	for {
+		typ, payload, err := c.reader.ReadMessage()
+		if err != nil {
+			c.retire()
+			return nil, fmt.Errorf("kingbase: read COPY response: %w", err)
+		}
+		if handled, err := c.handleAsync(typ, payload); handled {
+			if err != nil {
+				c.retire()
+				return nil, err
+			}
+			continue
+		}
+		switch typ {
+		case wire.MsgCopyOutResponse:
+			response, err := wire.DecodeCopyOutResponse(payload)
+			if err != nil {
+				c.retire()
+				return nil, uncertain(fmt.Errorf("kingbase: malformed CopyOutResponse: %w", err))
+			}
+			return &copyOutRows{conn: c, format: response.Format}, nil
+		case wire.MsgErrorResponse:
+			return nil, commandError(serverError(payload), c.drainToReady())
+		case wire.MsgCommandComplete, wire.MsgEmptyQueryResponse:
+			// A COPY that wrote to a server-side file sends no payload; report
+			// that instead of inventing an empty stream.
+			if err := c.drainToReady(); err != nil {
+				return nil, err
+			}
+			return nil, errCopyOutWithoutData
+		default:
+			c.retire()
+			return nil, uncertain(fmt.Errorf("kingbase: unexpected message %q before a COPY stream", typ))
+		}
+	}
+}
+
+// copyOutRows streams the payload of one COPY TO STDOUT response. Chunk
+// boundaries follow protocol messages, not rows or lines, so callers must treat
+// the concatenation as the authoritative payload.
+type copyOutRows struct {
+	conn   *conn
+	format int8
+	ready  bool
+	closed bool
+}
+
+var _ driver.Rows = (*copyOutRows)(nil)
+
+// Columns reports the single chunk column of the COPY stream.
+func (r *copyOutRows) Columns() []string { return []string{"copy"} }
+
+// Next returns the next protocol chunk as []byte. The slice is owned by the
+// caller and stays valid after the call.
+func (r *copyOutRows) Next(dest []driver.Value) error {
+	if len(dest) != 1 {
+		return fmt.Errorf("kingbase: COPY stream has 1 column, caller provided %d values", len(dest))
+	}
+	for {
+		if r.ready {
+			return io.EOF
+		}
+		typ, payload, err := r.conn.reader.ReadMessage()
+		if err != nil {
+			r.fail()
+			return uncertain(fmt.Errorf("kingbase: read COPY data: %w", err))
+		}
+		if handled, err := r.conn.handleAsync(typ, payload); handled {
+			if err != nil {
+				r.fail()
+				return uncertain(err)
+			}
+			continue
+		}
+		switch typ {
+		case wire.MsgCopyData:
+			dest[0] = payload
+			return nil
+		case wire.MsgCopyDone, wire.MsgCommandComplete:
+			continue
+		case wire.MsgReadyForQuery:
+			r.ready = true
+			if err := r.conn.setTxStatus(payload); err != nil {
+				r.fail()
+				return uncertain(err)
+			}
+			r.conn.endCommand()
+			return io.EOF
+		case wire.MsgErrorResponse:
+			serverErr := serverError(payload)
+			drainErr := r.conn.drainToReady()
+			r.ready = drainErr == nil
+			if drainErr != nil {
+				r.fail()
+			}
+			return commandError(serverErr, drainErr)
+		default:
+			r.fail()
+			return uncertain(fmt.Errorf("kingbase: unexpected message %q during COPY OUT", typ))
+		}
+	}
+}
+
+// Close drains the rest of the COPY payload and the terminal ReadyForQuery, so
+// an abandoned stream still leaves a reusable connection.
+func (r *copyOutRows) Close() error {
+	if r.closed {
+		return nil
+	}
+	r.closed = true
+	if r.ready {
+		return nil
+	}
+	var firstErr error
+	for {
+		typ, payload, err := r.conn.reader.ReadMessage()
+		if err != nil {
+			r.fail()
+			return uncertain(fmt.Errorf("kingbase: drain COPY stream: %w", err))
+		}
+		if handled, err := r.conn.handleAsync(typ, payload); handled {
+			if err != nil {
+				r.fail()
+				return uncertain(err)
+			}
+			continue
+		}
+		switch typ {
+		case wire.MsgCopyData, wire.MsgCopyDone, wire.MsgCommandComplete, wire.MsgEmptyQueryResponse:
+			continue
+		case wire.MsgErrorResponse:
+			if firstErr == nil {
+				firstErr = serverError(payload)
+			}
+		case wire.MsgReadyForQuery:
+			r.ready = true
+			if err := r.conn.setTxStatus(payload); err != nil {
+				r.fail()
+				return uncertain(err)
+			}
+			r.conn.endCommand()
+			return firstErr
+		default:
+			r.fail()
+			return uncertain(fmt.Errorf("kingbase: unexpected message %q while draining COPY OUT", typ))
+		}
+	}
+}
+
+// fail retires the connection after a protocol or I/O failure.
+func (r *copyOutRows) fail() {
+	r.closed = true
+	r.conn.retire()
+}
+
 // prepareCopyIn starts a COPY FROM STDIN stream on a transaction-pinned
 // connection. The COPY statement is sent immediately; the returned statement
 // accepts rows until Exec is called without values or Close.
 func (c *conn) prepareCopyIn(ctx context.Context, query string) (driver.Stmt, error) {
+	if isCopyOutStatement(query) {
+		return nil, errCopyOutPrepared
+	}
 	if c.inNotice.Load() > 0 {
 		return nil, errNoticeReentry
 	}

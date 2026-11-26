@@ -27,7 +27,17 @@ var (
 // protocol.
 func (c *conn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
 	if isCopyStatement(query) {
-		return nil, errCopyThroughExec
+		if !isCopyOutStatement(query) {
+			return nil, errCopyThroughExec
+		}
+		if len(args) > 0 {
+			return nil, errCopyOutWithArgs
+		}
+		rows, err := c.queryCopyOut(ctx, query)
+		if err != nil {
+			return nil, c.classifyCommandError(err)
+		}
+		return rows, nil
 	}
 	plan, err := c.rewriteParameters(query)
 	if err != nil {
@@ -56,6 +66,9 @@ func (c *conn) QueryContext(ctx context.Context, query string, args []driver.Nam
 // ExecContext runs a statement and returns its completion result.
 func (c *conn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
 	if isCopyStatement(query) {
+		if isCopyOutStatement(query) {
+			return nil, errCopyOutThroughExec
+		}
 		return nil, errCopyThroughExec
 	}
 	args, outputs := extractOutArguments(args)
@@ -382,7 +395,7 @@ func (c *conn) awaitFirstResult() ([]wire.ColumnDescription, bool, error) {
 		case wire.MsgErrorResponse:
 			serverErr := serverError(payload)
 			return nil, false, commandError(serverErr, c.drainToReady())
-		case wire.MsgCopyInResponse, wire.MsgCopyData, wire.MsgCopyDone:
+		case wire.MsgCopyInResponse, wire.MsgCopyOutResponse, wire.MsgCopyData, wire.MsgCopyDone:
 			c.retire()
 			return nil, false, errUnexpectedCopyResponse
 		default:
@@ -503,7 +516,7 @@ func (c *conn) awaitExtendedDescription() ([]wire.ColumnDescription, bool, error
 		case wire.MsgErrorResponse:
 			serverErr := serverError(payload)
 			return nil, true, commandError(serverErr, c.drainToReady())
-		case wire.MsgCopyInResponse, wire.MsgCopyData, wire.MsgCopyDone:
+		case wire.MsgCopyInResponse, wire.MsgCopyOutResponse, wire.MsgCopyData, wire.MsgCopyDone:
 			c.retire()
 			return nil, false, errUnexpectedCopyResponse
 		default:
@@ -605,7 +618,7 @@ func (c *conn) collectCommandResult(capture bool) (driver.Result, error) {
 				result.lastInsertIDErr = fmt.Errorf("%w: INSERT returned no generated ID", ErrLastInsertIDUnavailable)
 			}
 			return result, nil
-		case wire.MsgCopyInResponse, wire.MsgCopyData, wire.MsgCopyDone:
+		case wire.MsgCopyInResponse, wire.MsgCopyOutResponse, wire.MsgCopyData, wire.MsgCopyDone:
 			c.retire()
 			return nil, errUnexpectedCopyResponse
 		default:
@@ -652,7 +665,7 @@ func (c *conn) drainToReady() error {
 		case wire.MsgRowDescription, wire.MsgDataRow:
 			// Additional result sets are legal; drain them instead of retiring.
 			continue
-		case wire.MsgCopyInResponse, wire.MsgCopyData, wire.MsgCopyDone:
+		case wire.MsgCopyInResponse, wire.MsgCopyOutResponse, wire.MsgCopyData, wire.MsgCopyDone:
 			c.retire()
 			if firstErr == nil {
 				firstErr = errUnexpectedCopyResponse
@@ -701,6 +714,9 @@ func (c *conn) drainCurrentResult() (bool, error) {
 		case wire.MsgRowDescription:
 			c.retire()
 			return false, errUnexpectedRowDescription
+		case wire.MsgCopyInResponse, wire.MsgCopyOutResponse, wire.MsgCopyData, wire.MsgCopyDone:
+			c.retire()
+			return false, errUnexpectedCopyResponse
 		default:
 			c.retire()
 			return false, fmt.Errorf("kingbase: unexpected message %q while draining rows", typ)

@@ -6,6 +6,7 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -214,15 +215,342 @@ func TestCopyInRequiresTransaction(t *testing.T) {
 	_ = physical.Close()
 }
 
-func TestCopyInRejectsCopyOut(t *testing.T) {
+func TestCopyOutCannotBePrepared(t *testing.T) {
 	srv := testpeer.Start(t, func(peer *testpeer.Conn) {
 		if !startupOK(peer) {
 			return
 		}
-		if !peerBegin(peer) {
+		// The rejected Prepare must not touch the wire; the next message is the
+		// probe statement that proves the session is still usable.
+		if _, ok := expectMessage(peer, wire.MsgQuery); !ok {
+			return
+		}
+		if err := peer.CommandComplete("SELECT 1"); err != nil {
+			peer.Errorf("CommandComplete: %v", err)
+			return
+		}
+		if err := peer.ReadyForQuery(wire.StatusIdle); err != nil {
+			peer.Errorf("ReadyForQuery: %v", err)
+			return
+		}
+		waitTerminate(peer)
+	})
+	physical, err := connectPeer(t, srv, "")
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	if _, err := physical.PrepareContext(context.Background(), "COPY t TO STDOUT"); !errors.Is(err, errCopyOutPrepared) {
+		t.Fatalf("Prepare(COPY TO STDOUT) error = %v, want %v", err, errCopyOutPrepared)
+	}
+	if physical.netConn == nil {
+		t.Fatal("a rejected COPY TO statement retired the connection")
+	}
+	if _, err := physical.ExecContext(context.Background(), "SELECT 1", nil); err != nil {
+		t.Fatalf("ExecContext(SELECT 1) after the rejection: %v", err)
+	}
+}
+
+// TestCopyOutStatementDetection pins which statements the driver treats as a
+// COPY TO STDOUT stream, including the shapes that must stay ordinary SQL.
+func TestCopyOutStatementDetection(t *testing.T) {
+	cases := []struct {
+		query string
+		want  bool
+	}{
+		{"COPY t TO STDOUT", true},
+		{"copy t to stdout", true},
+		{"COPY t (a, b) TO STDOUT WITH (FORMAT binary)", true},
+		{"COPY (SELECT 1) TO STDOUT", true},
+		{"COPY (SELECT 'TO STDOUT') TO STDOUT", true},
+		{"COPY t FROM STDIN", false},
+		{"COPY t TO '/tmp/out.csv'", false},
+		{"COPY t TO PROGRAM 'gzip'", false},
+		{"COPY t FROM '/tmp/in.csv'", false},
+		{"SELECT * FROM t", false},
+		{"/* COPY t TO STDOUT */ SELECT 1", false},
+		{"COPY t (a) FROM STDIN; SELECT 1", false},
+	}
+	for _, tc := range cases {
+		if got := isCopyOutStatement(tc.query); got != tc.want {
+			t.Errorf("isCopyOutStatement(%q) = %t, want %t", tc.query, got, tc.want)
+		}
+	}
+	if !isCopyOutStatement("COPY t (to, other) TO STDOUT") {
+		t.Error("a column named to inside the column list was mistaken for the direction keyword")
+	}
+	if isCopyOutStatement(`COPY "to" FROM STDIN`) {
+		t.Error("a quoted identifier named to changed the direction")
+	}
+}
+
+// peerCopyOutChunks answers one COPY TO STDOUT statement with the given chunks,
+// then leaves the session idle and answers one probe query.
+func peerCopyOutChunks(peer *testpeer.Conn, format int8, chunks ...string) bool {
+	if _, ok := expectMessage(peer, wire.MsgQuery); !ok {
+		return false
+	}
+	if err := peer.WriteMessage(wire.MsgCopyOutResponse, wire.EncodeCopyInResponse(format, nil)); err != nil {
+		peer.Errorf("CopyOutResponse: %v", err)
+		return false
+	}
+	for _, chunk := range chunks {
+		if err := peer.WriteMessage(wire.MsgCopyData, wire.EncodeCopyData([]byte(chunk))); err != nil {
+			peer.Errorf("CopyData: %v", err)
+			return false
+		}
+	}
+	if err := peer.WriteMessage(wire.MsgCopyDone, nil); err != nil {
+		peer.Errorf("CopyDone: %v", err)
+		return false
+	}
+	if err := peer.CommandComplete("COPY 2"); err != nil {
+		peer.Errorf("CommandComplete: %v", err)
+		return false
+	}
+	return peer.ReadyForQuery(wire.StatusIdle) == nil
+}
+
+// peerProbeQuery answers one ordinary query, so a test can prove the session is
+// reusable after a COPY stream.
+func peerProbeQuery(peer *testpeer.Conn) bool {
+	if _, ok := expectMessage(peer, wire.MsgQuery); !ok {
+		return false
+	}
+	if err := peer.RowDescription([]wire.ColumnDescription{
+		{Name: "?column?", TypeOID: 23, TypeLen: 4, TypeMod: -1, Format: 0},
+	}); err != nil {
+		peer.Errorf("RowDescription: %v", err)
+		return false
+	}
+	if err := peer.DataRow([][]byte{[]byte("1")}); err != nil {
+		peer.Errorf("DataRow: %v", err)
+		return false
+	}
+	if err := peer.CommandComplete("SELECT 1"); err != nil {
+		peer.Errorf("CommandComplete: %v", err)
+		return false
+	}
+	return peer.ReadyForQuery(wire.StatusIdle) == nil
+}
+
+// TestCopyOutStreamsChunks proves COPY TO STDOUT surfaces the server payload as
+// protocol chunks, in text and binary form, and ends on the completion tag.
+func TestCopyOutStreamsChunks(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		format  int8
+		chunks  []string
+		payload string
+	}{
+		{name: "text", format: 0, chunks: []string{"1\n", "2\n"}, payload: "1\n2\n"},
+		{name: "binary", format: 1, chunks: []string{"PGCOPY\n", "\xff\r\n"}, payload: "PGCOPY\n\xff\r\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := testpeer.Start(t, func(peer *testpeer.Conn) {
+				if !startupOK(peer) {
+					return
+				}
+				if !peerCopyOutChunks(peer, tc.format, tc.chunks...) {
+					return
+				}
+				if !peerProbeQuery(peer) {
+					return
+				}
+				waitTerminate(peer)
+			})
+			physical, err := connectPeer(t, srv, "")
+			if err != nil {
+				t.Fatalf("Connect: %v", err)
+			}
+			rows, err := physical.QueryContext(context.Background(), "COPY (SELECT 1) TO STDOUT", nil)
+			if err != nil {
+				t.Fatalf("QueryContext: %v", err)
+			}
+			if names := rows.Columns(); len(names) != 1 || names[0] != "copy" {
+				t.Fatalf("Columns() = %v, want [copy]", names)
+			}
+			dest := make([]driver.Value, 1)
+			var collected strings.Builder
+			for {
+				err := rows.Next(dest)
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				if err != nil {
+					t.Fatalf("Next: %v", err)
+				}
+				chunk, ok := dest[0].([]byte)
+				if !ok {
+					t.Fatalf("chunk type = %T, want []byte", dest[0])
+				}
+				collected.Write(chunk)
+			}
+			if got := collected.String(); got != tc.payload {
+				t.Errorf("payload = %q, want %q", got, tc.payload)
+			}
+			if err := rows.Close(); err != nil {
+				t.Fatalf("Close: %v", err)
+			}
+			probe, err := physical.QueryContext(context.Background(), "SELECT 1", nil)
+			if err != nil {
+				t.Fatalf("QueryContext after COPY: %v", err)
+			}
+			if err := probe.Next(dest); err != nil {
+				t.Fatalf("probe Next: %v", err)
+			}
+			if dest[0] != int64(1) {
+				t.Errorf("probe value = %v, want 1", dest[0])
+			}
+			if err := probe.Close(); err != nil {
+				t.Fatalf("probe Close: %v", err)
+			}
+		})
+	}
+}
+
+// TestCopyOutCloseDrainsStream proves an abandoned COPY stream is drained to
+// ReadyForQuery, so the physical connection stays reusable.
+func TestCopyOutCloseDrainsStream(t *testing.T) {
+	srv := testpeer.Start(t, func(peer *testpeer.Conn) {
+		if !startupOK(peer) {
+			return
+		}
+		if !peerCopyOutChunks(peer, 0, "1\n", "2\n", "3\n") {
+			return
+		}
+		if !peerProbeQuery(peer) {
+			return
+		}
+		waitTerminate(peer)
+	})
+	physical, err := connectPeer(t, srv, "")
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	rows, err := physical.QueryContext(context.Background(), "COPY t TO STDOUT", nil)
+	if err != nil {
+		t.Fatalf("QueryContext: %v", err)
+	}
+	dest := make([]driver.Value, 1)
+	if err := rows.Next(dest); err != nil {
+		t.Fatalf("Next: %v", err)
+	}
+	if string(dest[0].([]byte)) != "1\n" {
+		t.Fatalf("first chunk = %q, want 1\\n", dest[0])
+	}
+	if err := rows.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if physical.netConn == nil {
+		t.Fatal("closing a COPY stream retired the connection")
+	}
+	probe, err := physical.QueryContext(context.Background(), "SELECT 1", nil)
+	if err != nil {
+		t.Fatalf("QueryContext after drained close: %v", err)
+	}
+	if err := probe.Next(dest); err != nil {
+		t.Fatalf("probe Next: %v", err)
+	}
+	if dest[0] != int64(1) {
+		t.Errorf("probe value = %v, want 1", dest[0])
+	}
+	if err := probe.Close(); err != nil {
+		t.Fatalf("probe Close: %v", err)
+	}
+}
+
+// TestCopyOutServerError proves a server error in the middle of a COPY stream is
+// reported with its SQLSTATE and still leaves a usable session.
+func TestCopyOutServerError(t *testing.T) {
+	srv := testpeer.Start(t, func(peer *testpeer.Conn) {
+		if !startupOK(peer) {
 			return
 		}
 		if _, ok := expectMessage(peer, wire.MsgQuery); !ok {
+			return
+		}
+		if err := peer.WriteMessage(wire.MsgCopyOutResponse, wire.EncodeCopyInResponse(0, nil)); err != nil {
+			peer.Errorf("CopyOutResponse: %v", err)
+			return
+		}
+		if err := peer.WriteMessage(wire.MsgCopyData, wire.EncodeCopyData([]byte("1\n"))); err != nil {
+			peer.Errorf("CopyData: %v", err)
+			return
+		}
+		if err := peer.ErrorResponse(
+			wire.ErrorField{Code: wire.ErrorSeverity, Value: "ERROR"},
+			wire.ErrorField{Code: wire.ErrorCode, Value: "57014"},
+			wire.ErrorField{Code: wire.ErrorMessage, Value: "canceling statement due to user request"},
+		); err != nil {
+			peer.Errorf("ErrorResponse: %v", err)
+			return
+		}
+		if err := peer.ReadyForQuery(wire.StatusIdle); err != nil {
+			peer.Errorf("ReadyForQuery: %v", err)
+			return
+		}
+		if !peerProbeQuery(peer) {
+			return
+		}
+		waitTerminate(peer)
+	})
+	physical, err := connectPeer(t, srv, "")
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	rows, err := physical.QueryContext(context.Background(), "COPY t TO STDOUT", nil)
+	if err != nil {
+		t.Fatalf("QueryContext: %v", err)
+	}
+	dest := make([]driver.Value, 1)
+	if err := rows.Next(dest); err != nil {
+		t.Fatalf("first Next: %v", err)
+	}
+	err = rows.Next(dest)
+	if err == nil {
+		t.Fatal("Next after a server error returned a chunk")
+	}
+	var serverErr *Error
+	if !errors.As(err, &serverErr) {
+		t.Fatalf("error = %v, want *Error", err)
+	}
+	if serverErr.Message == "" {
+		t.Error("server error lost its message")
+	}
+	if err := rows.Close(); err != nil {
+		t.Fatalf("Close after server error: %v", err)
+	}
+	probe, err := physical.QueryContext(context.Background(), "SELECT 1", nil)
+	if err != nil {
+		t.Fatalf("QueryContext after the COPY error: %v", err)
+	}
+	if err := probe.Next(dest); err != nil {
+		t.Fatalf("probe Next: %v", err)
+	}
+	if err := probe.Close(); err != nil {
+		t.Fatalf("probe Close: %v", err)
+	}
+}
+
+// TestCopyOutRequiresFirstStatement pins the boundary: a COPY TO STDOUT that is
+// not the first statement of a multi-statement query is rejected, because the
+// driver cannot stream it back after a result set.
+func TestCopyOutRequiresFirstStatement(t *testing.T) {
+	srv := testpeer.Start(t, func(peer *testpeer.Conn) {
+		if !startupOK(peer) {
+			return
+		}
+		if _, ok := expectMessage(peer, wire.MsgQuery); !ok {
+			return
+		}
+		if err := peer.RowDescription([]wire.ColumnDescription{
+			{Name: "?column?", TypeOID: 23, TypeLen: 4, TypeMod: -1, Format: 0},
+		}); err != nil {
+			peer.Errorf("RowDescription: %v", err)
+			return
+		}
+		if err := peer.DataRow([][]byte{[]byte("1")}); err != nil {
+			peer.Errorf("DataRow: %v", err)
 			return
 		}
 		if err := peer.WriteMessage(wire.MsgCopyOutResponse, wire.EncodeCopyInResponse(0, nil)); err != nil {
@@ -235,14 +563,27 @@ func TestCopyInRejectsCopyOut(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Connect: %v", err)
 	}
-	if _, err := physical.BeginTx(context.Background(), driver.TxOptions{}); err != nil {
-		t.Fatalf("BeginTx: %v", err)
+	rows, err := physical.QueryContext(context.Background(), "SELECT 1; COPY t TO STDOUT", nil)
+	if err != nil {
+		t.Fatalf("QueryContext: %v", err)
 	}
-	if _, err := physical.PrepareContext(context.Background(), "COPY t TO STDOUT"); !errors.Is(err, errCopyOutNotSupported) {
-		t.Fatalf("Prepare error = %v, want %v", err, errCopyOutNotSupported)
+	dest := make([]driver.Value, 1)
+	if err := rows.Next(dest); err != nil {
+		t.Fatalf("first result Next: %v", err)
+	}
+	next, ok := rows.(interface{ NextResultSet() error })
+	if !ok {
+		t.Fatalf("rows type %T has no NextResultSet", rows)
+	}
+	err = next.NextResultSet()
+	if err == nil {
+		t.Fatal("a COPY stream inside a multi-statement query was accepted")
+	}
+	if !errors.Is(err, errUnexpectedCopyResponse) {
+		t.Fatalf("error = %v, want %v", err, errUnexpectedCopyResponse)
 	}
 	if physical.netConn != nil {
-		t.Error("connection was not retired after a COPY TO response")
+		t.Error("connection was not retired after the unexpected COPY response")
 	}
 }
 
@@ -286,7 +627,7 @@ func TestCopyStatementThroughQueryExecRequiresHelper(t *testing.T) {
 	for _, query := range []string{
 		"COPY t FROM STDIN",
 		"  copy t (a) from stdin",
-		"COPY t TO STDOUT",
+		"COPY t FROM '/tmp/in.csv'",
 	} {
 		if _, err := physical.ExecContext(context.Background(), query, nil); !errors.Is(err, errCopyThroughExec) {
 			t.Fatalf("ExecContext(%q) error = %v, want %v", query, err, errCopyThroughExec)
@@ -294,6 +635,9 @@ func TestCopyStatementThroughQueryExecRequiresHelper(t *testing.T) {
 		if _, err := physical.QueryContext(context.Background(), query, nil); !errors.Is(err, errCopyThroughExec) {
 			t.Fatalf("QueryContext(%q) error = %v, want %v", query, err, errCopyThroughExec)
 		}
+	}
+	if _, err := physical.ExecContext(context.Background(), "COPY t TO STDOUT", nil); !errors.Is(err, errCopyOutThroughExec) {
+		t.Fatalf("ExecContext(COPY t TO STDOUT) error = %v, want %v", err, errCopyOutThroughExec)
 	}
 	if physical.netConn == nil {
 		t.Fatal("a rejected COPY statement retired the connection")
