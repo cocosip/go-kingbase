@@ -38,7 +38,7 @@ promise parity.
 | Internal connection diagnostics | replace | `kingbase.ConnectionMetadata(*sql.Conn)` returns `ServerMetadata`; access it on a pinned `sql.Conn`. |
 | Server notices / async messages | keep | `Config.NoticeHandler` receives decoded notices; `kingbase.NewListener` owns the LISTEN/NOTIFY connection. Both are reachable without internal packages. |
 | COPY OUT | replace | F-706/T-057 shipped: `COPY ... TO STDOUT` through `QueryContext`, see the row above. |
-| Binary COPY input | replace | Raw form shipped (F-707/T-058): `CopyInRawBinary` plus `Exec` payload chunks forwards the bytes unchanged; typed binary encoding from Go values (F-705) stays deferred. |
+| Binary COPY input | replace | Two forms shipped: `CopyInBinary(table, columns...)` encodes Go values using the storage type the catalog reports (F-705/T-056), and `CopyInRawBinary` forwards an already encoded payload chunk by chunk (F-707/T-058). |
 | Native MySQL backend | defer | M5 conditional; no automatic transport selection or downgrade. |
 
 ## Standard value boundaries

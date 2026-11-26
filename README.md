@@ -27,7 +27,7 @@ them without a documentation edit. Two limits stay explicit: the deployment
 enables only `scram-sha-256` authentication, and live TLS acceptance (V8) is
 deferred by operator decision because it offers no TLS listener — the TLS trust
 policy is implemented and covered offline, with no plaintext fallback. The native
-MySQL transport, V8R6, binary COPY *input* and extra auth extensions remain out of scope.
+MySQL transport, V8R6, GSS/SSPI and live TLS acceptance remain out of scope.
 The specification, feature matrix and delivery plan are the source of truth for
 scope and acceptance:
 
@@ -53,6 +53,11 @@ scope and acceptance:
   chunks to concatenate (text or binary, payload opaque). `Exec`, prepared
   statements, arguments, a COPY that is not the first statement and
   `COPY ... TO <file>` fail closed.
+- `COPY ... FROM STDIN WITH (FORMAT binary)` has two shipped forms: `CopyInBinary`
+  takes column names and encodes Go values using the storage type the catalog
+  reports (so a mode that stores `real` as a double or a `date` in eight bytes is
+  handled), while `CopyInRawBinary` forwards an already encoded payload. A column
+  with no encoder fails at prepare and a value that does not fit aborts the stream.
 
 ## Development
 

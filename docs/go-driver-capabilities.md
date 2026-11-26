@@ -118,7 +118,7 @@ DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup excha
 | F-702 | CopyIn/CopyInSchema text import | P1 | both | Statement-string helpers; Tx.Prepare/Exec/flush/Close; identifiers, NULL/escaping, completion/trailing errors | done | done | accepted |
 | F-703 | LISTEN/NOTIFY | P2 | both | Async parsing; bounded 256-message queue, overflow gap/reconnect, no replay, nil gap marker | done | done | accepted |
 | F-704 | NOTICE/WARNING callbacks | P2 | both | Default discard; no stderr, same-connection reentrancy forbidden | done | done | accepted |
-| F-705 | Binary COPY import | P2 | both | Deferred from first PG release; future complete/abort/ownership contract and live acceptance | todo | pending | pending |
+| F-705 | Binary COPY import | P2 | both | `CopyInBinary(table, columns...)` resolves each target column's storage type through a qualified catalog query and encodes values in that representation (header once, per-row field count and lengths, trailer before CopyDone); a column with no encoder fails at prepare, a value that does not fit aborts with CopyFail | done | done | accepted |
 | F-706 | COPY output | P2 | both | `COPY ... TO STDOUT` through `QueryContext` returns one `copy` column of protocol chunks (text or binary, payload opaque, `KBCOPY` vendor header); `Exec`, prepared, argumented, multi-statement and server-side `COPY TO file` forms fail closed; early Close drains to ReadyForQuery | done | done | accepted |
 | F-707 | Raw COPY streams | P2 | both | `CopyInRaw`/`CopyInRawBinary` (+ schema variants) emit `COPY ... FROM STDIN WITH (FORMAT ...)`; an explicit FORMAT makes each Exec one payload chunk forwarded unchanged (caller owns framing and the vendor header), row-framed mode still rejects binary; no backup/CDC/cross-version promise | done | done | accepted |
 
@@ -292,6 +292,7 @@ under the scope limits recorded in the [live ledger](go-driver-live-profile.md#a
 | F-1104 | `TestLiveCrossModeConcurrency` (two DSNs, `-race`, 8 workers per pool) | all four pairs run (pg+oracle, pg+mysql, mysql+sqlserver) |
 | F-706 | `TestLiveCopyOut` (chunk stream, `KBCOPY` binary header, error recovery, `Exec` rejection) | all four |
 | F-707 | `TestLiveCopyInRawRoundTrip` (COPY OUT payload re-imported verbatim, text and binary, malformed payload aborts) | all four |
+| F-705 | `TestLiveCopyInBinaryTyped` (typed rows read back per column, NULL row, prepare-time rejection, out-of-range abort) | all four |
 | F-106 | `TestLiveMultiHostFailover` (unresolvable first candidate, all-failing aggregate) | all four; `target_session_attrs` read-write/read-only stay offline (no replica to distinguish) |
 | F-1105 | `TestLivePerformanceBaseline` (`KINGBASE_TEST_PERF=1`, log-only) | all four |
 
@@ -301,5 +302,5 @@ Live states that stay pending for this profile, with the reason:
 |---|---|
 | F-801, F-803 (cleartext/MD5, SM3) | not enabled by `sys_hba.conf`; implemented and replayed offline |
 | F-804, F-805, F-243 (TLS) | no TLS listener; deferred by O8 |
-| F-705 (typed binary import), F-806 (GSS/SSPI) | formally deferred features, not part of the initial release |
+| F-806 (GSS/SSPI) | formally deferred feature: needs a Kerberos-enabled deployment the profile does not have |
 | F-241–F-249 (native MySQL) | conditional M5 scope; nothing is claimed from PG-wire evidence |
