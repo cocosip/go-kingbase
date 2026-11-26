@@ -217,6 +217,33 @@ Live TLS acceptance (V8, and the live half of F-804/F-805) is deferred by operat
 | T-061–T-068 (M5) | Native MySQL backend: the deployment exposes four PG-wire listeners only (V12), so the native protocol cannot be exercised and no native manifest can be satisfied; V15 is out of scope | revisit with a confirmed native endpoint family, then implement T-061–T-068 and record a fresh manifest |
 | V8 live acceptance | The reference deployment has no TLS listener; the operator deferred TLS work for this phase (O8) | revisit when a TLS-enabled deployment is provided, then run the V8 matrix and the F-804/F-805 live proofs |
 
+### 8.1 Verification environment availability (2026-11-26)
+
+The only environment available for this phase is the single operator deployment recorded in
+[section 9](#9-live-acceptance-record): PG wire, one host, one login, `scram-sha-256` only, no TLS
+listener and no replica. It cannot be extended, re-deployed or reconfigured for this phase, so the
+proofs below have no reachable environment. They stay in their recorded `pending` states for the
+reason named here — they are **not** moved to `deferred`, no acceptance is claimed for them, and no
+in-scope task is closed by this record.
+
+| Missing environment | Blocked proof | Recorded state |
+|---|---|---|
+| TLS-enabled listener | V8 matrix and the live halves of F-804/F-805/F-243 | pending (O8); TLS policy and its trust/material suite stay offline-proven |
+| `sys_hba.conf` permitting cleartext/MD5/SM3 | live halves of F-801 and F-803 (V7 outside the enabled method set) | pending; both transcripts are replayed offline |
+| native MySQL endpoint family | F-241–F-249 and V12/V15 (M5) | pending (O6) |
+| Kerberos/SSPI infrastructure | F-806 (T-059), which also needs a dependency decision | deferred (section 8) |
+| replica or standby instance | live proof for `target_session_attrs=read-write\|read-only`; endpoint-list fallback is live-proven | pending; both target attributes are covered offline |
+| V9-A-* and V9-S-* packaging deployments | those profile rows in [matrix section 17](go-driver-capabilities.md#17-release-profiles-and-evidence-records) | pending (`TBD`); the operator profile does not stand in for them |
+| V8R6 build | V11/V13 | out of this release's scope, never inherited from V9 |
+| a `-race`-capable local toolchain | the `-race` gate on the Windows verification host | see below; the gate is carried by the CI Linux runner |
+
+The Windows host used for the 2026-11-26 re-verification has cgo enabled, but its MinGW-w64 runtime
+(gcc 8.1.0 with the matching `libwinpthread-1.dll`) does not match the Go 1.27 race runtime: every
+`-race` binary fails to load with `0xc0000139` before running, including a single trivial test, and
+no Linux environment is installed on that host to fall back to. This is a toolchain mismatch, not a
+test failure, so the race suite is not re-claimed from that host; `.github/workflows/ci.yml` runs it
+on its Linux runner and the earlier recorded runs remain the evidence.
+
 ## 9. Live Acceptance Record
 
 Live evidence is recorded per (capability, profile) pair, never per test name. The requirements are
@@ -364,6 +391,11 @@ row for pg/oracle/mysql/sqlserver. It stays a reference point, not a gate.
   `sql.Out` is rejected there with a named limitation (measured, not a gap).
 - **Later-scope profiles:** V8R6 (V11/V13) and native MySQL (V15/M5) are not covered and are not
   inherited from this run.
+- **Environment availability:** this deployment is the only one provided for the phase and cannot be
+  extended or reconfigured, so live TLS, the auth methods it does not enable, a replica-dependent
+  target attribute, a native MySQL endpoint and the V9-A-*/V9-S-* packaging profiles have no
+  reachable environment. [Section 8.1](#81-verification-environment-availability-2026-11-26)
+  records each blocked proof; all of them stay `pending`, not accepted.
 
 ### 9.7 Acceptance decision
 
@@ -474,3 +506,4 @@ turns over are in [matrix section 17](go-driver-capabilities.md#17-release-profi
 | 2026-11-26 | F-705/T-056 opened and implemented: `CopyInBinary(table, columns...)` writes typed binary rows. The driver resolves each target column's storage type through the verified `pg_catalog.pg_attribute`/`pg_type` query, so a mode that stores `real` as a double or a `date` as eight bytes with a time part is encoded from the catalog rather than from a caller declaration; a first attempt that took the caller's declaration was dropped after the live probe showed `08P01` failures in the MySQL and Oracle listeners. The stream carries the vendor signature header once, then per-row field count and length-prefixed fields (NULL as -1), with the trailer before CopyDone and header plus trailer for an empty import. Unsupported storage types (`numeric`, `interval`, `rowversion`, arrays) fail at prepare; a value that does not fit aborts with `CopyFail`. Offline coverage is the parser, the mapping, the exact wire bytes, the epoch arithmetic, three abort cases, the unsupported-type prepare error, a text-response rejection and the empty stream; live `TestLiveCopyInBinaryTyped` read ten columns back on all four modes. The same acceptance run exposed a desynchronization when a caller opened a command while a result set was still open, so `beginCommand` now finishes that result through ReadyForQuery first (regression test `TestQueryAbandonsOpenResult`). The four-mode run recorded 40/35/36/35 passed, 4/9/8/9 skipped, zero failures; matrix Live moved to accepted for F-705, tasks 56/0/9, features 84/0/10 |
 | 2026-11-26 | Release audit pass, no behaviour change. Recounted the matrix and task tables from the tables themselves (features 84/0/10, Live 54 accepted / 1 done / 25 n/a / 14 pending, tasks 56/0/9) and confirmed the prose matches. Fixed one broken cross-document anchor in the capability matrix and replaced the stale "binary COPY input, raw COPY streams" deferral note now that F-705/F-707 shipped. Filled the two missing per-pair records (F-115 checkout reset, F-1103 scoped profile matrix), merged the duplicated F-106 record and refreshed the capture time. Every one of the 54 accepted features is now named in section 17 with its covering live test. Coverage is 80.6% for the driver package and 73.2% total against the 70% CI floor; `examples/` still vets clean and no TODO/FIXME marker remains in the product package |
 | 2026-11-26 | Release-scope wrap-up before any tag, as the operator asked: added a usage and configuration reference ([go-driver-usage.md](go-driver-usage.md)) covering the DSN parameter table with defaults (including `sslmode=require` and the no-downgrade rule), `KINGBASE_*` environment fallback, `NewConnector` for options a DSN cannot express, mode semantics, values/arrays, the three COPY forms with export, cursors/listeners/metadata/notices, the error contract and the release scope; every snippet was compiled and vetted against the package. The M5 native MySQL tasks and T-059 GSS/SSPI are now recorded as `deferred` (not open todo) with their reasons in section 8 and the gates V12/V15/O6; the summary reads 56 done / 0 todo / 9 deferred, and the plan states explicitly that no in-scope task is open. No tag and no release were created |
+| 2026-11-26 | Release-readiness re-verification on the only available environment, no tag created. Every locally runnable gate passed: `go build ./...`, `go vet ./...`, `go test ./... -count=1` (all packages green), `go test -tags=live ./... -run '^$'` (live suite compiles), `golangci-lint run --build-tags=live ./...` (0 issues), `gofmt -l .` (empty), `go mod tidy -diff` (clean), combined coverage 73.1% total with the driver package at 80.5% (CI floor 70%), all six release targets cross-compile and `go vet` clean under `CGO_ENABLED=0`, a throwaway external module builds and vets against the documented public surface, and `actionlint` accepts all three workflows. The GitHub `CI` workflow on the same revision is green, including its `Test with race detector` and `Enforce coverage floor` steps on the Linux runner, so the race gate is carried by CI rather than by this host. The host cannot run `-race`: its MinGW-w64 runtime does not match the Go 1.27 race runtime and no Linux environment is installed, so that gate stays with the CI Linux runner and the earlier runs. Environment availability is now recorded explicitly in section 8.1 (no TLS listener, no additional auth method, no native MySQL endpoint, no Kerberos, no replica, no V9-A-*/V9-S-* packaging deployment, no V8R6 build), and those proofs stay `pending` rather than deferred or accepted. No task, feature, profile or count changed; this row records verification only |

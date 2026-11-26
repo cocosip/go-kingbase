@@ -258,6 +258,13 @@ test, the artifact (`live/artifacts/<mode>/`, local and gitignored), the capture
 temporary ordinary login for the V2 capture). Aggregate Live is accepted for this profile only
 under the scope limits recorded in the [live acceptance record](go-driver-development.md#96-scope-limits).
 
+The accepted profile is the only deployment provided for this phase, and it cannot be extended or
+reconfigured: no TLS listener, no additionally enabled auth method, no replica, no native MySQL
+endpoint and no V9-A-*/V9-S-* packaging deployment is reachable. The pending rows below (F-801,
+F-803, F-804/F-805/F-243, F-241–F-249, F-806) and the `TBD` profile rows above keep that state and
+are neither accepted nor newly deferred; [development plan section 8.1](go-driver-development.md#81-verification-environment-availability-2026-11-26)
+records each environment-blocked proof.
+
 | Feature(s) | Covering live test(s) | Profiles |
 |---|---|---|
 | F-201, F-202, F-207 | `TestLiveSmoke`, `TestLiveExplicitModeConflict`, `TestLiveCatalogAndBuiltins` | all four |
