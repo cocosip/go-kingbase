@@ -228,6 +228,16 @@ func (c *conn) beginCommand(ctx context.Context) error {
 			return driver.ErrBadConn
 		}
 	}
+	// The same rule covers a result set database/sql has not closed yet: finish
+	// it so the pending ReadyForQuery cannot desynchronize the next command.
+	if open := c.currentRows(); open != nil {
+		if err := open.Close(); err != nil {
+			return err
+		}
+		if c.netConn == nil {
+			return driver.ErrBadConn
+		}
+	}
 	c.commandSent = false
 	if err := ctx.Err(); err != nil {
 		return err
@@ -349,6 +359,29 @@ func (c *conn) querySimple(ctx context.Context, query string) (driver.Rows, erro
 		return nil, err
 	}
 	return newRows(c, columns, terminal), nil
+}
+
+// currentRows returns the result set database/sql has not closed yet, if any.
+func (c *conn) currentRows() *rows {
+	c.rowsMu.Lock()
+	defer c.rowsMu.Unlock()
+	return c.activeRows
+}
+
+// setActiveRows records the result set that owns the wire until it is drained.
+func (c *conn) setActiveRows(r *rows) {
+	c.rowsMu.Lock()
+	c.activeRows = r
+	c.rowsMu.Unlock()
+}
+
+// clearActiveRows forgets a result set that no longer owns the wire.
+func (c *conn) clearActiveRows(r *rows) {
+	c.rowsMu.Lock()
+	if c.activeRows == r {
+		c.activeRows = nil
+	}
+	c.rowsMu.Unlock()
 }
 
 // commandError joins an already seen server error with a later read or drain

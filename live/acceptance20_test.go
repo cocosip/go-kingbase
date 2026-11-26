@@ -113,12 +113,16 @@ func liveCheckBinaryValues(ctx context.Context, t *testing.T, conn *sql.Conn, ta
 	if err != nil {
 		t.Fatalf("select: %v", err)
 	}
-	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		count++
 		if err := rows.Scan(&i2, &i4, &i8, &f4, &f8, &b, &text, &blob, &readDate, &readStamp); err != nil {
+			_ = rows.Close()
 			t.Fatalf("scan: %v", err)
 		}
+	}
+	// Close the result before asking for another query on this connection.
+	if err := rows.Close(); err != nil {
+		t.Fatalf("close rows: %v", err)
 	}
 	if err := rows.Err(); err != nil {
 		t.Fatalf("rows: %v", err)

@@ -52,6 +52,11 @@ type conn struct {
 	// while it is open.
 	copyMu     sync.Mutex
 	activeCopy *copyIn
+	// rowsMu guards activeRows, the result set database/sql may still hold. A
+	// command issued while it is open finishes that result first, so the wire is
+	// back at ReadyForQuery instead of leaving a stray terminator behind.
+	rowsMu     sync.Mutex
+	activeRows *rows
 	// stopWatch cancels the per-command context watcher that interrupts a
 	// stalled socket after cancellation.
 	stopWatch func() bool

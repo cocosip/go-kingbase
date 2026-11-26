@@ -47,6 +47,9 @@ func newRows(c *conn, columns []wire.ColumnDescription, ready bool) *rows {
 		resultSets: 1,
 	}
 	r.resetColumns(columns)
+	if !ready {
+		c.setActiveRows(r)
+	}
 	return r
 }
 
@@ -329,6 +332,7 @@ func (r *rows) Close() error {
 		return nil
 	}
 	r.closed = true
+	r.conn.clearActiveRows(r)
 	if r.ready {
 		return nil
 	}
@@ -355,5 +359,6 @@ func (r *rows) Close() error {
 // fail retires the connection after a protocol or I/O failure.
 func (r *rows) fail() {
 	r.closed = true
+	r.conn.clearActiveRows(r)
 	r.conn.retire()
 }

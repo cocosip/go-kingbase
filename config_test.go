@@ -19,6 +19,7 @@ const (
 	testSQLStateAuth    = "28P01"
 	testAuthFailed      = "password authentication failed"
 	testHello           = "hello"
+	testAbandoned       = "abandoned"
 	testDuplicateKey    = "duplicate key value"
 	testBob             = "bob"
 	testColumnName      = "name"

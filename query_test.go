@@ -56,6 +56,57 @@ func selectColumns() []wire.ColumnDescription {
 	}
 }
 
+// TestQueryAbandonsOpenResult proves a second command finishes the result set the
+// caller left open, so its pending ReadyForQuery cannot desynchronize the wire.
+func TestQueryAbandonsOpenResult(t *testing.T) {
+	srv := testpeer.Start(t, func(peer *testpeer.Conn) {
+		if !startupOK(peer) {
+			return
+		}
+		// First statement: one row, then the completion the caller never reads.
+		if _, ok := expectMessage(peer, wire.MsgQuery); !ok {
+			return
+		}
+		_ = peer.RowDescription(selectColumns())
+		_ = peer.DataRow([][]byte{[]byte("1"), []byte(testHello)})
+		_ = peer.CommandComplete("SELECT 1")
+		_ = peer.ReadyForQuery(wire.StatusIdle)
+		// Second statement: the driver must have drained the first one first.
+		if _, ok := expectMessage(peer, wire.MsgQuery); !ok {
+			return
+		}
+		_ = peer.RowDescription(selectColumns())
+		_ = peer.DataRow([][]byte{[]byte("2"), []byte(testAbandoned)})
+		_ = peer.CommandComplete("SELECT 1")
+		_ = peer.ReadyForQuery(wire.StatusIdle)
+		waitTerminate(peer)
+	})
+	physical, err := connectPeer(t, srv, "")
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	first, err := physical.QueryContext(context.Background(), "SELECT id, name FROM t", nil)
+	if err != nil {
+		t.Fatalf("first query: %v", err)
+	}
+	// The caller abandons the first result without reading or closing it.
+	second, err := physical.QueryContext(context.Background(), "SELECT id, name FROM t", nil)
+	if err != nil {
+		t.Fatalf("second query on the same connection: %v", err)
+	}
+	values := make([]driver.Value, 2)
+	if err := second.Next(values); err != nil {
+		t.Fatalf("second row: %v", err)
+	}
+	if values[0] != int64(2) || values[1] != testAbandoned {
+		t.Errorf("second row = %v, want 2/%s", values, testAbandoned)
+	}
+	if err := second.Close(); err != nil {
+		t.Fatalf("close second: %v", err)
+	}
+	_ = first.Close()
+}
+
 // drainUntilSync consumes the extended-protocol batch through Sync.
 func drainUntilSync(peer *testpeer.Conn) bool {
 	for {
