@@ -14,14 +14,16 @@ A `database/sql` driver for KingbaseES, implemented independently in Go.
 
 ## Status
 
-Development against KingbaseES V009R001C010 is in progress. The PG-wire
+Development against KingbaseES PG-wire (V9) deployments is in progress. The PG-wire
 implementation covers the initial scope (DSN/auth, catalog, query/binding,
 mode-specific codecs, routine INOUT/`sql.Out` where the listener returns an
-output row, transactions, COPY IN, cursors, listeners, metadata, generated IDs)
+output row, transactions, COPY IN and COPY OUT, cursors, listeners, metadata, generated IDs)
 and passes the offline suite plus a live acceptance harness. One deployment
-profile is accepted (scope-limited, driver revision `6044d93`): the four-instance
-KingbaseES V009R001C010 deployment, verified in pg/oracle/mysql/sqlserver modes on
-2026-11-26 with no failing live test. Two limits stay explicit: the deployment
+profile is accepted (scope-limited): an operator-provided four-instance V9
+deployment, verified in pg/oracle/mysql/sqlserver modes with no failing live test.
+The exact server build and driver revision of that run live in the acceptance
+artifacts under `live/artifacts/`, not in this file, so a later run can supersede
+them without a documentation edit. Two limits stay explicit: the deployment
 enables only `scram-sha-256` authentication, and live TLS acceptance (V8) is
 deferred by operator decision because it offers no TLS listener — the TLS trust
 policy is implemented and covered offline, with no plaintext fallback. The native

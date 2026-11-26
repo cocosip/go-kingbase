@@ -38,7 +38,7 @@ promise parity.
 | Internal connection diagnostics | replace | `kingbase.ConnectionMetadata(*sql.Conn)` returns `ServerMetadata`; access it on a pinned `sql.Conn`. |
 | Server notices / async messages | keep | `Config.NoticeHandler` receives decoded notices; `kingbase.NewListener` owns the LISTEN/NOTIFY connection. Both are reachable without internal packages. |
 | COPY OUT | replace | F-706/T-057 shipped: `COPY ... TO STDOUT` through `QueryContext`, see the row above. |
-| Binary COPY input | defer | F-705/T-056; the released helper owns text import only. |
+| Binary COPY input | replace | Raw form shipped (F-707/T-058): `CopyInRawBinary` plus `Exec` payload chunks forwards the bytes unchanged; typed binary encoding from Go values (F-705) stays deferred. |
 | Native MySQL backend | defer | M5 conditional; no automatic transport selection or downgrade. |
 
 ## Standard value boundaries
@@ -78,4 +78,4 @@ golangci-lint run ./...
 See [architecture](go-driver-architecture-design.md) and
 [capabilities](go-driver-capabilities.md) for the authoritative scope. Examples
 do not add live-profile evidence; the accepted profile and its limits are in the
-[live ledger](go-driver-live-profile.md#accepted-profile-v9r001c010-four-mode-2026-11-26).
+[live ledger](go-driver-live-profile.md#accepted-profile-operator-four-mode-run-2026-11-26).

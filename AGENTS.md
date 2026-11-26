@@ -80,6 +80,11 @@ is a regression floor, not an acceptance claim.
 - **Enabled-only evidence.** Live auth and codec claims cover what the tested deployment actually
   enables. A method the driver implements but the server does not enable stays offline-proven and
   live-pending; never generalize it into a support statement.
+- **Evidence is scoped, not pinned.** A run records its server build and driver revision in the
+  artifacts (`evidence-<mode>.json`), never as a frozen value in prose: the driver must work
+  against any server release it can introspect, and a later run may supersede an earlier one
+  without editing every document. Do not write commit hashes or server version numbers into
+  status lines, support claims or rules.
 - **New scope follows the documents.** A new profile, transport or product version needs its
   manifest, verification items and evidence plan added to the documents before code claims it.
 - The self check before touching the wire is that at least one named test proves the behaviour. If

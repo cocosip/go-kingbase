@@ -1,6 +1,6 @@
 # KingbaseES Go Driver — Capability Matrix
 
-> Status: initial PG-wire scope implemented and tested offline; the V009R001C010 four-mode deployment is **accepted (scope-limited)** on 2026-11-26 (`6044d93`); live TLS acceptance is deferred by operator decision (O8)
+> Status: initial PG-wire scope implemented and tested offline; one operator four-mode deployment is **accepted (scope-limited)**; the exact build and driver revision of that run live in the acceptance artifacts, not in this matrix; live TLS acceptance is deferred by operator decision (O8)
 > Date: 2026-11-25 (TLS deferral recorded 2026-11-26)
 > Companion documents: [Architecture Design](go-driver-architecture-design.md) · [Development Plan and Progress](go-driver-development.md)
 
@@ -14,7 +14,7 @@
 - offline = unit/replay; live = actual server; both = both required. Impl/offline/live statuses below are independent: todo/pending/pending initially. n/a live means the requirement is offline-only, not that a missing server passed.
 - Aggregate live accepted requires all applicable profiles in the release manifest. A blocked/unavailable profile stays pending and cannot be advertised. Tests/provenance live in the progress tracker, with per-profile records in section 17.
 
-DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup exchange with cleartext/MD5/SM3/SCRAM authentication, TLS trust-policy negotiation, simple/extended query-or-exec, server-side prepared statement reuse with drain/retire semantics, type-catalog codecs, transactions, cancel-channel delivery with bounded synchronization, liveness/reset hooks, explicit array scanning and PG-mode generated-ID capture are implemented and tested offline. Live evidence is now collected against one operator V009R001C010 four-mode deployment, but no profile is accepted and every per-pair live state stays pending until its command and artifact are recorded.
+DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup exchange with cleartext/MD5/SM3/SCRAM authentication, TLS trust-policy negotiation, simple/extended query-or-exec, server-side prepared statement reuse with drain/retire semantics, type-catalog codecs, transactions, cancel-channel delivery with bounded synchronization, liveness/reset hooks, explicit array scanning and PG-mode generated-ID capture are implemented and tested offline. Live evidence is collected against one operator four-mode deployment and the per-pair records below name the covering test, so a pair is accepted only with its recorded command and artifact.
 
 ## 1. Connection and Configuration
 
@@ -120,7 +120,7 @@ DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup excha
 | F-704 | NOTICE/WARNING callbacks | P2 | both | Default discard; no stderr, same-connection reentrancy forbidden | done | done | accepted |
 | F-705 | Binary COPY import | P2 | both | Deferred from first PG release; future complete/abort/ownership contract and live acceptance | todo | pending | pending |
 | F-706 | COPY output | P2 | both | `COPY ... TO STDOUT` through `QueryContext` returns one `copy` column of protocol chunks (text or binary, payload opaque, `KBCOPY` vendor header); `Exec`, prepared, argumented, multi-statement and server-side `COPY TO file` forms fail closed; early Close drains to ReadyForQuery | done | done | accepted |
-| F-707 | Raw COPY streams | P2 | both | Deferred from first PG release; no backup/CDC/cross-version promise | todo | pending | pending |
+| F-707 | Raw COPY streams | P2 | both | `CopyInRaw`/`CopyInRawBinary` (+ schema variants) emit `COPY ... FROM STDIN WITH (FORMAT ...)`; an explicit FORMAT makes each Exec one payload chunk forwarded unchanged (caller owns framing and the vendor header), row-framed mode still rejects binary; no backup/CDC/cross-version promise | done | done | accepted |
 
 ## 9. Authentication and Security
 
@@ -240,7 +240,7 @@ These are requested target profiles, not a support list. Exact product/edition/r
 
 | Profile | Requested deployment/mode | Wire | Release scope | Exact product/build | Acceptance |
 |---|---|---|---|---|---|
-| V9R001C010-4M | operator deployment: one V9 installation, four instances (pg/oracle/mysql/sqlserver) | pg | first-release target | `KingbaseES V009R001C010`, `server_version` 12.1, driver `6044d93` | **accepted (scope-limited)** 2026-11-26 |
+| V9-OPERATOR-4M | operator deployment: one V9 installation, four instances (pg/oracle/mysql/sqlserver) | pg | first-release target | recorded per run in `evidence-<mode>.json` (`version()`/`server_version` plus the driver revision); the driver gates on nothing here | **accepted (scope-limited)** 2026-11-26 |
 | V9-A-PG | all-mode packaging initialized as PG | pg | first-release target | TBD | pending |
 | V9-A-ORA | all-mode packaging initialized as Oracle | pg | first-release target | TBD | pending |
 | V9-A-MY | all-mode packaging initialized as MySQL | pg | first-release target | TBD | pending |
@@ -254,9 +254,9 @@ These are requested target profiles, not a support list. Exact product/edition/r
 For every scoped (feature,profile) pair with live/both verification, the default was pending; the
 override records below carry the accepted set. Each record names the profile, the covering live
 test, the artifact (`live/artifacts/<mode>/`, local and gitignored), the capture time
-(2026-11-26T05:13Z), the driver revision `6044d93` and the role (`system` for the suite, plus a
+(2026-11-26T05:13Z), the driver revision recorded in each artifact and the role (`system` for the suite, plus a
 temporary ordinary login for the V2 capture). Aggregate Live is accepted for this profile only
-under the scope limits recorded in the [live ledger](go-driver-live-profile.md#accepted-profile-v9r001c010-four-mode-2026-11-26).
+under the scope limits recorded in the [live ledger](go-driver-live-profile.md#accepted-profile-operator-four-mode-run-2026-11-26).
 
 | Feature(s) | Covering live test(s) | Profiles |
 |---|---|---|
@@ -291,6 +291,7 @@ under the scope limits recorded in the [live ledger](go-driver-live-profile.md#a
 | F-901, F-903 | `TestLiveServerErrorFields` | all four |
 | F-1104 | `TestLiveCrossModeConcurrency` (two DSNs, `-race`, 8 workers per pool) | all four pairs run (pg+oracle, pg+mysql, mysql+sqlserver) |
 | F-706 | `TestLiveCopyOut` (chunk stream, `KBCOPY` binary header, error recovery, `Exec` rejection) | all four |
+| F-707 | `TestLiveCopyInRawRoundTrip` (COPY OUT payload re-imported verbatim, text and binary, malformed payload aborts) | all four |
 | F-106 | `TestLiveMultiHostFailover` (unresolvable first candidate, all-failing aggregate) | all four; `target_session_attrs` read-write/read-only stay offline (no replica to distinguish) |
 | F-1105 | `TestLivePerformanceBaseline` (`KINGBASE_TEST_PERF=1`, log-only) | all four |
 
@@ -300,5 +301,5 @@ Live states that stay pending for this profile, with the reason:
 |---|---|
 | F-801, F-803 (cleartext/MD5, SM3) | not enabled by `sys_hba.conf`; implemented and replayed offline |
 | F-804, F-805, F-243 (TLS) | no TLS listener; deferred by O8 |
-| F-705, F-707, F-806 | formally deferred features, not part of the initial release |
+| F-705 (typed binary import), F-806 (GSS/SSPI) | formally deferred features, not part of the initial release |
 | F-241–F-249 (native MySQL) | conditional M5 scope; nothing is claimed from PG-wire evidence |

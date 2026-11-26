@@ -1,10 +1,10 @@
 # KingbaseES Go Driver — Architecture Design
 
-> Status: corrected requirements and interface contract; the initial PG-wire scope is implemented, M0–M4 are complete and one V009R001C010 four-instance profile is **accepted (scope-limited)** at revision `6044d93`
+> Status: corrected requirements and interface contract; the initial PG-wire scope is implemented, M0–M4 are complete and one operator four-instance profile is **accepted (scope-limited)**; its exact build and driver revision live in the acceptance artifacts, not in this contract
 > Date: 2026-11-24 (status line refreshed 2026-11-26)
 > Companion documents: [Capability Matrix](go-driver-capabilities.md) · [Development Plan and Progress](go-driver-development.md)
 > Premise: an independent implementation, with no vendor implementation copied. Source inspection has informed this specification, so it is not evidence of a formal clean-room process. Vendor source and generated OID lists are research evidence, not live-server acceptance.
-> Implementation: the scaffold, connection/query/catalog/mode layers and the M4 quality items are committed and pass the offline suite ([progress tracker](go-driver-development.md)); the profile acceptance with its scope limits is recorded in the [live ledger](go-driver-live-profile.md#accepted-profile-v9r001c010-four-mode-2026-11-26), and live TLS acceptance is deferred by operator decision (O8).
+> Implementation: the scaffold, connection/query/catalog/mode layers and the M4 quality items are committed and pass the offline suite ([progress tracker](go-driver-development.md)); the profile acceptance with its scope limits is recorded in the [live ledger](go-driver-live-profile.md#accepted-profile-operator-four-mode-run-2026-11-26), and live TLS acceptance is deferred by operator decision (O8).
 
 ## 1. Goals and Confirmed Requirements
 
@@ -373,7 +373,9 @@ V9 covers NULL/delimiter/newline/backslash, row/flush/Close/trailing errors, can
 
 Export (F-706) reads `COPY ... TO STDOUT` through `QueryContext` and returns one column, `copy`, whose values are protocol chunks: concatenate them for the payload. Chunk boundaries follow messages, not rows or lines, and the payload stays opaque, so text and binary output use the same call. The driver rejects the forms it cannot honour instead of faking a stream: `Exec` (payload would be discarded), a prepared statement (the extended protocol has no streaming row set), statement arguments (COPY has no placeholders), a COPY inside a multi-statement query (it is not the first statement), and a server-side `COPY ... TO <file>` (completion without data). Closing early drains to ReadyForQuery, so an abandoned export still leaves a reusable session. KingbaseES writes its own binary header signature (`KBCOPY`) rather than PostgreSQL `PGCOPY`; the driver never inspects or rewrites the payload.
 
-Binary import (F-705) and raw COPY streams (F-707) remain separate deferred features; no implied parity with .NET importer/exporter APIs. Future APIs require explicit completion/abort/ownership rules and evidence.
+Raw import (F-707) uses the same statement shape with an explicit `FORMAT`: `CopyInRaw`/`CopyInRawBinary` (plus schema variants) make every `Exec` argument one payload chunk that the driver forwards unchanged. The caller owns row framing, escaping and the binary header/trailer, so a payload produced by export can be imported verbatim; a non-payload or multi-argument call aborts the stream with `CopyFail`. An explicit `FORMAT` is the switch, which keeps row-framed `CopyIn` unchanged and keeps its binary rejection.
+
+Typed binary import (F-705) remains a separate deferred feature: encoding values into the binary representation needs catalog column resolution that the raw path deliberately avoids. No implied parity with .NET importer/exporter APIs; future APIs require explicit completion/abort/ownership rules and evidence.
 
 ### 10.4 Asynchronous delivery
 
@@ -478,9 +480,9 @@ Implementation, offline proof and live acceptance are separate [progress](go-dri
 |---|---|---|
 | O1 | published module identity/oid migration | resolved: github.com/cocosip/go-kingbase from Git origin; package kingbase with driver registration kingbase (the vendor sample package name gokb is not reused); oid subpackage omitted per §14 |
 | O2 | public scalar/temporal contract | resolved in specification: standard driver values, date time.Time/time text, no implicit civil/sql.NullBool |
-| O3 | qualified catalog access | resolved: V2 evidenced on the V009R001C010 four-mode deployment; no built-in escape hatch; the driver fails closed if required metadata is unavailable |
+| O3 | qualified catalog access | resolved: V2 evidenced on the accepted operator four-mode deployment; no built-in escape hatch; the driver fails closed if required metadata is unavailable |
 | O4 | V8 support | later scope, V11/V13 before enabling; no universal no-special-code assertion |
-| O5 | live-profile availability | resolved: one V009R001C010 four-instance deployment is accepted (scope-limited) with V1–V19 evidence recorded; live TLS acceptance deferred by operator decision (O8) |
+| O5 | live-profile availability | resolved: one operator four-instance V9 deployment is accepted (scope-limited) with V1–V19 evidence recorded; live TLS acceptance deferred by operator decision (O8) |
 | O6 | MySQL backend release | conditional M5 after V12/V15/native-bootstrap/reset evidence; excluded from initial PG claims |
 | O7 | minimum Go/platform/license/toolchain | resolved: Go 1.26.0; Apache-2.0 with NOTICE; stdlib-only core; linux/windows/darwin amd64+arm64; CI runs Go 1.26.x with golangci-lint v2.14.0 (§13.1) |
 

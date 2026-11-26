@@ -1,10 +1,11 @@
 # Live V9 Profile Acceptance
 
-Status: **one V9 profile is accepted, scope-limited** — the four-instance
-V009R001C010 deployment below, accepted 2026-11-26 for the initial PG-wire scope
-(revision `312604d`), with live TLS deferred by O8 and the auth method set limited
-to the enabled `scram-sha-256`. This page defines the manifest, commands and
-evidence layout for that acceptance. Testpeer replays, static SDK data, skips and
+Status: **one V9 profile is accepted, scope-limited** — the operator four-instance
+deployment below, accepted 2026-11-26 for the initial PG-wire scope, with live TLS
+deferred by O8 and the auth method set limited to the enabled `scram-sha-256`. The
+exact server build and driver revision of every run are carried by the artifacts,
+never by this page. This page defines the manifest, commands and evidence layout
+for that acceptance. Testpeer replays, static SDK data, skips and
 unavailable instances never count as live evidence.
 
 ## Manifest identity
@@ -50,7 +51,7 @@ commands must be reviewed for credentials before retention.
 
 ## 2026-11-25 sanitized result
 
-An operator-provided KingbaseES **V009R001C010** deployment was exercised with
+An operator-provided KingbaseES V9 deployment was exercised with
 four compatibility modes through the PG-wire listener. This is a partial
 evidence run, not a profile acceptance:
 
@@ -222,7 +223,7 @@ profile is accepted while an applicable item is not evidenced.
 | V18 | evidenced (scope-noted) | `TestLiveBoundaryValues`, `TestLiveTimezoneAndDST`, `TestLiveModeTypeCodecs` and the artifact boundary map cover exact numeric/uint64 text, NaN/±Infinity, interval, DST/timezone meaning and the mode tinyint/year/datetime/money/bit/smalldatetime forms. The dedicated DST probe runs on the PG instance only and `TestLiveBoundaryValues` is PG-scoped; the per-mode boundary map is captured in every mode by `TestLiveEvidenceMatrix`. Session lexical settings are covered by `TestLiveModePlaceholderAndQuoting` and the offline lexical suite. |
 | V19 | evidenced (scope-limited) | `TestLiveTransactionOptions`, `TestLiveReadOnlyTransactionEnforcement`, `TestLiveCancelAndRecovery`, `TestLiveTransactionPreparedAndNamed` and the artifact's transaction/recovery check pass; transaction-state reset and close/drain races are covered by the offline session suite. Backend-handle exposure is not promised by the driver. |
 
-## Accepted profile: V9R001C010 four-mode (2026-11-26)
+## Accepted profile: operator four-mode run (2026-11-26)
 
 The 2026-11-26 run re-executed the whole `live` suite against the operator deployment and
 wrote a machine-recorded manifest into every evidence artifact. The four instances are
@@ -232,24 +233,24 @@ accepted for the initial PG-wire scope under the scope limits listed below.
 
 | Field | Recorded evidence |
 |---|---|
-| Product / release | `version()` reports `KingbaseES V009R001C010` on every instance; startup `server_version` is `12.1` |
-| Edition / packaging | Operator-supplied single V9 installation (`/home/kingbase/ES/V9`) with four mode-specific instances (`data`, `data_mysql`, `data_sqlserver`, `data_pg`). The server reports the release string only, so this profile is recorded by deployment and is not asserted as one specific all-mode/single-mode packaging row of section 17 |
+| Product / release | Recorded per run from the server itself: `version()` plus the startup `server_version`. That run observed `KingbaseES V009R001C010` / `12.1` on every instance; the driver gates on neither value. |
+| Edition / packaging | Operator-supplied single V9 installation with four mode-specific instances (`data`, `data_mysql`, `data_sqlserver`, `data_pg`). The server reports the release string only, so this profile is recorded by deployment and is not asserted as one specific all-mode/single-mode packaging row of section 17 |
 | Compatibility mode | Reported at startup by each instance (`mode_source=startup`, `mode_verified=true`) as `pg` / `oracle` / `mysql` / `sqlserver`; `pg_settings` shows `database_mode` with `source=override context=internal` |
-| Transport / listener | PG wire on 172.16.2.45:54324 (PG), :54321 (Oracle), :54322 (MySQL), :54323 (SQLServer); database `test`; no port scan or packaging inference |
+| Transport / listener | PG wire on the operator host, one port per instance (`pg`/`oracle`/`mysql`/`sqlserver`); database `test`; the exact endpoints and credentials are operator environment and never committed; no port scan or packaging inference |
 | TLS | `sslmode=require` is rejected by all four listeners (`server does not support TLS`), so every run used `sslmode=disable`. Live TLS acceptance stays deferred (O8) and no TLS claim is made |
 | Auth | `sys_hba.conf` enables `scram-sha-256` for the client subnet and every connection authenticated with it. Cleartext/MD5/SM3 are not enabled on this deployment |
 | Roles | The main suite connects as the operator's `system` login; `TestLiveOrdinaryRoleCatalog` creates a temporary ordinary login per mode for the V2 ordinary-role capture |
 | Catalog | Qualified snapshot loaded as `catalog_status=full` with 754 (pg) / 1006 (oracle) / 902 (mysql) / 801 (sqlserver) rows; shapes captured per mode |
-| Driver revision | `6044d93` (pinned with `KINGBASE_TEST_REVISION`), module `github.com/cocosip/go-kingbase` |
+| Driver revision | Carried by each artifact through `KINGBASE_TEST_REVISION` (the run also stamps `vcs.revision` when the binary has it), module `github.com/cocosip/go-kingbase`; not pinned on this page |
 | Toolchain / host | `go1.27.4` (module baseline `1.26.0`) on `windows/amd64`, host `virtual` |
-| Operator / time | `dsh-agent`, 2026-11-26T05:13Z |
+| Operator / time | `dsh-agent`, 2026-11-26T05:29Z |
 | Artifacts | `live/artifacts/<mode>/{full-run.log,live-smoke.json,evidence-<mode>.json}` — local and gitignored; no credential appears in them |
 
 ### Commands
 
 ```sh
 KINGBASE_TEST_DSN='host=<host> port=<port> user=<user> password=<secret> dbname=test sslmode=disable' \
-KINGBASE_TEST_MODE=pg KINGBASE_TEST_PROFILE=V9R001C010-pg KINGBASE_TEST_REVISION=6044d93 \
+KINGBASE_TEST_MODE=pg KINGBASE_TEST_PROFILE=<profile>-pg KINGBASE_TEST_REVISION=<revision> \
 KINGBASE_TEST_OPERATOR=<who> KINGBASE_TEST_ARTIFACT_DIR=artifacts/pg \
 go test -tags live ./live -count=1 -v
 ```
@@ -267,10 +268,10 @@ and everything else runs unchanged. The accepted run set it to the next mode in 
 
 | Instance | Result | Passed | Skipped | Why the skips are not gaps |
 |---|---|---|---|---|
-| pg | PASS | 38 | 4 | SQLServer-only routine limitation test, MySQL-only generated-ID test, SQLServer-only convenience test, opt-in performance baseline |
-| oracle | PASS | 33 | 9 | PG-scoped probes (timezone/DST, CALL/INOUT rows, generated ID, LISTEN/NOTIFY, catalog lifecycle) plus the SQLServer/MySQL-only and perf tests |
-| mysql | PASS | 34 | 8 | The same PG-scoped set minus the MySQL-only generated-ID test |
-| sqlserver | PASS | 33 | 9 | The PG-scoped set, the measured `sql.Out` listener limitation, and the PG-scoped boundary probe |
+| pg | PASS | 39 | 4 | SQLServer-only routine limitation test, MySQL-only generated-ID test, SQLServer-only convenience test, opt-in performance baseline |
+| oracle | PASS | 34 | 9 | PG-scoped probes (timezone/DST, CALL/INOUT rows, generated ID, LISTEN/NOTIFY, catalog lifecycle) plus the SQLServer/MySQL-only and perf tests |
+| mysql | PASS | 35 | 8 | The same PG-scoped set minus the MySQL-only generated-ID test |
+| sqlserver | PASS | 34 | 9 | The PG-scoped set, the measured `sql.Out` listener limitation, and the PG-scoped boundary probe |
 
 No test failed in any mode. Each skipped test states its mode scope in the run log, and every
 V-item it would have covered is evidenced by another test on the applicable profile.
@@ -287,6 +288,7 @@ than only offline, and each passes in all four modes:
 | `TestLiveServerErrorFields` | a definite server error keeps severity/code/message, is not reported as execution-uncertain, and leaves the session reusable (F-901, F-903) |
 | `TestLiveMultiHostFailover` | an endpoint list whose first candidate cannot resolve still connects to the live candidate in every mode, and an all-failing list returns an error naming each candidate (F-106) |
 | `TestLiveCopyOut` | `COPY ... TO STDOUT` streams text chunks, streams a binary payload whose header is the vendor `KBCOPY` signature and ends with the file trailer, reports a missing-relation error without losing the session, rejects `Exec`, and keeps streaming afterwards (F-706) |
+| `TestLiveCopyInRawRoundTrip` | a payload produced by `COPY TO STDOUT` is re-imported verbatim through `CopyInRaw`/`CopyInRawBinary` split across two `Exec` calls, and a malformed binary payload aborts without adding a row (F-707) |
 | `TestLiveMultipleResultSets` | a two-statement simple query exposes both result sets through `NextResultSet`, ends without a third, and keeps the session usable (F-406) |
 | `TestLiveCrossModeConcurrency` | two pools in different compatibility modes run interleaved in one process (8 workers each, `-race` clean) and every connection keeps its own mode (F-1104, F-209); needs `KINGBASE_TEST_PEER_DSN` |
 
@@ -314,7 +316,8 @@ so it stays a reference point rather than a gate.
 
 ### Acceptance decision
 
-**Accepted (scope-limited) for the initial PG-wire release on 2026-11-26**, revision `6044d93`,
-on the four instances above and under the scope limits in this section. Every applicable V-item
-for this deployment is evidenced; the capability matrix section 17 holds the per-pair override
-records and the feature Live states this acceptance turns over.
+**Accepted (scope-limited) for the initial PG-wire release on 2026-11-26** on the four
+instances above and under the scope limits in this section; each artifact carries the exact server
+build and driver revision of the run it records. Every applicable V-item for this deployment is
+evidenced; the capability matrix section 17 holds the per-pair override records and the feature
+Live states this acceptance turns over.
