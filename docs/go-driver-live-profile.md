@@ -240,16 +240,16 @@ accepted for the initial PG-wire scope under the scope limits listed below.
 | Auth | `sys_hba.conf` enables `scram-sha-256` for the client subnet and every connection authenticated with it. Cleartext/MD5/SM3 are not enabled on this deployment |
 | Roles | The main suite connects as the operator's `system` login; `TestLiveOrdinaryRoleCatalog` creates a temporary ordinary login per mode for the V2 ordinary-role capture |
 | Catalog | Qualified snapshot loaded as `catalog_status=full` with 754 (pg) / 1006 (oracle) / 902 (mysql) / 801 (sqlserver) rows; shapes captured per mode |
-| Driver revision | `594be1b` (pinned with `KINGBASE_TEST_REVISION`), module `github.com/cocosip/go-kingbase` |
+| Driver revision | `6044d93` (pinned with `KINGBASE_TEST_REVISION`), module `github.com/cocosip/go-kingbase` |
 | Toolchain / host | `go1.27.4` (module baseline `1.26.0`) on `windows/amd64`, host `virtual` |
-| Operator / time | `dsh-agent`, 2026-11-26T04:51Z |
+| Operator / time | `dsh-agent`, 2026-11-26T05:13Z |
 | Artifacts | `live/artifacts/<mode>/{full-run.log,live-smoke.json,evidence-<mode>.json}` — local and gitignored; no credential appears in them |
 
 ### Commands
 
 ```sh
 KINGBASE_TEST_DSN='host=<host> port=<port> user=<user> password=<secret> dbname=test sslmode=disable' \
-KINGBASE_TEST_MODE=pg KINGBASE_TEST_PROFILE=V9R001C010-pg KINGBASE_TEST_REVISION=594be1b \
+KINGBASE_TEST_MODE=pg KINGBASE_TEST_PROFILE=V9R001C010-pg KINGBASE_TEST_REVISION=6044d93 \
 KINGBASE_TEST_OPERATOR=<who> KINGBASE_TEST_ARTIFACT_DIR=artifacts/pg \
 go test -tags live ./live -count=1 -v
 ```
@@ -267,10 +267,10 @@ and everything else runs unchanged. The accepted run set it to the next mode in 
 
 | Instance | Result | Passed | Skipped | Why the skips are not gaps |
 |---|---|---|---|---|
-| pg | PASS | 37 | 4 | SQLServer-only routine limitation test, MySQL-only generated-ID test, SQLServer-only convenience test, opt-in performance baseline |
-| oracle | PASS | 32 | 9 | PG-scoped probes (timezone/DST, CALL/INOUT rows, generated ID, LISTEN/NOTIFY, catalog lifecycle) plus the SQLServer/MySQL-only and perf tests |
-| mysql | PASS | 33 | 8 | The same PG-scoped set minus the MySQL-only generated-ID test |
-| sqlserver | PASS | 32 | 9 | The PG-scoped set, the measured `sql.Out` listener limitation, and the PG-scoped boundary probe |
+| pg | PASS | 38 | 4 | SQLServer-only routine limitation test, MySQL-only generated-ID test, SQLServer-only convenience test, opt-in performance baseline |
+| oracle | PASS | 33 | 9 | PG-scoped probes (timezone/DST, CALL/INOUT rows, generated ID, LISTEN/NOTIFY, catalog lifecycle) plus the SQLServer/MySQL-only and perf tests |
+| mysql | PASS | 34 | 8 | The same PG-scoped set minus the MySQL-only generated-ID test |
+| sqlserver | PASS | 33 | 9 | The PG-scoped set, the measured `sql.Out` listener limitation, and the PG-scoped boundary probe |
 
 No test failed in any mode. Each skipped test states its mode scope in the run log, and every
 V-item it would have covered is evidenced by another test on the applicable profile.
@@ -286,6 +286,7 @@ than only offline, and each passes in all four modes:
 | `TestLiveNoticeHandler` | a real server notice reaches `Config.NoticeHandler` through the public `kingbase.NewConnector` + `sql.OpenDB` path (F-704) |
 | `TestLiveServerErrorFields` | a definite server error keeps severity/code/message, is not reported as execution-uncertain, and leaves the session reusable (F-901, F-903) |
 | `TestLiveMultiHostFailover` | an endpoint list whose first candidate cannot resolve still connects to the live candidate in every mode, and an all-failing list returns an error naming each candidate (F-106) |
+| `TestLiveCopyOut` | `COPY ... TO STDOUT` streams text chunks, streams a binary payload whose header is the vendor `KBCOPY` signature and ends with the file trailer, reports a missing-relation error without losing the session, rejects `Exec`, and keeps streaming afterwards (F-706) |
 | `TestLiveMultipleResultSets` | a two-statement simple query exposes both result sets through `NextResultSet`, ends without a third, and keeps the session usable (F-406) |
 | `TestLiveCrossModeConcurrency` | two pools in different compatibility modes run interleaved in one process (8 workers each, `-race` clean) and every connection keeps its own mode (F-1104, F-209); needs `KINGBASE_TEST_PEER_DSN` |
 
@@ -313,7 +314,7 @@ so it stays a reference point rather than a gate.
 
 ### Acceptance decision
 
-**Accepted (scope-limited) for the initial PG-wire release on 2026-11-26**, revision `594be1b`,
+**Accepted (scope-limited) for the initial PG-wire release on 2026-11-26**, revision `6044d93`,
 on the four instances above and under the scope limits in this section. Every applicable V-item
 for this deployment is evidenced; the capability matrix section 17 holds the per-pair override
 records and the feature Live states this acceptance turns over.

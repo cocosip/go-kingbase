@@ -25,6 +25,7 @@ promise parity.
 | Official shape | Status | Go contract |
 |---|---|---|
 | `CopyIn(table, columns...)` / `CopyInSchema` | keep | Returns a `COPY ... FROM STDIN` statement string. Prepare on a pinned transaction, `Exec` rows, zero-argument `Exec` to flush/finish, then close. It is not a returned writer. |
+| `CopyOut` / exporter | replace | Run `COPY ... TO STDOUT` through `QueryContext` on a connection: one `copy` column of protocol chunks (concatenate for the payload, text or binary). `Exec`, prepared statements, arguments, a COPY that is not the first statement and `COPY ... TO <file>` fail closed; closing early drains to ReadyForQuery. |
 | `QuoteIdentifier` | keep | Quotes one identifier; callers still build only bounded SQL fragments. |
 | `Array` / typed arrays | replace | Use the generic `kingbase.Array[T]` Scanner/Valuer for rectangular text arrays; default results stay opaque text. |
 | `VarChar`, `VarCharMax`, `NVarCharMax`, `NChar` | keep | Compatibility wrappers implement `driver.Valuer`/`sql.Scanner` and keep their text intent through Bind. |
@@ -36,7 +37,8 @@ promise parity.
 | `civil.Date` / `civil.Time` | replace | Use `time.Time` for date/timestamp and preserve time-without-date as `string`. |
 | Internal connection diagnostics | replace | `kingbase.ConnectionMetadata(*sql.Conn)` returns `ServerMetadata`; access it on a pinned `sql.Conn`. |
 | Server notices / async messages | keep | `Config.NoticeHandler` receives decoded notices; `kingbase.NewListener` owns the LISTEN/NOTIFY connection. Both are reachable without internal packages. |
-| COPY OUT, binary COPY | defer | F-705/F-706/T-056/T-057; not part of the first-release COPY IN contract. |
+| COPY OUT | replace | F-706/T-057 shipped: `COPY ... TO STDOUT` through `QueryContext`, see the row above. |
+| Binary COPY input | defer | F-705/T-056; the released helper owns text import only. |
 | Native MySQL backend | defer | M5 conditional; no automatic transport selection or downgrade. |
 
 ## Standard value boundaries

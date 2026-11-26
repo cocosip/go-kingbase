@@ -19,13 +19,13 @@ implementation covers the initial scope (DSN/auth, catalog, query/binding,
 mode-specific codecs, routine INOUT/`sql.Out` where the listener returns an
 output row, transactions, COPY IN, cursors, listeners, metadata, generated IDs)
 and passes the offline suite plus a live acceptance harness. One deployment
-profile is accepted (scope-limited, driver revision `594be1b`): the four-instance
+profile is accepted (scope-limited, driver revision `6044d93`): the four-instance
 KingbaseES V009R001C010 deployment, verified in pg/oracle/mysql/sqlserver modes on
 2026-11-26 with no failing live test. Two limits stay explicit: the deployment
 enables only `scram-sha-256` authentication, and live TLS acceptance (V8) is
 deferred by operator decision because it offers no TLS listener — the TLS trust
 policy is implemented and covered offline, with no plaintext fallback. The native
-MySQL transport, V8R6, binary COPY and extra auth extensions remain out of scope.
+MySQL transport, V8R6, binary COPY *input* and extra auth extensions remain out of scope.
 The specification, feature matrix and delivery plan are the source of truth for
 scope and acceptance:
 
@@ -45,8 +45,12 @@ scope and acceptance:
 - No automatic protocol/port fallback, no reconnect across protocols, no
   duplicate connection pool.
 - `COPY ... FROM STDIN` must run through the `CopyIn` helper on a transaction;
-  `Query`/`Exec` reject a COPY statement before sending it, because only the
-  helper owns the copy stream.
+  `Query`/`Exec` reject that form before sending it, because only the helper
+  owns the import stream.
+- `COPY ... TO STDOUT` is read through `Query`: one `copy` column of protocol
+  chunks to concatenate (text or binary, payload opaque). `Exec`, prepared
+  statements, arguments, a COPY that is not the first statement and
+  `COPY ... TO <file>` fail closed.
 
 ## Development
 

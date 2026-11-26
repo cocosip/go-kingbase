@@ -1,6 +1,6 @@
 # KingbaseES Go Driver — Capability Matrix
 
-> Status: initial PG-wire scope implemented and tested offline; the V009R001C010 four-mode deployment is **accepted (scope-limited)** on 2026-11-26 (`594be1b`); live TLS acceptance is deferred by operator decision (O8)
+> Status: initial PG-wire scope implemented and tested offline; the V009R001C010 four-mode deployment is **accepted (scope-limited)** on 2026-11-26 (`6044d93`); live TLS acceptance is deferred by operator decision (O8)
 > Date: 2026-11-25 (TLS deferral recorded 2026-11-26)
 > Companion documents: [Architecture Design](go-driver-architecture-design.md) · [Development Plan and Progress](go-driver-development.md)
 
@@ -119,7 +119,7 @@ DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup excha
 | F-703 | LISTEN/NOTIFY | P2 | both | Async parsing; bounded 256-message queue, overflow gap/reconnect, no replay, nil gap marker | done | done | accepted |
 | F-704 | NOTICE/WARNING callbacks | P2 | both | Default discard; no stderr, same-connection reentrancy forbidden | done | done | accepted |
 | F-705 | Binary COPY import | P2 | both | Deferred from first PG release; future complete/abort/ownership contract and live acceptance | todo | pending | pending |
-| F-706 | COPY output | P2 | both | Deferred from first PG release; distinguish text/binary output and reader ownership | todo | pending | pending |
+| F-706 | COPY output | P2 | both | `COPY ... TO STDOUT` through `QueryContext` returns one `copy` column of protocol chunks (text or binary, payload opaque, `KBCOPY` vendor header); `Exec`, prepared, argumented, multi-statement and server-side `COPY TO file` forms fail closed; early Close drains to ReadyForQuery | done | done | accepted |
 | F-707 | Raw COPY streams | P2 | both | Deferred from first PG release; no backup/CDC/cross-version promise | todo | pending | pending |
 
 ## 9. Authentication and Security
@@ -203,7 +203,7 @@ The [V1–V19 evidence ledger](go-driver-live-profile.md#v1v19-evidence-ledger-2
 - A second connection pool, ORM/provider, SQL dialect translation and database administration are outside this driver. database/sql integration remains required.
 - No built-in product OID table, arbitrary business-SQL translation or automatic protocol/port fallback.
 - V8 is later scope; native MySQL is conditional M5. Neither is advertised by passing V9 PG tests.
-- Binary COPY input, COPY output/raw streams and extra auth extensions are tracked P2 F-705/F-706/F-707/F-806, outside the initial PG release. LISTEN/callbacks, keepalive, multi-host, env fallback and benchmarks are P2 and may be explicitly deferred.
+- Binary COPY input, raw COPY streams and extra auth extensions are tracked P2 F-705/F-707/F-806, outside the initial PG release. LISTEN/callbacks, keepalive, multi-host, env fallback and benchmarks are P2 and may be explicitly deferred.
 - Compression, LOCAL INFILE, multi-statement execution, unverified long-data streaming and control-query cancellation are not enabled on native MySQL.
 - A separate EF provider is future work, not a Go driver acceptance requirement. No ADO.NET-specific APIs are mechanically copied.
 
@@ -240,7 +240,7 @@ These are requested target profiles, not a support list. Exact product/edition/r
 
 | Profile | Requested deployment/mode | Wire | Release scope | Exact product/build | Acceptance |
 |---|---|---|---|---|---|
-| V9R001C010-4M | operator deployment: one V9 installation, four instances (pg/oracle/mysql/sqlserver) | pg | first-release target | `KingbaseES V009R001C010`, `server_version` 12.1, driver `594be1b` | **accepted (scope-limited)** 2026-11-26 |
+| V9R001C010-4M | operator deployment: one V9 installation, four instances (pg/oracle/mysql/sqlserver) | pg | first-release target | `KingbaseES V009R001C010`, `server_version` 12.1, driver `6044d93` | **accepted (scope-limited)** 2026-11-26 |
 | V9-A-PG | all-mode packaging initialized as PG | pg | first-release target | TBD | pending |
 | V9-A-ORA | all-mode packaging initialized as Oracle | pg | first-release target | TBD | pending |
 | V9-A-MY | all-mode packaging initialized as MySQL | pg | first-release target | TBD | pending |
@@ -254,7 +254,7 @@ These are requested target profiles, not a support list. Exact product/edition/r
 For every scoped (feature,profile) pair with live/both verification, the default was pending; the
 override records below carry the accepted set. Each record names the profile, the covering live
 test, the artifact (`live/artifacts/<mode>/`, local and gitignored), the capture time
-(2026-11-26T04:51Z), the driver revision `594be1b` and the role (`system` for the suite, plus a
+(2026-11-26T05:13Z), the driver revision `6044d93` and the role (`system` for the suite, plus a
 temporary ordinary login for the V2 capture). Aggregate Live is accepted for this profile only
 under the scope limits recorded in the [live ledger](go-driver-live-profile.md#accepted-profile-v9r001c010-four-mode-2026-11-26).
 
@@ -290,6 +290,7 @@ under the scope limits recorded in the [live ledger](go-driver-live-profile.md#a
 | F-804, F-805, F-243 | offline only | pending: live TLS is deferred by O8 (no TLS listener) |
 | F-901, F-903 | `TestLiveServerErrorFields` | all four |
 | F-1104 | `TestLiveCrossModeConcurrency` (two DSNs, `-race`, 8 workers per pool) | all four pairs run (pg+oracle, pg+mysql, mysql+sqlserver) |
+| F-706 | `TestLiveCopyOut` (chunk stream, `KBCOPY` binary header, error recovery, `Exec` rejection) | all four |
 | F-106 | `TestLiveMultiHostFailover` (unresolvable first candidate, all-failing aggregate) | all four; `target_session_attrs` read-write/read-only stay offline (no replica to distinguish) |
 | F-1105 | `TestLivePerformanceBaseline` (`KINGBASE_TEST_PERF=1`, log-only) | all four |
 
@@ -299,5 +300,5 @@ Live states that stay pending for this profile, with the reason:
 |---|---|
 | F-801, F-803 (cleartext/MD5, SM3) | not enabled by `sys_hba.conf`; implemented and replayed offline |
 | F-804, F-805, F-243 (TLS) | no TLS listener; deferred by O8 |
-| F-705, F-706, F-707, F-806 | formally deferred features, not part of the initial release |
+| F-705, F-707, F-806 | formally deferred features, not part of the initial release |
 | F-241–F-249 (native MySQL) | conditional M5 scope; nothing is claimed from PG-wire evidence |

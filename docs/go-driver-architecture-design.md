@@ -1,6 +1,6 @@
 # KingbaseES Go Driver — Architecture Design
 
-> Status: corrected requirements and interface contract; the initial PG-wire scope is implemented, M0–M4 are complete and one V009R001C010 four-instance profile is **accepted (scope-limited)** at revision `594be1b`
+> Status: corrected requirements and interface contract; the initial PG-wire scope is implemented, M0–M4 are complete and one V009R001C010 four-instance profile is **accepted (scope-limited)** at revision `6044d93`
 > Date: 2026-11-24 (status line refreshed 2026-11-26)
 > Companion documents: [Capability Matrix](go-driver-capabilities.md) · [Development Plan and Progress](go-driver-development.md)
 > Premise: an independent implementation, with no vendor implementation copied. Source inspection has informed this specification, so it is not evidence of a formal clean-room process. Vendor source and generated OID lists are research evidence, not live-server acceptance.
@@ -369,7 +369,11 @@ MySQL initially cancels by aborting/retiring the physical session. KILL QUERY is
 
 Initial PG text import retains official helper shape: CopyIn(table,columns...) and CopyInSchema(schema,table,columns...) return a statement string. Prepare on a pinned transaction, Exec rows, zero-argument Exec to flush/finish, observe server completion, then close. It is not a returned writer. Quote identifiers separately and encode values through COPY, not SQL concatenation.
 
-V9 covers NULL/delimiter/newline/backslash, row/flush/Close/trailing errors, cancellation and transaction status. No success before completion. Import error does not itself roll back the caller transaction. Binary import, COPY OUT and raw COPY are separate deferred F-705/F-706/F-707; no implied parity with .NET importer/exporter APIs. Future APIs require explicit completion/abort/ownership rules and evidence.
+V9 covers NULL/delimiter/newline/backslash, row/flush/Close/trailing errors, cancellation and transaction status. No success before completion. Import error does not itself roll back the caller transaction.
+
+Export (F-706) reads `COPY ... TO STDOUT` through `QueryContext` and returns one column, `copy`, whose values are protocol chunks: concatenate them for the payload. Chunk boundaries follow messages, not rows or lines, and the payload stays opaque, so text and binary output use the same call. The driver rejects the forms it cannot honour instead of faking a stream: `Exec` (payload would be discarded), a prepared statement (the extended protocol has no streaming row set), statement arguments (COPY has no placeholders), a COPY inside a multi-statement query (it is not the first statement), and a server-side `COPY ... TO <file>` (completion without data). Closing early drains to ReadyForQuery, so an abandoned export still leaves a reusable session. KingbaseES writes its own binary header signature (`KBCOPY`) rather than PostgreSQL `PGCOPY`; the driver never inspects or rewrites the payload.
+
+Binary import (F-705) and raw COPY streams (F-707) remain separate deferred features; no implied parity with .NET importer/exporter APIs. Future APIs require explicit completion/abort/ownership rules and evidence.
 
 ### 10.4 Asynchronous delivery
 
