@@ -2,7 +2,7 @@
 
 > Status: initial PG-wire scope implemented and tested offline; one operator four-mode deployment is **accepted (scope-limited)**; the exact build and driver revision of that run live in the acceptance artifacts, not in this matrix; live TLS acceptance is deferred by operator decision (O8)
 > Date: 2026-11-25 (TLS deferral recorded 2026-11-26)
-> Companion documents: [Architecture Design](go-driver-architecture-design.md) · [Development Plan and Progress](go-driver-development.md)
+> Companion documents: [Usage and Configuration](go-driver-usage.md) · [Architecture Design](go-driver-architecture-design.md) · [Development Plan and Progress](go-driver-development.md)
 
 ## Reading Guide
 

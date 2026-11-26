@@ -2,7 +2,7 @@
 
 > Status: corrected requirements and interface contract; the initial PG-wire scope is implemented, M0–M4 are complete and one operator four-instance profile is **accepted (scope-limited)**; its exact build and driver revision live in the acceptance artifacts, not in this contract
 > Date: 2026-11-24 (status line refreshed 2026-11-26)
-> Companion documents: [Capability Matrix](go-driver-capabilities.md) · [Development Plan and Progress](go-driver-development.md)
+> Companion documents: [Usage and Configuration](go-driver-usage.md) · [Capability Matrix](go-driver-capabilities.md) · [Development Plan and Progress](go-driver-development.md)
 > Premise: an independent implementation, with no vendor implementation copied. Source inspection has informed this specification, so it is not evidence of a formal clean-room process. Vendor source and generated OID lists are research evidence, not live-server acceptance.
 > Implementation: the scaffold, connection/query/catalog/mode layers and the M4 quality items are committed and pass the offline suite ([progress tracker](go-driver-development.md)); the profile acceptance with its scope limits is recorded in the [live ledger](go-driver-live-profile.md#accepted-profile-operator-four-mode-run-2026-11-26), and live TLS acceptance is deferred by operator decision (O8).
 
