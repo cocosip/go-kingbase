@@ -1,6 +1,6 @@
 # KingbaseES Go Driver — Capability Matrix
 
-> Status: initial PG-wire scope implemented and tested offline; the V009R001C010 four-mode deployment is **accepted (scope-limited)** on 2026-11-26 (`b0ae780`); live TLS acceptance is deferred by operator decision (O8)
+> Status: initial PG-wire scope implemented and tested offline; the V009R001C010 four-mode deployment is **accepted (scope-limited)** on 2026-11-26 (`6b9312c`); live TLS acceptance is deferred by operator decision (O8)
 > Date: 2026-11-25 (TLS deferral recorded 2026-11-26)
 > Companion documents: [Architecture Design](go-driver-architecture-design.md) · [Development Plan and Progress](go-driver-development.md)
 
@@ -150,7 +150,7 @@ DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup excha
 | F-1101 | Unit/contract suite | P0 | offline | Coverage target at least 70 percent plus named risk tests; percentage alone is not acceptance | done | done | n/a |
 | F-1102 | Fake-server/failure suite | P0 | offline | Fragmentation, sizes/counts/EOF, auth faults, async rows, trailing errors, reset/cancel/retry races | done | done | n/a |
 | F-1103 | Scoped real-server profile matrix | P0 | live | V9 profiles first; exact accepted edition/release/mode/wire; unavailable profile pending, V8 later | done | done | accepted |
-| F-1104 | Concurrency tests | P0 | both | multiple modes interleaved + `-race` | done | done | pending |
+| F-1104 | Concurrency tests | P0 | both | multiple modes interleaved + `-race` | done | done | accepted |
 | F-1105 | Performance baseline | P2 | live | Actual single-row/COPY workloads measured on the deployment (`TestLivePerformanceBaseline`, opt-in `KINGBASE_TEST_PERF=1`, log-only with `perf-<mode>.json`); explicitly deferrable outside release blockers | done | done | accepted |
 | F-1106 | Repository lint rules | P0 | offline | Run existing .golangci.yml once product module exists | done | done | n/a |
 | F-1107 | Toolchain/platform/package release contract | P0 | offline | Go 1.26.0; module github.com/cocosip/go-kingbase from Git origin; Apache-2.0; linux/windows/darwin amd64+arm64; stdlib-only core; CI runs Go 1.26.x; package smoke checks at T-051/T-053 | done | done | n/a |
@@ -240,7 +240,7 @@ These are requested target profiles, not a support list. Exact product/edition/r
 
 | Profile | Requested deployment/mode | Wire | Release scope | Exact product/build | Acceptance |
 |---|---|---|---|---|---|
-| V9R001C010-4M | operator deployment: one V9 installation, four instances (pg/oracle/mysql/sqlserver) | pg | first-release target | `KingbaseES V009R001C010`, `server_version` 12.1, driver `b0ae780` | **accepted (scope-limited)** 2026-11-26 |
+| V9R001C010-4M | operator deployment: one V9 installation, four instances (pg/oracle/mysql/sqlserver) | pg | first-release target | `KingbaseES V009R001C010`, `server_version` 12.1, driver `6b9312c` | **accepted (scope-limited)** 2026-11-26 |
 | V9-A-PG | all-mode packaging initialized as PG | pg | first-release target | TBD | pending |
 | V9-A-ORA | all-mode packaging initialized as Oracle | pg | first-release target | TBD | pending |
 | V9-A-MY | all-mode packaging initialized as MySQL | pg | first-release target | TBD | pending |
@@ -254,7 +254,7 @@ These are requested target profiles, not a support list. Exact product/edition/r
 For every scoped (feature,profile) pair with live/both verification, the default was pending; the
 override records below carry the accepted set. Each record names the profile, the covering live
 test, the artifact (`live/artifacts/<mode>/`, local and gitignored), the capture time
-(2026-11-26T04:30Z), the driver revision `b0ae780` and the role (`system` for the suite, plus a
+(2026-11-26T04:44Z), the driver revision `6b9312c` and the role (`system` for the suite, plus a
 temporary ordinary login for the V2 capture). Aggregate Live is accepted for this profile only
 under the scope limits recorded in the [live ledger](go-driver-live-profile.md#accepted-profile-v9r001c010-four-mode-2026-11-26).
 
@@ -288,6 +288,7 @@ under the scope limits recorded in the [live ledger](go-driver-live-profile.md#a
 | F-802 | every live connection authenticated with `scram-sha-256` | all four (enabled method set) |
 | F-804, F-805, F-243 | offline only | pending: live TLS is deferred by O8 (no TLS listener) |
 | F-901, F-903 | `TestLiveServerErrorFields` | all four |
+| F-1104 | `TestLiveCrossModeConcurrency` (two DSNs, `-race`, 8 workers per pool) | all four pairs run (pg+oracle, pg+mysql, mysql+sqlserver) |
 | F-1105 | `TestLivePerformanceBaseline` (`KINGBASE_TEST_PERF=1`, log-only) | all four |
 
 Live states that stay pending for this profile, with the reason:
@@ -298,5 +299,4 @@ Live states that stay pending for this profile, with the reason:
 | F-801, F-803 (cleartext/MD5, SM3) | not enabled by `sys_hba.conf`; implemented and replayed offline |
 | F-804, F-805, F-243 (TLS) | no TLS listener; deferred by O8 |
 | F-705, F-706, F-707, F-806 | formally deferred features, not part of the initial release |
-| F-1104 (multi-mode concurrency) | the suite runs one mode per process; cross-mode concurrency needs two DSNs in one process, which is recorded as a harness gap, not a driver gap |
 | F-241–F-249 (native MySQL) | conditional M5 scope; nothing is claimed from PG-wire evidence |

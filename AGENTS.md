@@ -52,6 +52,8 @@ is a regression floor, not an acceptance claim.
 - The live suite needs `-tags live` and `KINGBASE_TEST_DSN`; it fails hard without a DSN. Optional
   inputs: `KINGBASE_TEST_MODE`, `KINGBASE_TEST_PROFILE`, `KINGBASE_TEST_OPERATOR`,
   `KINGBASE_TEST_REVISION`, `KINGBASE_TEST_ARTIFACT_DIR`, `KINGBASE_TEST_PERF=1`.
+  The cross-mode probe also reads `KINGBASE_TEST_PEER_DSN`; without it that probe skips with a
+  named reason instead of failing.
 - `KINGBASE_TEST_ARTIFACT_DIR` resolves relative to the `live/` package directory, so an artifact
   path in the documents is package-relative. Artifacts are gitignored, sanitized and never
   contain credentials.

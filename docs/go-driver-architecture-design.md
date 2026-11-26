@@ -1,6 +1,6 @@
 # KingbaseES Go Driver — Architecture Design
 
-> Status: corrected requirements and interface contract; the initial PG-wire scope is implemented, M0–M4 are complete and one V009R001C010 four-instance profile is **accepted (scope-limited)** at revision `b0ae780`
+> Status: corrected requirements and interface contract; the initial PG-wire scope is implemented, M0–M4 are complete and one V009R001C010 four-instance profile is **accepted (scope-limited)** at revision `6b9312c`
 > Date: 2026-11-24 (status line refreshed 2026-11-26)
 > Companion documents: [Capability Matrix](go-driver-capabilities.md) · [Development Plan and Progress](go-driver-development.md)
 > Premise: an independent implementation, with no vendor implementation copied. Source inspection has informed this specification, so it is not evidence of a formal clean-room process. Vendor source and generated OID lists are research evidence, not live-server acceptance.
