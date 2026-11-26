@@ -1,6 +1,6 @@
 # KingbaseES Go Driver — Capability Matrix
 
-> Status: initial PG-wire scope implemented and tested offline; the V009R001C010 four-mode deployment is **accepted (scope-limited)** on 2026-11-26 (`6b9312c`); live TLS acceptance is deferred by operator decision (O8)
+> Status: initial PG-wire scope implemented and tested offline; the V009R001C010 four-mode deployment is **accepted (scope-limited)** on 2026-11-26 (`594be1b`); live TLS acceptance is deferred by operator decision (O8)
 > Date: 2026-11-25 (TLS deferral recorded 2026-11-26)
 > Companion documents: [Architecture Design](go-driver-architecture-design.md) · [Development Plan and Progress](go-driver-development.md)
 
@@ -25,7 +25,7 @@ DSN parsing, bounded PG-wire framing, a scripted offline peer, the startup excha
 | F-103 | Whole physical Connect timeout | P0 | both | Context/timeout covers DNS through identity, mode, catalog and idle validation; close partial sessions | done | done | accepted |
 | F-104 | `application_name` / `fallback_application_name` | P1 | live | verified application-name visibility per backend, not assumed PG SQL on MySQL | done | done | done |
 | F-105 | TCP keepalive | P2 | offline | OS-specific settings; explicit unsupported error until implemented | done | done | n/a |
-| F-106 | Multiple hosts and target_session_attrs | P2 | live | Separate opt-in target-selection policy; no protocol or port fallback | done | done | pending |
+| F-106 | Multiple hosts and target_session_attrs | P2 | live | Separate opt-in target-selection policy; no protocol or port fallback | done | done | accepted |
 | F-107 | Environment-variable fallback (`KINGBASE_*`) | P2 | offline | explicit parameters win; names are case-insensitive | done | done | n/a |
 | F-108 | Parameter-name normalization | P0 | offline | lowercase + strip `_`, so `connect_timeout`/`connectTimeout` collapse; explicit aliases: `compatibilityMode` ← `compatibleMode`, `mode`, `databaseMode` | done | done | n/a |
 | F-109 | Case-insensitive enum values | P0 | offline | `MYSQL` / `MySQL` / `mysql` equivalent | done | done | n/a |
@@ -240,7 +240,7 @@ These are requested target profiles, not a support list. Exact product/edition/r
 
 | Profile | Requested deployment/mode | Wire | Release scope | Exact product/build | Acceptance |
 |---|---|---|---|---|---|
-| V9R001C010-4M | operator deployment: one V9 installation, four instances (pg/oracle/mysql/sqlserver) | pg | first-release target | `KingbaseES V009R001C010`, `server_version` 12.1, driver `6b9312c` | **accepted (scope-limited)** 2026-11-26 |
+| V9R001C010-4M | operator deployment: one V9 installation, four instances (pg/oracle/mysql/sqlserver) | pg | first-release target | `KingbaseES V009R001C010`, `server_version` 12.1, driver `594be1b` | **accepted (scope-limited)** 2026-11-26 |
 | V9-A-PG | all-mode packaging initialized as PG | pg | first-release target | TBD | pending |
 | V9-A-ORA | all-mode packaging initialized as Oracle | pg | first-release target | TBD | pending |
 | V9-A-MY | all-mode packaging initialized as MySQL | pg | first-release target | TBD | pending |
@@ -254,7 +254,7 @@ These are requested target profiles, not a support list. Exact product/edition/r
 For every scoped (feature,profile) pair with live/both verification, the default was pending; the
 override records below carry the accepted set. Each record names the profile, the covering live
 test, the artifact (`live/artifacts/<mode>/`, local and gitignored), the capture time
-(2026-11-26T04:44Z), the driver revision `6b9312c` and the role (`system` for the suite, plus a
+(2026-11-26T04:51Z), the driver revision `594be1b` and the role (`system` for the suite, plus a
 temporary ordinary login for the V2 capture). Aggregate Live is accepted for this profile only
 under the scope limits recorded in the [live ledger](go-driver-live-profile.md#accepted-profile-v9r001c010-four-mode-2026-11-26).
 
@@ -262,6 +262,7 @@ under the scope limits recorded in the [live ledger](go-driver-live-profile.md#a
 |---|---|---|
 | F-201, F-202, F-207 | `TestLiveSmoke`, `TestLiveExplicitModeConflict`, `TestLiveCatalogAndBuiltins` | all four |
 | F-103, F-116, F-221, F-1001 | `TestLiveSmoke` (connect under budget, `Ping`, wire report, identity) | all four |
+| F-106 | `TestLiveMultiHostFailover` | all four |
 | F-104 | `TestLiveApplicationName`, `TestLiveFallbackApplicationName` | all four |
 | F-113 | `TestLiveRuntimeParameterForwarding` | all four |
 | F-117 | `TestLiveSmoke` (startup encoding verification must pass for any connection) | all four |
@@ -289,13 +290,13 @@ under the scope limits recorded in the [live ledger](go-driver-live-profile.md#a
 | F-804, F-805, F-243 | offline only | pending: live TLS is deferred by O8 (no TLS listener) |
 | F-901, F-903 | `TestLiveServerErrorFields` | all four |
 | F-1104 | `TestLiveCrossModeConcurrency` (two DSNs, `-race`, 8 workers per pool) | all four pairs run (pg+oracle, pg+mysql, mysql+sqlserver) |
+| F-106 | `TestLiveMultiHostFailover` (unresolvable first candidate, all-failing aggregate) | all four; `target_session_attrs` read-write/read-only stay offline (no replica to distinguish) |
 | F-1105 | `TestLivePerformanceBaseline` (`KINGBASE_TEST_PERF=1`, log-only) | all four |
 
 Live states that stay pending for this profile, with the reason:
 
 | Feature | Reason |
 |---|---|
-| F-106 (multiple hosts / target attributes) | needs two independent endpoints; the deployment is one host with four instances |
 | F-801, F-803 (cleartext/MD5, SM3) | not enabled by `sys_hba.conf`; implemented and replayed offline |
 | F-804, F-805, F-243 (TLS) | no TLS listener; deferred by O8 |
 | F-705, F-706, F-707, F-806 | formally deferred features, not part of the initial release |
