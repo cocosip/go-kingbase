@@ -108,19 +108,41 @@ func (s *Server) Addr() string {
 	return s.ln.Addr().String()
 }
 
-// Close stops the listener, closes accepted connections and waits for active
-// handlers, so a handler blocked on a read cannot hang test cleanup.
+// shutdownGrace bounds how long Close waits for a handler that is still reading
+// the message a client sent last. Closing the socket first would discard data
+// the peer has already received but not read yet, which a script would report
+// as a spurious EOF instead of the expected Terminate. The window being
+// protected is one loopback round trip, so the bound only has to cover
+// scheduling latency.
+const shutdownGrace = 100 * time.Millisecond
+
+// Close stops the listener, drains what clients already sent, closes accepted
+// connections and waits for active handlers, so a handler blocked on a read
+// cannot hang test cleanup.
 func (s *Server) Close() {
 	s.once.Do(func() {
 		_ = s.ln.Close()
 	})
 	s.mu.Lock()
 	s.closed = true
+	s.mu.Unlock()
+
+	done := make(chan struct{})
+	go func() {
+		s.wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return
+	case <-time.After(shutdownGrace):
+	}
+	s.mu.Lock()
 	for peer := range s.conns {
 		_ = peer.conn.Close()
 	}
 	s.mu.Unlock()
-	s.wg.Wait()
+	<-done
 }
 
 // OnCancel installs a hook for a PG cancel request. Cancel requests open their

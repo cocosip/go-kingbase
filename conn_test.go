@@ -41,6 +41,11 @@ func connectPeer(t *testing.T, srv *testpeer.Server, extra string) (*conn, error
 	if !ok {
 		t.Fatalf("Connect returned %T, want *conn", physical)
 	}
+	// Close before the peer's own cleanup so the script sees the client's
+	// Terminate instead of a socket torn down underneath it.
+	t.Cleanup(func() {
+		_ = physicalConn.Close()
+	})
 	return physicalConn, nil
 }
 
