@@ -19,11 +19,19 @@ import (
 )
 
 // builtinShapeQuery lists the qualified type identities the driver may decode.
-const builtinShapeQuery = `SELECT n.nspname, t.typname, t.typtype, t.typlen, t.typbasetype
+// The names are inlined because the SQL Server-compatible parser reads the
+// text[] cast syntax as an identifier.
+func builtinShapeQuery(names []string) string {
+	quoted := make([]string, len(names))
+	for i, name := range names {
+		quoted[i] = "'" + strings.ReplaceAll(name, "'", "''") + "'"
+	}
+	return `SELECT n.nspname, t.typname, t.typtype, t.typlen, t.typbasetype
 FROM pg_catalog.pg_type AS t
 INNER JOIN pg_catalog.pg_namespace AS n ON n.oid = t.typnamespace
-WHERE t.typname = ANY($1::text[])
+WHERE t.typname IN (` + strings.Join(quoted, ", ") + `)
 ORDER BY n.nspname, t.typname`
+}
 
 // TestLiveEvidenceMatrix captures the V-item observations that are not already
 // covered by the focused live suites. It is read-only and writes a sanitized
@@ -38,49 +46,48 @@ func TestLiveEvidenceMatrix(t *testing.T) {
 	defer cancel()
 
 	report := map[string]any{
-		"profile":         profileLabel(meta.Mode),
-		"mode":            meta.Mode.String(),
-		"mode_source":     meta.ModeSource.String(),
-		"mode_verified":   meta.ModeVerified,
-		"wire_protocol":   meta.WireProtocol.String(),
-		"release":         meta.Release,
-		"server_version":  meta.ServerVersion,
-		"catalog_status":  catalogStatusName(meta.CatalogStatus),
-		"tls_mode":        tlsModeName(dsn),
-		"driver_revision": driverRevision(),
-		"go_version":      runtime.Version(),
-		"platform":        runtime.GOOS + "/" + runtime.GOARCH,
-		"host":            hostName(),
-		"operator":        os.Getenv("KINGBASE_TEST_OPERATOR"),
-		"timestamp":       time.Now().UTC().Format(time.RFC3339),
+		"profile":          profileLabel(meta.Mode),
+		"mode":             meta.Mode.String(),
+		"mode_source":      meta.ModeSource.String(),
+		"mode_verified":    meta.ModeVerified,
+		"wire_protocol":    meta.WireProtocol.String(),
+		"release":          meta.Release,
+		"server_version":   meta.ServerVersion,
+		"catalog_status":   catalogStatusName(meta.CatalogStatus),
+		"tls_mode":         tlsModeName(dsn),
+		"driver_revision":  driverRevision(),
+		"go_version":       runtime.Version(),
+		"platform":         runtime.GOOS + "/" + runtime.GOARCH,
+		"host":             hostName(),
+		"operator":         os.Getenv("KINGBASE_TEST_OPERATOR"),
+		liveFieldTimestamp: time.Now().UTC().Format(time.RFC3339),
 	}
 	record := func(key string, value any) { report[key] = value }
 
-	// V1/V16: authoritative mode and bounded product identity.
+	// V1/V16: authoritative mode and bounded product identity. The captures the
+	// acceptance depends on fail the test; only the TLS observation below may
+	// legitimately be a measured error.
 	var version string
 	if err := conn.QueryRowContext(ctx, "SELECT version()").Scan(&version); err != nil {
-		record("version_error", err.Error())
-	} else {
-		record("version_sql", version)
+		t.Fatalf("version capture: %v", err)
 	}
+	record("version_sql", version)
 
 	// V2/V3: raw qualified catalog shape, as the driver reads it.
-	catalogColumns, catalogRows, catalogErr := captureCatalog(ctx, conn)
-	if catalogErr != nil {
-		record("catalog_error", catalogErr.Error())
-	} else {
-		record("catalog_columns", catalogColumns)
-		record("catalog_row_count", len(catalogRows))
-		record("catalog_shapes", modeCatalogShapes(catalogRows))
+	catalogColumns, catalogRows, err := captureCatalog(ctx, conn)
+	if err != nil {
+		t.Fatalf("catalog capture: %v", err)
 	}
+	record("catalog_columns", catalogColumns)
+	record("catalog_row_count", len(catalogRows))
+	record("catalog_shapes", modeCatalogShapes(catalogRows))
 
 	// V4: explicit builtin shapes for the codec-selecting identities.
 	shapes, err := builtinShapes(ctx, conn)
 	if err != nil {
-		record("builtin_error", err.Error())
-	} else {
-		record("builtin_shapes", shapes)
+		t.Fatalf("builtin shape capture: %v", err)
 	}
+	record("builtin_shapes", shapes)
 
 	// V8: TLS is offered or not; the measured error is the evidence.
 	requireDSN := dsn
@@ -105,11 +112,11 @@ func TestLiveEvidenceMatrix(t *testing.T) {
 	}
 
 	// V14: the compatibility mode is an internal override, not a session GUC.
-	if settings, err := captureSettings(ctx, conn); err != nil {
-		record("settings_error", err.Error())
-	} else {
-		record("settings", settings)
+	settings, err := captureSettings(ctx, conn)
+	if err != nil {
+		t.Fatalf("settings capture: %v", err)
 	}
+	record("settings", settings)
 	// V18: scalar/temporal boundary values in the mode's own spelling.
 	record("boundaries", captureBoundaries(ctx, conn, meta.Mode))
 
@@ -259,14 +266,14 @@ func modeCatalogShapes(rows [][]any) map[string]string {
 func builtinShapes(ctx context.Context, conn *sql.Conn) (map[string]string, error) {
 	names := []string{
 		"bool", "int2", "int4", "int8", "text", "varchar", "bpchar", "name", "char",
-		"float4", "float8", "numeric", "bytea", "date", "time", "timetz", "timestamp",
+		"float4", "float8", "numeric", "bytea", "date", "time", "timetz", liveTypeTimestamp,
 		"timestamptz", "interval", "uuid", "json", "jsonb", "xml", "inet", "cidr",
 		"bit", "varbit", "oid", "unknown", "tinyint", "datetime", "smalldatetime",
 		"money", "year", "longtext", "blob", "uint4", "uint8", "nchar", "nvarchar",
 		"binary", "varbinary",
 	}
 	shapes := map[string]string{}
-	rows, err := conn.QueryContext(ctx, builtinShapeQuery, names)
+	rows, err := conn.QueryContext(ctx, builtinShapeQuery(names))
 	if err != nil {
 		return nil, err
 	}
@@ -369,6 +376,9 @@ func captureTransactions(ctx context.Context, conn *sql.Conn) map[string]string 
 			out["read_only_write"] = "rejected: " + execErr.Error()
 		}
 		_ = readOnly.Rollback()
+		// A listener that accepted the write may have committed the DDL despite
+		// the rollback, so remove the probe table on this session.
+		_, _ = conn.ExecContext(ctx, "DROP TABLE IF EXISTS live_ro_forbidden")
 	}
 	var after int64
 	if err := conn.QueryRowContext(ctx, "SELECT 1").Scan(&after); err != nil {

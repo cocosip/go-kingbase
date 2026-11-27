@@ -15,6 +15,12 @@ import (
 	"github.com/cocosip/go-kingbase"
 )
 
+// liveTypeTimestamp is the catalog type name shared by the live probes.
+const liveTypeTimestamp = "timestamp"
+
+// liveFieldTimestamp is the manifest field that records the run time.
+const liveFieldTimestamp = "timestamp"
+
 // TestLiveSmoke is the first scoped V9 profile check. It runs only with
 // -tags live and KINGBASE_TEST_DSN; a successful testpeer replay is not a
 // substitute. Set KINGBASE_TEST_MODE to assert the reported compatibility mode.
@@ -69,14 +75,14 @@ func TestLiveSmoke(t *testing.T) {
 	t.Logf("server version report: %s", version)
 	if dir := os.Getenv("KINGBASE_TEST_ARTIFACT_DIR"); dir != "" {
 		report := map[string]any{
-			"mode":           metadata.Mode.String(),
-			"mode_source":    metadata.ModeSource.String(),
-			"mode_verified":  metadata.ModeVerified,
-			"wire_protocol":  metadata.WireProtocol.String(),
-			"release":        metadata.Release,
-			"server_version": metadata.ServerVersion,
-			"version_sql":    version,
-			"timestamp":      time.Now().UTC().Format(time.RFC3339),
+			"mode":             metadata.Mode.String(),
+			"mode_source":      metadata.ModeSource.String(),
+			"mode_verified":    metadata.ModeVerified,
+			"wire_protocol":    metadata.WireProtocol.String(),
+			"release":          metadata.Release,
+			"server_version":   metadata.ServerVersion,
+			"version_sql":      version,
+			liveFieldTimestamp: time.Now().UTC().Format(time.RFC3339),
 		}
 		data, err := json.MarshalIndent(report, "", "  ")
 		if err != nil {

@@ -123,8 +123,8 @@ func TestExactDecimalAndTextBoundaries(t *testing.T) {
 		{"money", "($1,234.56)"},
 		{"interval", "1 year 2 mons 3 days 04:05:06.789"},
 		{"interval", "-00:00:01"},
-		{"time", "24:00:00.123456"},
-		{"time", "-01:02:03"},
+		{pgTypeTime, "24:00:00.123456"},
+		{pgTypeTime, "-01:02:03"},
 		{"timetz", "23:59:59.999999+05:30"},
 	}
 	for _, testCase := range cases {

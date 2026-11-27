@@ -129,82 +129,126 @@ func (c *conn) binaryParameter(oid uint32, value driver.Value) ([]byte, bool, er
 	}
 	switch name {
 	case pgTypeBool:
-		flag, ok := value.(bool)
-		if !ok {
-			return nil, false, nil
-		}
-		if flag {
-			return []byte{1}, true, nil
-		}
-		return []byte{0}, true, nil
+		return boolParameter(value)
 	case pgTypeInt2, pgTypeInt4, pgTypeInt8, pgTypeOid, pgTypeXid, pgTypeCid:
-		number, ok := value.(int64)
-		if !ok {
-			return nil, false, nil
-		}
-		switch name {
-		case pgTypeInt2:
-			if number < math.MinInt16 || number > math.MaxInt16 {
-				return nil, false, fmt.Errorf("kingbase: parameter %d overflows int2", number)
-			}
-			return binary.BigEndian.AppendUint16(nil, uint16(number)), true, nil
-		case pgTypeInt8:
-			return binary.BigEndian.AppendUint64(nil, uint64(number)), true, nil
-		default:
-			if number < math.MinInt32 || number > math.MaxInt32 {
-				return nil, false, fmt.Errorf("kingbase: parameter %d overflows int4", number)
-			}
-			return binary.BigEndian.AppendUint32(nil, uint32(number)), true, nil
-		}
-	case pgTypeFloat4:
-		number, ok := value.(float64)
-		if !ok {
-			return nil, false, nil
-		}
-		return binary.BigEndian.AppendUint32(nil, math.Float32bits(float32(number))), true, nil
-	case pgTypeFloat8:
-		number, ok := value.(float64)
-		if !ok {
-			return nil, false, nil
-		}
-		return binary.BigEndian.AppendUint64(nil, math.Float64bits(number)), true, nil
-	case pgTypeText, pgTypeVarchar, pgTypeBpchar, pgTypeChar, pgTypeName, pgTypeJSON:
-		text, ok := value.(string)
-		if !ok {
-			return nil, false, nil
-		}
-		return []byte(text), true, nil
-	case pgTypeJSONB:
-		text, ok := value.(string)
-		if !ok {
-			return nil, false, nil
-		}
-		return append([]byte{1}, text...), true, nil
+		return integerParameter(name, value)
+	case pgTypeFloat4, pgTypeFloat8:
+		return floatParameter(name, value)
+	case pgTypeText, pgTypeVarchar, pgTypeBpchar, pgTypeChar, pgTypeName, pgTypeJSON, pgTypeJSONB:
+		return textParameter(name, value)
 	case pgTypeBytea:
-		bytes, ok := value.([]byte)
-		if !ok {
-			return nil, false, nil
-		}
-		return bytes, true, nil
+		return bytesParameter(value)
 	case pgTypeTimestamp, pgTypeTimestamptz:
-		moment, ok := value.(time.Time)
-		if !ok {
-			return nil, false, nil
-		}
-		micros := moment.UTC().UnixMicro() - pgEpoch.UnixMicro()
-		return binary.BigEndian.AppendUint64(nil, uint64(micros)), true, nil
+		return timestampParameter(name, value)
 	case pgTypeDate:
-		moment, ok := value.(time.Time)
-		if !ok {
-			return nil, false, nil
-		}
-		year, month, day := moment.UTC().Date()
-		midnight := time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
-		days := (midnight.Unix() - pgEpoch.Unix()) / 86400
-		if days < math.MinInt32 || days > math.MaxInt32 {
-			return nil, false, fmt.Errorf("kingbase: date parameter %s overflows date", moment)
-		}
-		return binary.BigEndian.AppendUint32(nil, uint32(int32(days))), true, nil
+		return dateParameter(value)
 	}
 	return nil, false, nil
+}
+
+func boolParameter(value driver.Value) ([]byte, bool, error) {
+	flag, ok := value.(bool)
+	if !ok {
+		return nil, false, nil
+	}
+	if flag {
+		return []byte{1}, true, nil
+	}
+	return []byte{0}, true, nil
+}
+
+func integerParameter(name string, value driver.Value) ([]byte, bool, error) {
+	number, ok := value.(int64)
+	if !ok {
+		return nil, false, nil
+	}
+	switch name {
+	case pgTypeInt2:
+		if number < math.MinInt16 || number > math.MaxInt16 {
+			return nil, false, fmt.Errorf("kingbase: parameter %d overflows int2", number)
+		}
+		return binary.BigEndian.AppendUint16(nil, uint16(number)), true, nil
+	case pgTypeInt8:
+		return binary.BigEndian.AppendUint64(nil, uint64(number)), true, nil
+	case pgTypeOid, pgTypeXid, pgTypeCid:
+		// System identifiers are unsigned 32-bit values.
+		if number < 0 || number > math.MaxUint32 {
+			return nil, false, fmt.Errorf("kingbase: parameter %d overflows oid", number)
+		}
+		return binary.BigEndian.AppendUint32(nil, uint32(number)), true, nil
+	default:
+		if number < math.MinInt32 || number > math.MaxInt32 {
+			return nil, false, fmt.Errorf("kingbase: parameter %d overflows int4", number)
+		}
+		return binary.BigEndian.AppendUint32(nil, uint32(number)), true, nil
+	}
+}
+
+func floatParameter(name string, value driver.Value) ([]byte, bool, error) {
+	number, ok := value.(float64)
+	if !ok {
+		return nil, false, nil
+	}
+	if name == pgTypeFloat8 {
+		return binary.BigEndian.AppendUint64(nil, math.Float64bits(number)), true, nil
+	}
+	converted := float32(number)
+	if !math.IsInf(number, 0) && math.IsInf(float64(converted), 0) {
+		return nil, false, fmt.Errorf("kingbase: parameter %v overflows real", number)
+	}
+	return binary.BigEndian.AppendUint32(nil, math.Float32bits(converted)), true, nil
+}
+
+func textParameter(name string, value driver.Value) ([]byte, bool, error) {
+	text, ok := value.(string)
+	if !ok {
+		return nil, false, nil
+	}
+	if name == pgTypeJSONB {
+		return append([]byte{1}, text...), true, nil
+	}
+	return []byte(text), true, nil
+}
+
+func bytesParameter(value driver.Value) ([]byte, bool, error) {
+	bytes, ok := value.([]byte)
+	if !ok {
+		return nil, false, nil
+	}
+	return bytes, true, nil
+}
+
+func timestampParameter(name string, value driver.Value) ([]byte, bool, error) {
+	moment, ok := value.(time.Time)
+	if !ok {
+		return nil, false, nil
+	}
+	micros := timestampParameterMicros(moment, name == pgTypeTimestamptz)
+	return binary.BigEndian.AppendUint64(nil, uint64(micros)), true, nil
+}
+
+func dateParameter(value driver.Value) ([]byte, bool, error) {
+	moment, ok := value.(time.Time)
+	if !ok {
+		return nil, false, nil
+	}
+	// A date is a calendar day, so the caller's wall-clock fields are kept.
+	year, month, day := moment.Date()
+	midnight := time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
+	days := (midnight.Unix() - pgEpoch.Unix()) / 86400
+	if days < math.MinInt32 || days > math.MaxInt32 {
+		return nil, false, fmt.Errorf("kingbase: date parameter %s overflows date", moment)
+	}
+	return binary.BigEndian.AppendUint32(nil, uint32(int32(days))), true, nil
+}
+
+// timestampParameterMicros encodes a timestamp parameter as microseconds since
+// the PG epoch. A timestamp without time zone carries the caller's wall-clock
+// fields, so it is not converted through UTC; a timestamptz carries the instant.
+func timestampParameterMicros(moment time.Time, withTimeZone bool) int64 {
+	if !withTimeZone {
+		moment = time.Date(moment.Year(), moment.Month(), moment.Day(),
+			moment.Hour(), moment.Minute(), moment.Second(), moment.Nanosecond(), time.UTC)
+	}
+	return moment.UTC().UnixMicro() - pgEpoch.UnixMicro()
 }

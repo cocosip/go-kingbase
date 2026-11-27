@@ -151,8 +151,13 @@ stmt, _ = tx.PrepareContext(ctx, kingbase.CopyInRawBinary("orders", "id", "name"
 stmt.ExecContext(ctx, payloadChunk)
 ```
 
-`CopyIn` requires a transaction. `Query`/`Exec` reject the row-framed COPY forms before sending
-anything, because only the helper owns the import stream. Export runs through `Query`:
+`CopyIn` requires a transaction. `CopyInBinary` encodes each value from the storage type the
+qualified catalog reports: a domain borrows its base type, the mode scalar family is covered
+(signed/unsigned `tinyint`, `bit`, microsecond or SQL Server 100 ns `time`, session-zoned mode
+`timestamp`, plain-wall-clock `datetime`, uuid/json/jsonb and the PG builtins), and a column with no
+encoder (`numeric`, `interval`, `rowversion`, arrays, unknown schemas) fails at prepare. `Query`/`Exec`
+reject the row-framed COPY forms before sending anything, because only the helper owns the import
+stream. Export runs through `Query`:
 
 ```go
 rows, err := db.QueryContext(ctx, `COPY (SELECT id, name FROM orders) TO STDOUT`)
@@ -236,8 +241,9 @@ scoped to the released PG-wire target: a `defer` row is an explicit non-promise,
 | `Array` / typed arrays | replace | The generic `Array[T]` Scanner/Valuer handles rectangular text arrays; default results stay opaque text. |
 | `VarChar`, `VarCharMax`, `NVarCharMax`, `NChar` | keep | Compatibility wrappers implement `driver.Valuer`/`sql.Scanner` and keep their text intent through bind. |
 | `DateTime1` | keep | Wraps `time.Time`; binary/text temporal policy follows the driver's `time.Time` contract. |
-| `CursorString` and refcursor helper | replace | `NewCursor(*sql.Tx, name)` keeps the owning transaction and exposes explicit `Fetch`/`FetchAll`/`Close`; the name is one quoted identifier and ownership never transfers. Automatic routine OUT cursor creation stays deferred (T-037). |
-| `sql.Out`, `ReturnStatus`, routine conveniences | defer | F-501–F-505/T-036/T-037; an unsupported form returns a clear error. |
+| `CursorString` and refcursor helper | replace | `NewCursor(*sql.Tx, name)` keeps the owning transaction and exposes explicit `Fetch`/`FetchAll`/`Close`; the name is one quoted identifier and ownership never transfers. Automatic routine OUT cursor creation is a recorded deferral in the development plan, not a promised behaviour. |
+| `sql.Out` | keep | Standard `sql.Out` for a CALL argument: the pointer is validated up front and assigned only after completion, with the single INOUT/OUT row on PG, Oracle and MySQL; the SQL Server profile rejects it with a named listener limitation (without `sql.Out` a plain Exec still succeeds). |
+| `ReturnStatus`, routine conveniences | defer | `ReturnStatus` and the vendor-specific routine conveniences are deferred; an unsupported form returns a clear error. |
 | `GetSchema` / DataAdapter-style metadata | not provided | No portable schema-discovery promise; use explicit catalog queries and `ConnectionMetadata`. |
 | Numeric/decimal object | replace | Results are exact decimal `string`; use the caller's decimal Scanner. No hidden float conversion. |
 | `civil.Date` / `civil.Time` | replace | Use `time.Time` for date/timestamp and keep time-without-date as `string`. |
@@ -254,7 +260,8 @@ scoped to the released PG-wire target: a `defer` row is an explicit non-promise,
 - Numeric, money, time, timetz, interval, UUID, JSON/XML and inet values keep their verified text
   form; there is no implicit JSON/XML or duration conversion.
 - Date, timestamp and timestamptz use `time.Time` only for valid years 1..9999; zero/BC/infinity and
-  out-of-range forms return a typed conversion error so callers can explicitly select text.
+  out-of-range forms return a typed conversion error so callers can explicitly select text. A
+  non-PG `datetime` keeps its wall clock in both formats; `smalldatetime` binary stays opaque.
 - Domains resolve only through validated catalog links; ambiguous or unverified identities stay
   opaque.
 

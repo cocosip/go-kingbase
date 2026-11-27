@@ -28,9 +28,9 @@ func TestLivePerformanceBaseline(t *testing.T) {
 	const rounds = 500
 	const copyRows = 5000
 	report := map[string]any{
-		"mode":      meta.Mode.String(),
-		"release":   meta.Release,
-		"timestamp": time.Now().UTC().Format(time.RFC3339),
+		"mode":             meta.Mode.String(),
+		"release":          meta.Release,
+		liveFieldTimestamp: time.Now().UTC().Format(time.RFC3339),
 	}
 
 	measure := func(name string, workload func() error) {

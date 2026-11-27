@@ -33,7 +33,7 @@ func TestLiveCatalogBuiltinShapes(t *testing.T) {
 		"xid": {"b", 4}, "cid": {"b", 4}, "text": {"b", -1}, "json": {"b", -1},
 		"jsonb": {"b", -1}, "float4": {"b", 4}, "float8": {"b", 8}, "money": {"b", 8},
 		"bpchar": {"b", -1}, "varchar": {"b", -1}, "date": {"b", 4}, "time": {"b", 8},
-		"timetz": {"b", 12}, "timestamp": {"b", 8}, "timestamptz": {"b", 8},
+		"timetz": {"b", 12}, liveTypeTimestamp: {"b", 8}, "timestamptz": {"b", 8},
 		"interval": {"b", 16}, "bit": {"b", -1}, "varbit": {"b", -1},
 		"numeric": {"b", -1}, "uuid": {"b", 16}, "xml": {"b", -1},
 		"inet": {"b", -1}, "cidr": {"b", -1}, "macaddr": {"b", 6}, "macaddr8": {"b", 8},

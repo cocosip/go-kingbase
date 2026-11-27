@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -217,5 +218,153 @@ func liveRejectBinaryRows(ctx context.Context, t *testing.T, conn *sql.Conn, tab
 	}
 	if after != before {
 		t.Errorf("rows after the failed import = %d, want %d", after, before)
+	}
+}
+
+// TestLiveCopyInBinaryScalarTypes proves the encoders the typed probe above
+// does not reach: uuid, json, jsonb, timestamp and time. The comparison runs on
+// the server, so each mode's own text rendering is not assumed.
+func TestLiveCopyInBinaryScalarTypes(t *testing.T) {
+	_, conn, meta := liveDB(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	const table = "live_bin_scalar"
+	names := []string{"u", "j", "jb", "ts", "tm"}
+	types := []string{"uuid", "json", "jsonb", liveTypeTimestamp, "time"}
+	if meta.Mode == kingbase.ModeSQLServer {
+		// The SQL Server-compatible timestamp is rowversion, not a time.
+		types[3] = "datetime"
+	}
+	values := []any{
+		"deadbeef-0001-0002-0003-000400050607",
+		`{"a":1}`,
+		`{"a":1}`,
+		time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
+		time.Date(1, 1, 1, 3, 4, 5, 0, time.UTC),
+	}
+	drop := func(target *sql.Conn, name string) error {
+		_, err := target.ExecContext(context.Background(), "DROP TABLE IF EXISTS "+name)
+		return err
+	}
+	if err := drop(conn, table); err != nil {
+		t.Fatalf("drop leftovers: %v", err)
+	}
+	t.Cleanup(func() {
+		if _, leftover, _ := liveDB(t); leftover != nil {
+			_ = drop(leftover, table)
+		}
+	})
+	definitions := make([]string, len(names))
+	for i, name := range names {
+		definitions[i] = name + " " + types[i]
+	}
+	if _, err := conn.ExecContext(ctx, "CREATE TABLE "+table+" ("+strings.Join(definitions, ", ")+")"); err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+	if err := liveImportRows(ctx, conn, kingbase.CopyInBinary(table, names...), values); err != nil {
+		t.Fatalf("typed scalar import: %v", err)
+	}
+	var (
+		gotUUID  string
+		gotJSON  string
+		gotJSONB string
+		gotStamp string
+		gotTime  string
+	)
+	readQuery := "SELECT u::pg_catalog.text, j::pg_catalog.text, jb::pg_catalog.text, ts::pg_catalog.text, tm::pg_catalog.text FROM " + table
+	if err := conn.QueryRowContext(ctx, readQuery).Scan(&gotUUID, &gotJSON, &gotJSONB, &gotStamp, &gotTime); err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if gotUUID != "deadbeef-0001-0002-0003-000400050607" {
+		t.Errorf("uuid = %q", gotUUID)
+	}
+	if normalizeJSON(t, gotJSON) != `{"a":1}` || normalizeJSON(t, gotJSONB) != `{"a":1}` {
+		t.Errorf("json = %q/%q, want {\"a\":1}", gotJSON, gotJSONB)
+	}
+	if !strings.HasPrefix(gotStamp, "2026-01-02 03:04:05") {
+		t.Errorf("timestamp = %q, want 2026-01-02 03:04:05", gotStamp)
+	}
+	if !strings.HasPrefix(gotTime, "03:04:05") {
+		t.Errorf("time = %q, want 03:04:05", gotTime)
+	}
+}
+
+// normalizeJSON compacts a JSON text value so whitespace differences between
+// json and jsonb renderings do not fail the comparison.
+func normalizeJSON(t *testing.T, text string) string {
+	t.Helper()
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, []byte(text)); err != nil {
+		t.Fatalf("json value %q: %v", text, err)
+	}
+	return compact.String()
+}
+
+// TestLiveCopyInBinaryModeTypes proves the sys-schema one-byte mapping: signed
+// MySQL/Oracle tinyint and unsigned SQLServer tinyint plus bit. A mode without
+// those types skips with the reason instead of passing silently.
+func TestLiveCopyInBinaryModeTypes(t *testing.T) {
+	_, conn, meta := liveDB(t)
+	if meta.Mode != kingbase.ModeMySQL && meta.Mode != kingbase.ModeSQLServer {
+		t.Skip("one-byte sys types are scoped to the MySQL and SQLServer profiles")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	const table = "live_bin_mode"
+	drop := func(target *sql.Conn, name string) error {
+		_, err := target.ExecContext(context.Background(), "DROP TABLE IF EXISTS "+name)
+		return err
+	}
+	if err := drop(conn, table); err != nil {
+		t.Fatalf("drop leftovers: %v", err)
+	}
+	t.Cleanup(func() {
+		if _, leftover, _ := liveDB(t); leftover != nil {
+			_ = drop(leftover, table)
+		}
+	})
+
+	if meta.Mode == kingbase.ModeSQLServer {
+		if _, err := conn.ExecContext(ctx, "CREATE TABLE "+table+" (ti tinyint, bt bit, dt datetime)"); err != nil {
+			t.Fatalf("create table: %v", err)
+		}
+		if err := liveImportRows(ctx, conn, kingbase.CopyInBinary(table, "ti", "bt", "dt"),
+			[]any{int64(200), true, time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)}); err != nil {
+			t.Fatalf("typed mode import: %v", err)
+		}
+		var ti sql.NullInt64
+		var bt sql.NullBool
+		var dt string
+		if err := conn.QueryRowContext(ctx, "SELECT ti, bt, dt::pg_catalog.text FROM "+table).Scan(&ti, &bt, &dt); err != nil {
+			t.Fatalf("read back: %v", err)
+		}
+		if !ti.Valid || ti.Int64 != 200 || !bt.Valid || !bt.Bool {
+			t.Errorf("tinyint/bit = %v/%v, want 200/true", ti, bt)
+		}
+		if !strings.HasPrefix(dt, "2026-01-02 03:04:05") {
+			t.Errorf("datetime = %q, want 2026-01-02 03:04:05", dt)
+		}
+		return
+	}
+
+	if _, err := conn.ExecContext(ctx, "CREATE TABLE "+table+" (ti tinyint, dt datetime)"); err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+	if err := liveImportRows(ctx, conn, kingbase.CopyInBinary(table, "ti", "dt"),
+		[]any{int64(-5), time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)}); err != nil {
+		t.Fatalf("typed mode import: %v", err)
+	}
+	var ti sql.NullInt64
+	var dt string
+	if err := conn.QueryRowContext(ctx, "SELECT ti, dt::pg_catalog.text FROM "+table).Scan(&ti, &dt); err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if !ti.Valid || ti.Int64 != -5 {
+		t.Errorf("signed tinyint = %v, want -5", ti)
+	}
+	if !strings.HasPrefix(dt, "2026-01-02 03:04:05") {
+		t.Errorf("datetime = %q, want 2026-01-02 03:04:05", dt)
 	}
 }

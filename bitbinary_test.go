@@ -65,6 +65,17 @@ func TestBitBinaryRejectsMalformedLayout(t *testing.T) {
 	}
 }
 
+// TestBitBinaryRejectsWrappedBitCount covers counts whose length calculation
+// wraps a 32-bit sum: a four-byte frame must be rejected, never allocated from
+// or indexed by the claimed count.
+func TestBitBinaryRejectsWrappedBitCount(t *testing.T) {
+	for _, bits := range []uint32{0xFFFFFFF9, 0xFFFFFFFE, 0xFFFFFFFF} {
+		if value, ok := bitBinaryValue(bitPayload(bits)); ok {
+			t.Errorf("bitBinaryValue(count %#x) = %q, true, want a rejection", bits, value)
+		}
+	}
+}
+
 func TestBinaryBitThroughRows(t *testing.T) {
 	data := bitPayload(5, 0b10101000)
 	srv := testpeer.Start(t, func(peer *testpeer.Conn) {

@@ -233,6 +233,133 @@ func TestBinaryParameterOverflow(t *testing.T) {
 	_ = physical.Close()
 }
 
+// binaryBindParameters starts a scripted peer that prepares one parameter of
+// paramOID and, when want is non-nil, asserts the binary Bind payload before
+// completing the UPDATE. An overflow must fail before anything is sent, so the
+// peer reads the statement Close directly.
+func binaryBindParameters(t *testing.T, paramOID uint32, want []byte) (*conn, *stmt) {
+	t.Helper()
+	const query = "UPDATE t SET v = $1"
+	srv := testpeer.Start(t, func(peer *testpeer.Conn) {
+		if !startupOK(peer) {
+			return
+		}
+		if !describePrepared(peer, query, []uint32{paramOID}) {
+			return
+		}
+		if want != nil {
+			if !readBindRaw(peer, "kb_stmt_0", [][]byte{want}, []int16{1}, false, nil) {
+				return
+			}
+			_ = peer.WriteMessage(wire.MsgBindComplete, nil)
+			_ = peer.CommandComplete("UPDATE 1")
+			_ = peer.ReadyForQuery(wire.StatusIdle)
+		}
+		if !closeStatement(peer, "kb_stmt_0") {
+			return
+		}
+		waitTerminate(peer)
+	})
+	physical, err := connectPeer(t, srv, "binary_parameters=true")
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	prepared, err := physical.PrepareContext(context.Background(), query)
+	if err != nil {
+		t.Fatalf("PrepareContext: %v", err)
+	}
+	return physical, prepared.(*stmt)
+}
+
+// TestBinaryTimestampParameterUsesWallClock proves a timestamp (without time
+// zone) parameter keeps the caller's wall-clock fields instead of shifting the
+// instant through UTC.
+func TestBinaryTimestampParameterUsesWallClock(t *testing.T) {
+	wall := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	moment := time.Date(2026, 1, 2, 3, 4, 5, 0, time.FixedZone("x", 8*60*60))
+	want := make([]byte, 8)
+	binary.BigEndian.PutUint64(want, uint64(wall.UnixMicro()-pgEpoch.UnixMicro()))
+	physical, statement := binaryBindParameters(t, 1114, want)
+	if _, err := statement.ExecContext(context.Background(),
+		[]driver.NamedValue{{Ordinal: 1, Value: moment}}); err != nil {
+		t.Fatalf("ExecContext: %v", err)
+	}
+	if err := statement.Close(); err != nil {
+		t.Fatalf("statement.Close: %v", err)
+	}
+	_ = physical.Close()
+}
+
+// TestBinaryDateParameterUsesWallClock proves a date parameter keeps the
+// caller's calendar date instead of the UTC date of the same instant.
+func TestBinaryDateParameterUsesWallClock(t *testing.T) {
+	// 2026-01-02 00:30 at +08 is still 2026-01-01 in UTC.
+	moment := time.Date(2026, 1, 2, 0, 30, 0, 0, time.FixedZone("x", 8*60*60))
+	want := make([]byte, 4)
+	binary.BigEndian.PutUint32(want, 9498) // 2000-01-01 -> 2026-01-02
+	physical, statement := binaryBindParameters(t, 1082, want)
+	if _, err := statement.ExecContext(context.Background(),
+		[]driver.NamedValue{{Ordinal: 1, Value: moment}}); err != nil {
+		t.Fatalf("ExecContext: %v", err)
+	}
+	if err := statement.Close(); err != nil {
+		t.Fatalf("statement.Close: %v", err)
+	}
+	_ = physical.Close()
+}
+
+// TestBinaryFloat4RejectsOverflow proves a value that cannot be represented as
+// float32 fails before sending instead of being stored as infinity.
+func TestBinaryFloat4RejectsOverflow(t *testing.T) {
+	physical, statement := binaryBindParameters(t, 700, nil)
+	_, err := statement.ExecContext(context.Background(),
+		[]driver.NamedValue{{Ordinal: 1, Value: float64(1e300)}})
+	if err == nil || !strings.Contains(err.Error(), "overflows real") {
+		t.Fatalf("error = %v, want a real overflow error", err)
+	}
+	if physical.netConn == nil {
+		t.Error("the overflow retired the connection before sending")
+	}
+	if err := statement.Close(); err != nil {
+		t.Fatalf("statement.Close: %v", err)
+	}
+	_ = physical.Close()
+}
+
+// TestBinaryOIDParameterAcceptsFullRange proves an oid parameter keeps its
+// unsigned 32-bit range instead of the int32 limit of int4.
+func TestBinaryOIDParameterAcceptsFullRange(t *testing.T) {
+	want := []byte{0xb2, 0xd0, 0x5e, 0x00} // 3000000000
+	physical, statement := binaryBindParameters(t, 26, want)
+	if _, err := statement.ExecContext(context.Background(),
+		[]driver.NamedValue{{Ordinal: 1, Value: int64(3_000_000_000)}}); err != nil {
+		t.Fatalf("ExecContext: %v", err)
+	}
+	if err := statement.Close(); err != nil {
+		t.Fatalf("statement.Close: %v", err)
+	}
+	_ = physical.Close()
+}
+
+// TestSystemIdentifierBinaryParity proves oid/xid/cid decode to the same value
+// in text and binary format, including values above the int32 boundary.
+func TestSystemIdentifierBinaryParity(t *testing.T) {
+	const unsigned = int64(3_000_000_000)
+	const text = "3000000000"
+	raw := make([]byte, 4)
+	binary.BigEndian.PutUint32(raw, uint32(unsigned))
+	for _, name := range []string{pgTypeOid, pgTypeXid, pgTypeCid} {
+		textValue, ok, err := textValue(ModePG, schemaPGCatalog, name, []byte(text), nil)
+		if err != nil || !ok || textValue != unsigned {
+			t.Errorf("%s text value = %#v, %v, %v, want %d", name, textValue, ok, err, unsigned)
+		}
+		binaryValue, ok := binaryValue(ModePG, schemaPGCatalog, name, raw)
+		if !ok || binaryValue != unsigned {
+			t.Errorf("%s binary value = %#v, %v, want %d", name, binaryValue, ok, unsigned)
+		}
+	}
+}
+
 func TestXMLBinaryIsText(t *testing.T) {
 	const document = `<root attr="v">text</root>`
 	value, ok := binaryValue(ModePG, schemaPGCatalog, pgTypeXML, []byte(document))

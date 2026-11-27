@@ -5,6 +5,7 @@ package live_test
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"os"
 	"testing"
 	"time"
@@ -88,7 +89,22 @@ func TestLiveArraysAndBinaryPrepared(t *testing.T) {
 			t.Errorf("array = %+v", array)
 		}
 	} else {
-		t.Log("SQLServer compatibility mode rejected the PG ARRAY[] literal; array support remains unverified on this profile")
+		// The documented SQLServer-mode limitation is measured here instead of
+		// asserted by a comment: the probe must be a server rejection, and a
+		// listener that starts accepting the literal must satisfy the values.
+		var array kingbase.Array[int64]
+		err := conn.QueryRowContext(ctx, `SELECT ARRAY[1,2,3]::pg_catalog.int4[]`).Scan(&array)
+		var serverErr *kingbase.Error
+		switch {
+		case errors.As(err, &serverErr):
+			t.Logf("SQLServer-mode listener rejects the PG ARRAY[] literal: %v", serverErr)
+		case err == nil:
+			if !array.Valid || len(array.Elements) != 3 || array.Elements[0] != 1 || array.Elements[2] != 3 {
+				t.Errorf("SQLServer-mode array = %+v, want the ARRAY[1,2,3] values", array)
+			}
+		default:
+			t.Fatalf("SQLServer-mode array probe = %v, want a server error or a decoded array", err)
+		}
 	}
 	statement, err := conn.PrepareContext(ctx, `SELECT $1::pg_catalog.int4, $2::pg_catalog.text, $3::pg_catalog.bytea`)
 	if err != nil {

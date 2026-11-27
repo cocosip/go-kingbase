@@ -103,11 +103,10 @@ func checkMySQLTypeCodecs(t *testing.T, queryOne func(string, ...any) any, prepa
 	if got, ok := preparedOne("SELECT CAST('abc' AS varbinary(3))").([]byte); !ok || string(got) != "abc" {
 		t.Errorf("mysql varbinary binary = %#v, want []byte abc", got)
 	}
-	// The datetime binary payload is session-timezone dependent, so the
-	// verified contract keeps it as raw bytes instead of a shifted instant.
+	// The datetime binary payload carries the same wall clock as the text.
 	prepared := preparedOne("SELECT CAST('2024-01-02 03:04:05' AS datetime)")
-	if _, ok := prepared.([]byte); !ok {
-		t.Errorf("mysql datetime binary = %#v, want raw bytes", prepared)
+	if got, ok := prepared.(time.Time); !ok || got.Format("2006-01-02 15:04:05") != "2024-01-02 03:04:05" {
+		t.Errorf("mysql datetime binary = %#v, want that wall clock", prepared)
 	}
 }
 
@@ -136,6 +135,10 @@ func checkSQLServerTypeCodecs(t *testing.T, queryOne func(string, ...any) any, p
 	if got, ok := queryOne("SELECT CAST('2024-01-02 03:04:05' AS datetime)").(time.Time); !ok ||
 		got.Format("2006-01-02 15:04:05") != "2024-01-02 03:04:05" {
 		t.Errorf("sqlserver datetime text = %#v, want that wall clock", got)
+	}
+	if got, ok := preparedOne("SELECT CAST('2024-01-02 03:04:05' AS datetime)").(time.Time); !ok ||
+		got.Format("2006-01-02 15:04:05") != "2024-01-02 03:04:05" {
+		t.Errorf("sqlserver datetime binary = %#v, want that wall clock", got)
 	}
 	if got := queryOne("SELECT CAST(1234.56 AS money)"); got != "1234.5600" {
 		t.Errorf("sqlserver money text = %#v, want 1234.5600", got)

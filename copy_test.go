@@ -498,61 +498,184 @@ func TestCopyInBinaryStatement(t *testing.T) {
 	}
 }
 
-// TestCopyInBinaryKinds pins the catalog mapping, including the two storage forms
-// of a date and the types that stay unsupported.
+// TestCopyInBinaryKinds pins the qualified catalog mapping: an encoder is
+// selected only under the type's own schema and length, so a same-named user
+// type never borrows a builtin layout and an unverified layout stays
+// unsupported.
 func TestCopyInBinaryKinds(t *testing.T) {
 	for _, tc := range []struct {
+		mode    CompatibilityMode
+		schema  string
 		typname string
 		typlen  int64
 		want    copyKind
 	}{
-		{"int2", 2, copyInt2},
-		{pgTypeInt4, 4, copyInt4},
-		{"int8", 8, copyInt8},
-		{"float4", 4, copyFloat4},
-		{"float8", 8, copyFloat8},
-		{"bool", 1, copyBool},
-		{pgTypeText, -1, copyText},
-		{"varcharbyte", -1, copyText},
-		{"bytea", -1, copyBytea},
-		{"date", 4, copyDateDays},
-		{"date", 8, copyDateMicros},
-		{"timestamp", 8, copyTimestamp},
-		{"timestamptz", 8, copyTimestamptz},
-		{"time", 8, copyTime},
-		{"uuid", 16, copyUUID},
-		{"json", -1, copyJSON},
-		{"jsonb", -1, copyJSONB},
+		{ModePG, schemaPGCatalog, "int2", 2, copyInt2},
+		{ModePG, schemaPGCatalog, pgTypeInt4, 4, copyInt4},
+		{ModePG, schemaPGCatalog, "int8", 8, copyInt8},
+		{ModePG, schemaPGCatalog, "oid", 4, copyUint4},
+		{ModePG, schemaPGCatalog, "float4", 4, copyFloat4},
+		{ModePG, schemaPGCatalog, "float8", 8, copyFloat8},
+		{ModePG, schemaPGCatalog, "bool", 1, copyBool},
+		{ModePG, schemaPGCatalog, pgTypeText, -1, copyText},
+		{ModePG, schemaPGCatalog, "varchar", -1, copyText},
+		{ModePG, schemaPGCatalog, "bytea", -1, copyBytea},
+		{ModePG, schemaPGCatalog, "date", 4, copyDateDays},
+		{ModePG, schemaPGCatalog, "date", 8, copyDateMicros},
+		{ModePG, schemaPGCatalog, "timestamp", 8, copyTimestamp},
+		{ModePG, schemaPGCatalog, "timestamptz", 8, copyTimestamptz},
+		{ModePG, schemaPGCatalog, pgTypeTime, 8, copyTime},
+		{ModePG, schemaPGCatalog, "uuid", 16, copyUUID},
+		{ModePG, schemaPGCatalog, "json", -1, copyJSON},
+		{ModePG, schemaPGCatalog, "jsonb", -1, copyJSONB},
+		{ModeOracle, schemaPGCatalog, "tinyint", 1, copyInt1},
+		{ModeMySQL, schemaSys, "tinyint", 1, copyInt1},
+		{ModeSQLServer, schemaSys, "tinyint", 1, copyUint1},
+		{ModeMySQL, schemaSys, "uint1", 1, copyUint1},
+		{ModeMySQL, schemaSys, testTypeUint4, 4, copyUint4},
+		{ModeMySQL, schemaSys, "uint8", 8, copyUint8},
+		{ModeSQLServer, schemaSys, "bit", 1, copyBool},
+		{ModeMySQL, schemaSys, "binary", -1, copyBytea},
+		{ModeSQLServer, schemaSys, "nchar", -1, copyText},
+		{ModeMySQL, schemaSys, "timestamp", 8, copyZonedTimestamp},
+		{ModeMySQL, schemaSys, "timestamptz", 8, copyTimestamptz},
+		{ModeMySQL, schemaSys, "datetime", 8, copyTimestamp},
+		{ModeMySQL, schemaSys, pgTypeTime, 8, copyTime},
+		{ModeSQLServer, schemaSys, pgTypeTime, 8, copyTimeTicks},
 	} {
-		kind, ok := copyKindForType(tc.typname, tc.typlen)
+		kind, ok := copyKindForType(tc.mode, tc.schema, tc.typname, tc.typlen)
 		if !ok || kind != tc.want {
-			t.Errorf("copyKindForType(%q, %d) = %v, %t, want %v", tc.typname, tc.typlen, kind, ok, tc.want)
+			t.Errorf("copyKindForType(%v, %q, %q, %d) = %v, %t, want %v",
+				tc.mode, tc.schema, tc.typname, tc.typlen, kind, ok, tc.want)
 		}
 	}
-	for _, typname := range []string{"numeric", "interval", "rowversion", "int4range", "_int4"} {
-		if _, ok := copyKindForType(typname, -1); ok {
-			t.Errorf("copyKindForType(%q) accepted a type without an encoder", typname)
+	for _, tc := range []struct {
+		mode    CompatibilityMode
+		schema  string
+		typname string
+		typlen  int64
+	}{
+		{ModePG, "app", pgTypeInt4, 4},       // a user type never borrows the builtin
+		{ModePG, schemaPGCatalog, "bit", -1}, // a PG bit string is not a bool
+		{ModePG, schemaPGCatalog, "varbit", -1},
+		{ModeMySQL, schemaSys, "datetime", 2}, // the shape must match the known length
+		{ModeSQLServer, schemaSys, "smalldatetime", 8},
+		{ModeMySQL, schemaSys, "tinyint", 2}, // the shape must match the known length
+		{ModeMySQL, schemaSys, testTypeUint4, 2},
+		{ModeSQLServer, schemaSys, "bit", 2},
+		{ModePG, schemaPGCatalog, "numeric", -1},
+		{ModePG, schemaPGCatalog, "interval", 16},
+		{ModePG, schemaPGCatalog, "money", 8},
+		{ModePG, schemaPGCatalog, "_int4", -1},
+	} {
+		if kind, ok := copyKindForType(tc.mode, tc.schema, tc.typname, tc.typlen); ok {
+			t.Errorf("copyKindForType(%v, %q, %q, %d) = %v, true, want unsupported",
+				tc.mode, tc.schema, tc.typname, tc.typlen, kind)
 		}
 	}
 }
 
-// catalogResponse describes the three columns of the binary COPY resolution query.
+// TestCopyInBinaryScalarEncodings pins the byte layout of every scalar encoder
+// the supported catalog types select.
+func TestCopyInBinaryScalarEncodings(t *testing.T) {
+	uuidBytes := []byte{0xde, 0xad, 0xbe, 0xef, 0, 1, 0, 2, 0, 3, 0, 4, 0, 5, 6, 7}
+	timeMicros := make([]byte, 8)
+	binary.BigEndian.PutUint64(timeMicros, 11_045_500_000) // 03:04:05.5
+	for _, tc := range []struct {
+		name  string
+		kind  copyKind
+		value any
+		want  []byte
+	}{
+		{"int1", copyInt1, int64(-12), []byte{0xf4}},
+		{"uint1", copyUint1, int64(200), []byte{0xc8}},
+		{"uint4", copyUint4, int64(3_000_000_000), []byte{0xb2, 0xd0, 0x5e, 0x00}},
+		{"uint8", copyUint8, int64(1 << 40), []byte{0, 0, 1, 0, 0, 0, 0, 0}},
+		{"float4", copyFloat4, float64(1.5), []byte{0x3f, 0xc0, 0, 0}},
+		{"float8", copyFloat8, float64(2.5), []byte{0x40, 0x04, 0, 0, 0, 0, 0, 0}},
+		{pgTypeTime, copyTime, time.Date(1, 1, 1, 3, 4, 5, 500_000_000, time.UTC), timeMicros},
+		{"time ticks", copyTimeTicks, time.Date(1, 1, 1, 3, 4, 5, 500_000_000, time.UTC),
+			binary.BigEndian.AppendUint64(nil, 11_045_500_000*10)},
+		{"uuid text", copyUUID, "deadbeef-0001-0002-0003-000400050607", uuidBytes},
+		{"uuid bytes", copyUUID, uuidBytes, uuidBytes},
+		{"json", copyJSON, `{"a":1}`, []byte(`{"a":1}`)},
+		{"jsonb", copyJSONB, `{"a":1}`, append([]byte{1}, `{"a":1}`...)},
+	} {
+		got, err := encodeCopyBinaryValue(tc.kind, tc.value)
+		if err != nil {
+			t.Errorf("%s: encodeCopyBinaryValue = %v", tc.name, err)
+			continue
+		}
+		if !bytes.Equal(got, tc.want) {
+			t.Errorf("%s: encodeCopyBinaryValue = %x, want %x", tc.name, got, tc.want)
+		}
+	}
+	for _, tc := range []struct {
+		name  string
+		kind  copyKind
+		value any
+	}{
+		{"int1 high", copyInt1, int64(128)},
+		{"int1 low", copyInt1, int64(-129)},
+		{"uint1 negative", copyUint1, int64(-1)},
+		{"uint4 negative", copyUint4, int64(-1)},
+		{"uint4 high", copyUint4, int64(1 << 32)},
+		{"uint8 negative", copyUint8, int64(-1)},
+		{"float4 overflow", copyFloat4, float64(1e300)},
+		{"uint4 wrong type", copyUint4, "7"},
+		{"uuid malformed", copyUUID, "not-a-uuid"},
+		{"json wrong type", copyJSON, int64(7)},
+	} {
+		if got, err := encodeCopyBinaryValue(tc.kind, tc.value); err == nil {
+			t.Errorf("%s: encodeCopyBinaryValue = %x, want an error", tc.name, got)
+		}
+	}
+}
+
+// TestCopyInBinaryZonedTimestamp proves a mode timestamp that stores an instant
+// reads the caller's wall-clock fields in the session zone.
+func TestCopyInBinaryZonedTimestamp(t *testing.T) {
+	zone := time.FixedZone("x", 8*60*60)
+	moment := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	wantInstant := time.Date(2026, 1, 1, 19, 4, 5, 0, time.UTC).UnixMicro() - pgEpoch.UnixMicro()
+	got, err := encodeCopyBinaryValueAt(copyZonedTimestamp, moment, zone)
+	if err != nil {
+		t.Fatalf("encode zoned timestamp: %v", err)
+	}
+	if value := int64(binary.BigEndian.Uint64(got)); value != wantInstant {
+		t.Errorf("zoned timestamp micros = %d, want %d", value, wantInstant)
+	}
+	// Without a session zone the fields stay UTC.
+	utc, err := encodeCopyBinaryValueAt(copyZonedTimestamp, moment, nil)
+	if err != nil {
+		t.Fatalf("encode zoned timestamp without a zone: %v", err)
+	}
+	if value := int64(binary.BigEndian.Uint64(utc)); value != moment.UnixMicro()-pgEpoch.UnixMicro() {
+		t.Errorf("zoneless timestamp micros = %d, want the UTC fields", value)
+	}
+}
+
+// catalogResponse describes the four columns of the binary COPY resolution
+// query: column name, storage type name and length, and the type's schema.
 func catalogResponse(rows ...[]string) ([]wire.ColumnDescription, [][][]byte) {
 	columns := []wire.ColumnDescription{
 		{Name: "attname", TypeOID: 25, TypeLen: -1},
-		{Name: "typname", TypeOID: 19, TypeLen: -1},
+		{Name: "typname", TypeOID: 19, TypeLen: 64},
 		{Name: "typlen", TypeOID: 21, TypeLen: 2},
+		{Name: "nspname", TypeOID: 19, TypeLen: 64},
 	}
 	data := make([][][]byte, len(rows))
 	for i, row := range rows {
-		data[i] = [][]byte{[]byte(row[0]), []byte(row[1]), []byte(row[2])}
+		data[i] = [][]byte{[]byte(row[0]), []byte(row[1]), []byte(row[2]), []byte(row[3])}
 	}
 	return columns, data
 }
 
 // peerBinaryCatalog answers the column resolution query and then the COPY
-// statement that follows it.
+// statement that follows it. The script owns that query, so the peer's generic
+// catalog answer is disabled.
 func peerBinaryCatalog(peer *testpeer.Conn, rows [][]string, stream func(*testpeer.Conn)) bool {
+	peer.DisableAutoCatalog()
 	if _, ok := expectMessage(peer, wire.MsgQuery); !ok {
 		return false
 	}
@@ -593,10 +716,10 @@ func TestCopyInBinaryStream(t *testing.T) {
 			return
 		}
 		if !peerBinaryCatalog(peer, [][]string{
-			{"a", pgTypeInt4, "4"},
-			{"b", pgTypeText, "-1"},
-			{"c", "bool", "1"},
-			{"d", pgTypeText, "-1"},
+			{"a", pgTypeInt4, "4", schemaPGCatalog},
+			{"b", pgTypeText, "-1", schemaPGCatalog},
+			{"c", "bool", "1", schemaPGCatalog},
+			{"d", pgTypeText, "-1", schemaPGCatalog},
 		}, func(peer *testpeer.Conn) {
 			data, _, failed, err := readCopyStream(peer)
 			if err != nil {
@@ -688,7 +811,7 @@ func TestCopyInBinaryRejectsBadRow(t *testing.T) {
 				if !peerBegin(peer) {
 					return
 				}
-				peerBinaryCatalog(peer, [][]string{{"a", pgTypeInt4, "4"}}, func(peer *testpeer.Conn) {
+				peerBinaryCatalog(peer, [][]string{{"a", pgTypeInt4, "4", schemaPGCatalog}}, func(peer *testpeer.Conn) {
 					_, _, failed, err := readCopyStream(peer)
 					if err != nil {
 						peer.Errorf("copy stream: %v", err)
@@ -734,10 +857,11 @@ func TestCopyInBinaryRejectsUnsupportedType(t *testing.T) {
 		if !peerBegin(peer) {
 			return
 		}
+		peer.DisableAutoCatalog()
 		if _, ok := expectMessage(peer, wire.MsgQuery); !ok {
 			return
 		}
-		columns, data := catalogResponse([]string{"a", "numeric", "-1"})
+		columns, data := catalogResponse([]string{"a", "numeric", "-1", schemaPGCatalog})
 		_ = peer.SendResult(columns, data, "SELECT 0", wire.StatusInTransaction)
 		drainUntilTerminate(peer)
 	})
@@ -764,10 +888,11 @@ func TestCopyInBinaryRejectsTextResponse(t *testing.T) {
 		if !peerBegin(peer) {
 			return
 		}
+		peer.DisableAutoCatalog()
 		if _, ok := expectMessage(peer, wire.MsgQuery); !ok {
 			return
 		}
-		columns, data := catalogResponse([]string{"a", pgTypeInt4, "4"})
+		columns, data := catalogResponse([]string{"a", pgTypeInt4, "4", schemaPGCatalog})
 		_ = peer.SendResult(columns, data, "SELECT 0", wire.StatusInTransaction)
 		if _, ok := expectMessage(peer, wire.MsgQuery); !ok {
 			return
@@ -798,7 +923,7 @@ func TestCopyInBinaryEmptyStream(t *testing.T) {
 		if !peerBegin(peer) {
 			return
 		}
-		peerBinaryCatalog(peer, [][]string{{"a", pgTypeInt4, "4"}}, func(peer *testpeer.Conn) {
+		peerBinaryCatalog(peer, [][]string{{"a", pgTypeInt4, "4", schemaPGCatalog}}, func(peer *testpeer.Conn) {
 			data, _, failed, err := readCopyStream(peer)
 			if err != nil {
 				peer.Errorf("copy stream: %v", err)

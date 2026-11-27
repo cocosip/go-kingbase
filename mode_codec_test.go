@@ -3,6 +3,7 @@ package kingbase
 import (
 	"context"
 	"database/sql/driver"
+	"encoding/binary"
 	"errors"
 	"reflect"
 	"testing"
@@ -123,9 +124,9 @@ func TestModeTypeCodecs(t *testing.T) {
 		{mode: ModeSQLServer, oid: 75004, schema: schemaSys, name: pgTypeTinyint, length: 1, row: []byte("-1"), wantErr: true, wantType: tiny},
 		{mode: ModeMySQL, oid: 75005, schema: schemaSys, name: pgTypeTinyint, length: 1, format: 1, row: []byte{0xff}, want: int64(-1), wantType: tiny},
 		{mode: ModeSQLServer, oid: 75006, schema: schemaSys, name: pgTypeTinyint, length: 1, format: 1, row: []byte{0xc8}, want: int64(200), wantType: tiny},
-		{mode: ModeMySQL, oid: 75007, schema: schemaSys, name: "uint4", length: 4, row: []byte("4294967295"), want: int64(4294967295), wantType: tiny},
-		{mode: ModeMySQL, oid: 75008, schema: schemaSys, name: "uint4", length: 4, row: []byte("4294967296"), wantErr: true, wantType: tiny},
-		{mode: ModeMySQL, oid: 75009, schema: schemaSys, name: "uint4", length: 4, format: 1, row: []byte{0xff, 0xff, 0xff, 0xff}, want: int64(4294967295), wantType: tiny},
+		{mode: ModeMySQL, oid: 75007, schema: schemaSys, name: testTypeUint4, length: 4, row: []byte("4294967295"), want: int64(4294967295), wantType: tiny},
+		{mode: ModeMySQL, oid: 75008, schema: schemaSys, name: testTypeUint4, length: 4, row: []byte("4294967296"), wantErr: true, wantType: tiny},
+		{mode: ModeMySQL, oid: 75009, schema: schemaSys, name: testTypeUint4, length: 4, format: 1, row: []byte{0xff, 0xff, 0xff, 0xff}, want: int64(4294967295), wantType: tiny},
 		{mode: ModeMySQL, oid: 75010, schema: schemaSys, name: "uint8", length: 8, row: []byte("18446744073709551615"), want: "18446744073709551615", wantType: text},
 		{mode: ModeMySQL, oid: 75011, schema: schemaSys, name: "uint8", length: 8, format: 1,
 			row: []byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}, want: "18446744073709551615", wantType: text},
@@ -133,10 +134,11 @@ func TestModeTypeCodecs(t *testing.T) {
 			want: when(2024, time.January, 2, 3, 4, 5), wantType: instant},
 		{mode: ModeSQLServer, oid: 75013, schema: schemaSys, name: "smalldatetime", length: 8, row: []byte("2024-01-02 03:04:00"),
 			want: when(2024, time.January, 2, 3, 4, 0), wantType: instant},
-		// The datetime binary payload is session-timezone dependent, so it stays
-		// raw bytes instead of being decoded as a shifted instant.
-		{mode: ModeMySQL, oid: 75014, schema: schemaSys, name: "datetime", length: 8, format: 1,
-			row: []byte{0, 2, 0xb0, 0xec, 0x85, 0x15, 0xf3, 0x40}, want: []byte{0, 2, 0xb0, 0xec, 0x85, 0x15, 0xf3, 0x40}, wantType: bytesType},
+		// The mode datetime binary payload is the same plain wall-clock stamp as
+		// its text, so it decodes without a zone shift.
+		{mode: ModeMySQL, oid: 75014, schema: schemaSys, name: modeTypeDatetime, length: 8, format: 1,
+			row:  binary.BigEndian.AppendUint64(nil, uint64(when(2024, time.January, 2, 3, 4, 5).UnixMicro()-pgEpoch.UnixMicro())),
+			want: when(2024, time.January, 2, 3, 4, 5), wantType: instant},
 		{mode: ModeMySQL, oid: 75015, schema: schemaSys, name: "varbinary", length: -1, row: []byte("0x616263"),
 			want: []byte("abc"), wantType: bytesType},
 		{mode: ModeMySQL, oid: 75016, schema: schemaSys, name: "binary", length: -1, format: 1, row: []byte("abc"),
@@ -161,7 +163,7 @@ func TestModeTypeCodecs(t *testing.T) {
 		{mode: ModeSQLServer, oid: 75033, schema: schemaSys, name: pgTypeMoney, length: 8, format: 1,
 			row: []byte{0, 0, 0, 0, 0, 0xbc, 0x61}, wantErr: true, wantType: text}, // A same-named sys type with a different base length never selects the
 		// codec: it stays opaque text just like an unknown OID.
-		{mode: ModeMySQL, oid: 75023, schema: schemaSys, name: "uint4", length: 8, row: []byte("4294967295"), want: "4294967295", wantType: text},
+		{mode: ModeMySQL, oid: 75023, schema: schemaSys, name: testTypeUint4, length: 8, row: []byte("4294967295"), want: "4294967295", wantType: text},
 		{mode: ModeSQLServer, oid: 75024, schema: schemaSys, name: pgTypeTinyint, length: 4, row: []byte("5"), want: "5", wantType: text},
 		// Oracle exposes tinyint as a pg_catalog base type.
 		{mode: ModeOracle, oid: 75025, schema: schemaPGCatalog, name: pgTypeTinyint, length: 1, row: []byte("5"), want: int64(5), wantType: tiny},

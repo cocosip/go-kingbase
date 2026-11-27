@@ -75,7 +75,7 @@ func TestArrayValueEncodesTextLiteral(t *testing.T) {
 			`{NULL}`,
 		},
 		{
-			"time",
+			pgTypeTime,
 			Array[time.Time]{Valid: true, Elements: []time.Time{time.Date(2020, 1, 2, 3, 4, 5, 0, time.UTC)}},
 			`{"2020-01-02 03:04:05Z"}`,
 		},

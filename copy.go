@@ -523,7 +523,7 @@ func (c *conn) copyBinaryColumnKinds(ctx context.Context, relation string) (map[
 	}
 	kinds := make(map[string]copyKind)
 	unsupported := make(map[string]string)
-	values := make([]driver.Value, 3)
+	values := make([]driver.Value, 4)
 	for {
 		err := rows.Next(values)
 		if errors.Is(err, io.EOF) {
@@ -540,7 +540,8 @@ func (c *conn) copyBinaryColumnKinds(ctx context.Context, relation string) (map[
 			_ = rows.Close()
 			return nil, nil, fmt.Errorf("kingbase: invalid length for binary COPY column %q: %v", name, err)
 		}
-		if kind, ok := copyKindForType(typname, typlen); ok {
+		schema := catalogString(values[3])
+		if kind, ok := copyKindForType(c.mode, schema, typname, typlen); ok {
 			kinds[name] = kind
 			continue
 		}
@@ -727,7 +728,7 @@ func (ci *copyIn) execTyped(args []driver.NamedValue) (driver.Result, error) {
 		ci.buffer = append(ci.buffer, copyBinaryHeader...)
 		ci.header = true
 	}
-	next, err := appendCopyBinaryRow(ci.buffer, ci.kinds, args)
+	next, err := appendCopyBinaryRow(ci.buffer, ci.kinds, args, ci.conn.sessionLocation())
 	if err != nil {
 		ci.abort(err)
 		_ = ci.complete()

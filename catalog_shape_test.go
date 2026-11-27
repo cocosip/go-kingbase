@@ -164,7 +164,7 @@ func TestCatalogDuplicateQualifiedNameDisablesCodec(t *testing.T) {
 	if got, ok := dest[0].(string); !ok || got != "7" {
 		t.Errorf("ambiguous pg_catalog.int4 = %T(%v), want an opaque string", dest[0], dest[0])
 	}
-	if name := typed.ColumnTypeDatabaseTypeName(0); !strings.EqualFold(name, "int4") {
+	if name := typed.ColumnTypeDatabaseTypeName(0); !strings.EqualFold(name, pgTypeInt4) {
 		t.Errorf("ambiguous DatabaseTypeName = %q, want the honest catalog name int4", name)
 	}
 	if length, ok := typed.ColumnTypeLength(0); ok {
@@ -226,9 +226,9 @@ func TestBuiltinShapeMismatchDisablesCodec(t *testing.T) {
 		info  typeInfo
 		valid bool
 	}{
-		{"int4 correct", typeInfo{schema: schemaPGCatalog, name: "int4", kind: 'b', length: 4}, true},
-		{"int4 wrong length", typeInfo{schema: schemaPGCatalog, name: "int4", kind: 'b', length: 8}, false},
-		{"int4 wrong kind", typeInfo{schema: schemaPGCatalog, name: "int4", kind: 'd', length: 4}, false},
+		{"int4 correct", typeInfo{schema: schemaPGCatalog, name: pgTypeInt4, kind: 'b', length: 4}, true},
+		{"int4 wrong length", typeInfo{schema: schemaPGCatalog, name: pgTypeInt4, kind: 'b', length: 8}, false},
+		{"int4 wrong kind", typeInfo{schema: schemaPGCatalog, name: pgTypeInt4, kind: 'd', length: 4}, false},
 		{"unknown name", typeInfo{schema: schemaPGCatalog, name: "not_builtin", kind: 'b', length: 4}, false},
 		{"varchar variable length", typeInfo{schema: schemaPGCatalog, name: "varchar", kind: 'b', length: -1}, true},
 		{"varchar fixed length", typeInfo{schema: schemaPGCatalog, name: "varchar", kind: 'b', length: 4}, false},

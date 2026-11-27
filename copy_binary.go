@@ -48,6 +48,12 @@ const (
 	copyUUID
 	copyJSON
 	copyJSONB
+	copyInt1
+	copyUint1
+	copyUint4
+	copyUint8
+	copyZonedTimestamp
+	copyTimeTicks
 )
 
 // String names the storage type in a column error.
@@ -85,6 +91,18 @@ func (k copyKind) String() string {
 		return "json"
 	case copyJSONB:
 		return "jsonb"
+	case copyInt1:
+		return "tinyint"
+	case copyUint1:
+		return "unsigned tinyint"
+	case copyUint4:
+		return "unsigned integer"
+	case copyUint8:
+		return "unsigned bigint"
+	case copyZonedTimestamp:
+		return "timestamp"
+	case copyTimeTicks:
+		return "time"
 	}
 	return "unknown"
 }
@@ -106,44 +124,127 @@ func CopyInBinary(table string, columns ...string) string {
 		") FROM STDIN WITH (FORMAT binary) " + copyBinaryMarker
 }
 
-// copyKindForType maps one catalog type to its binary encoder. The vendor keeps
-// the storage type in the catalog, which is why a mode-specific mapping (REAL as
-// a double, DATE as eight bytes) needs no special case here.
-func copyKindForType(typname string, typlen int64) (copyKind, bool) {
+// copyKindForType maps one catalog type to its binary encoder. Selection is
+// qualified: only a pg_catalog or sys identity selects a layout, so a
+// same-named user type never borrows a builtin encoding. Fixed-width storage
+// kinds also check the catalog length, the mode decides the tinyint sign, and
+// an unverified layout is unsupported instead of guessed.
+func copyKindForType(mode CompatibilityMode, schema, typname string, typlen int64) (copyKind, bool) {
+	switch schema {
+	case schemaPGCatalog:
+		return pgCatalogCopyKind(typname, typlen)
+	case schemaSys:
+		return sysCopyKind(mode, typname, typlen)
+	}
+	return 0, false
+}
+
+func pgCatalogCopyKind(typname string, typlen int64) (copyKind, bool) {
 	switch typname {
-	case "int2", "smallint", "tinyint", "uint1":
+	case "int2", "smallint":
 		return copyInt2, true
-	case "int4", "integer", "int", "mediumint", "uint2", "uint4", "oid":
+	case "int4", "integer":
 		return copyInt4, true
-	case "int8", "bigint", "uint8", "serial", "bigserial":
+	case "int8", "bigint":
 		return copyInt8, true
+	case "oid":
+		return copyUint4, true
 	case "float4", "real":
 		return copyFloat4, true
 	case "float8", "double", "double precision", "float":
 		return copyFloat8, true
-	case "bool", "boolean", "bit":
+	case "bool", "boolean":
 		return copyBool, true
-	case "text", "varchar", "varcharbyte", "bpchar", "char", "name", "nvarchar", "nchar", "clob", "longtext":
+	case "text", "varchar", "bpchar", "char", "name":
 		return copyText, true
-	case "bytea", "blob", "binary", "varbinary":
+	case "bytea":
 		return copyBytea, true
 	case "date":
 		if typlen == 8 {
 			return copyDateMicros, true
 		}
 		return copyDateDays, true
-	case "timestamp", "datetime", "smalldatetime":
+	case "timestamp":
 		return copyTimestamp, true
 	case "timestamptz":
 		return copyTimestamptz, true
-	case "time", "timetz":
+	case "time":
 		return copyTime, true
-	case "uuid", "uniqueidentifier":
+	case "uuid":
 		return copyUUID, true
 	case "json":
 		return copyJSON, true
 	case "jsonb":
 		return copyJSONB, true
+	case "tinyint":
+		if typlen == 1 {
+			return copyInt1, true
+		}
+	}
+	return 0, false
+}
+
+func sysCopyKind(mode CompatibilityMode, typname string, typlen int64) (copyKind, bool) {
+	switch typname {
+	case "tinyint":
+		if typlen != 1 {
+			return 0, false
+		}
+		// The SQL Server-compatible tinyint is unsigned; Oracle/MySQL tinyint
+		// is signed, as the result codecs also treat it.
+		if mode == ModeSQLServer {
+			return copyUint1, true
+		}
+		return copyInt1, true
+	case "uint1":
+		if typlen == 1 {
+			return copyUint1, true
+		}
+	case "uint4":
+		if typlen == 4 {
+			return copyUint4, true
+		}
+	case "uint8":
+		if typlen == 8 {
+			return copyUint8, true
+		}
+	case "bit":
+		if typlen == 1 {
+			return copyBool, true
+		}
+	case "binary", "varbinary":
+		return copyBytea, true
+	case "nchar", "nvarchar":
+		return copyText, true
+	case "timestamp":
+		if typlen == 8 {
+			// The mode-specific timestamp keeps wall-clock text but stores an
+			// instant, so the caller's fields are read in the session zone.
+			return copyZonedTimestamp, true
+		}
+	case "datetime":
+		if typlen == 8 {
+			// The mode datetime keeps a plain wall clock in both formats.
+			return copyTimestamp, true
+		}
+	case "timestamptz":
+		if typlen == 8 {
+			return copyTimestamptz, true
+		}
+	case "time":
+		if typlen == 8 {
+			// The SQL Server-compatible time counts 100 ns ticks; the other
+			// modes count microseconds.
+			if mode == ModeSQLServer {
+				return copyTimeTicks, true
+			}
+			return copyTime, true
+		}
+	case "date":
+		if typlen == 8 {
+			return copyDateMicros, true
+		}
+		return copyDateDays, true
 	}
 	return 0, false
 }
@@ -256,25 +357,37 @@ func quoteRelation(parts []string) string {
 	return strings.Join(quoted, ".")
 }
 
-// copyBinaryColumnQuery lists the storage types of the requested relation.
+// copyBinaryColumnQuery lists the storage types of the requested relation. The
+// type's schema is part of the identity, so a user type that shares a builtin
+// name is never encoded with the builtin layout. A domain over a base type
+// borrows its base storage (the MySQL-mode json is a domain over jsonb); a
+// domain over another domain keeps its own identity and stays unsupported.
 func copyBinaryColumnQuery(relation string) string {
-	return `SELECT a.attname, t.typname, t.typlen
+	return `SELECT a.attname,
+       COALESCE(bt.typname, t.typname) AS typname,
+       COALESCE(bt.typlen, t.typlen) AS typlen,
+       COALESCE(bn.nspname, n.nspname) AS nspname
 FROM pg_catalog.pg_attribute AS a
 JOIN pg_catalog.pg_type AS t ON t.oid = a.atttypid
+JOIN pg_catalog.pg_namespace AS n ON n.oid = t.typnamespace
+LEFT JOIN pg_catalog.pg_type AS bt ON bt.oid = t.typbasetype AND bt.typtype = 'b'
+LEFT JOIN pg_catalog.pg_namespace AS bn ON bn.oid = bt.typnamespace
 WHERE a.attrelid = pg_catalog.to_regclass(` + quoteSQLLiteral(relation) + `)
   AND a.attnum > 0
   AND NOT a.attisdropped
 ORDER BY a.attnum`
 }
 
-// appendCopyBinaryRow encodes one row: its field count, then every field.
-func appendCopyBinaryRow(dst []byte, kinds []copyKind, args []driver.NamedValue) ([]byte, error) {
+// appendCopyBinaryRow encodes one row: its field count, then every field. The
+// session location resolves wall-clock values of a mode type that stores an
+// instant.
+func appendCopyBinaryRow(dst []byte, kinds []copyKind, args []driver.NamedValue, location *time.Location) ([]byte, error) {
 	if len(args) != len(kinds) {
 		return nil, fmt.Errorf("kingbase: binary COPY row has %d values for %d columns", len(args), len(kinds))
 	}
 	dst = binary.BigEndian.AppendUint16(dst, uint16(len(kinds)))
 	for i, arg := range args {
-		next, err := appendCopyBinaryField(dst, kinds[i], arg.Value)
+		next, err := appendCopyBinaryField(dst, kinds[i], arg.Value, location)
 		if err != nil {
 			return nil, fmt.Errorf("kingbase: column %d (%s) %w", i+1, kinds[i], err)
 		}
@@ -285,11 +398,11 @@ func appendCopyBinaryRow(dst []byte, kinds []copyKind, args []driver.NamedValue)
 
 // appendCopyBinaryField appends one length-prefixed field, or the -1 length that
 // means NULL.
-func appendCopyBinaryField(dst []byte, kind copyKind, value any) ([]byte, error) {
+func appendCopyBinaryField(dst []byte, kind copyKind, value any, location *time.Location) ([]byte, error) {
 	if value == nil {
 		return binary.BigEndian.AppendUint32(dst, math.MaxUint32), nil
 	}
-	encoded, err := encodeCopyBinaryValue(kind, value)
+	encoded, err := encodeCopyBinaryValueAt(kind, value, location)
 	if err != nil {
 		return nil, err
 	}
@@ -298,90 +411,159 @@ func appendCopyBinaryField(dst []byte, kind copyKind, value any) ([]byte, error)
 }
 
 func encodeCopyBinaryValue(kind copyKind, value any) ([]byte, error) {
+	return encodeCopyBinaryValueAt(kind, value, nil)
+}
+
+// encodeCopyBinaryValueAt encodes one field; a mode timestamp that stores an
+// instant reads the wall-clock fields in location (UTC when nil).
+func encodeCopyBinaryValueAt(kind copyKind, value any, location *time.Location) ([]byte, error) {
 	switch kind {
 	case copyInt2, copyInt4, copyInt8:
-		number, ok := value.(int64)
-		if !ok {
-			return nil, fmt.Errorf("expects an int64, got %T", value)
-		}
-		switch kind {
-		case copyInt2:
-			if number < math.MinInt16 || number > math.MaxInt16 {
-				return nil, fmt.Errorf("value %d is out of range", number)
-			}
-			return binary.BigEndian.AppendUint16(nil, uint16(int16(number))), nil
-		case copyInt4:
-			if number < math.MinInt32 || number > math.MaxInt32 {
-				return nil, fmt.Errorf("value %d is out of range", number)
-			}
-			return binary.BigEndian.AppendUint32(nil, uint32(int32(number))), nil
-		default:
-			return binary.BigEndian.AppendUint64(nil, uint64(number)), nil
-		}
-	case copyFloat4:
-		number, ok := copyFloatValue(value)
-		if !ok {
-			return nil, fmt.Errorf("expects a float, got %T", value)
-		}
-		return binary.BigEndian.AppendUint32(nil, math.Float32bits(float32(number))), nil
-	case copyFloat8:
-		number, ok := copyFloatValue(value)
-		if !ok {
-			return nil, fmt.Errorf("expects a float, got %T", value)
-		}
-		return binary.BigEndian.AppendUint64(nil, math.Float64bits(number)), nil
+		return encodeCopyInteger(kind, value)
+	case copyInt1, copyUint1, copyUint4, copyUint8:
+		return encodeCopySmallInteger(kind, value)
+	case copyFloat4, copyFloat8:
+		return encodeCopyFloat(kind, value)
 	case copyBool:
-		flag, ok := value.(bool)
-		if !ok {
-			return nil, fmt.Errorf("expects a bool, got %T", value)
-		}
-		if flag {
-			return []byte{1}, nil
-		}
-		return []byte{0}, nil
+		return encodeCopyBool(value)
 	case copyText, copyJSON, copyBytea:
-		text, ok := value.(string)
-		if ok {
-			return []byte(text), nil
-		}
-		raw, ok := value.([]byte)
-		if !ok {
-			return nil, fmt.Errorf("expects a string or []byte, got %T", value)
-		}
-		return raw, nil
+		return encodeCopyText(value)
 	case copyJSONB:
-		encoded, err := encodeCopyBinaryValue(copyJSON, value)
+		encoded, err := encodeCopyText(value)
 		if err != nil {
 			return nil, err
 		}
 		return append([]byte{1}, encoded...), nil
-	case copyDateDays, copyDateMicros, copyTimestamp, copyTimestamptz, copyTime:
-		moment, ok := value.(time.Time)
-		if !ok {
-			return nil, fmt.Errorf("expects a time.Time, got %T", value)
-		}
-		switch kind {
-		case copyDateDays:
-			return binary.BigEndian.AppendUint32(nil, uint32(int32(copyEpochDays(moment)))), nil
-		case copyDateMicros:
-			return binary.BigEndian.AppendUint64(nil, uint64(copyMicros(moment.UTC()))), nil
-		case copyTimestamptz:
-			return binary.BigEndian.AppendUint64(nil, uint64(copyMicros(moment.UTC()))), nil
-		case copyTimestamp:
-			wall := time.Date(moment.Year(), moment.Month(), moment.Day(),
-				moment.Hour(), moment.Minute(), moment.Second(), moment.Nanosecond(), time.UTC)
-			return binary.BigEndian.AppendUint64(nil, uint64(copyMicros(wall))), nil
-		default:
-			micros := (int64(moment.Hour())*int64(time.Hour) +
-				int64(moment.Minute())*int64(time.Minute) +
-				int64(moment.Second())*int64(time.Second) +
-				int64(moment.Nanosecond())) / int64(time.Microsecond)
-			return binary.BigEndian.AppendUint64(nil, uint64(micros)), nil
-		}
+	case copyDateDays, copyDateMicros, copyTimestamp, copyTimestamptz, copyTime, copyZonedTimestamp, copyTimeTicks:
+		return encodeCopyTemporal(kind, value, location)
 	case copyUUID:
 		return encodeCopyBinaryUUID(value)
 	}
 	return nil, errors.New("has no binary encoding")
+}
+
+func encodeCopyInteger(kind copyKind, value any) ([]byte, error) {
+	number, ok := value.(int64)
+	if !ok {
+		return nil, fmt.Errorf("expects an int64, got %T", value)
+	}
+	switch kind {
+	case copyInt2:
+		if number < math.MinInt16 || number > math.MaxInt16 {
+			return nil, fmt.Errorf("value %d is out of range", number)
+		}
+		return binary.BigEndian.AppendUint16(nil, uint16(int16(number))), nil
+	case copyInt4:
+		if number < math.MinInt32 || number > math.MaxInt32 {
+			return nil, fmt.Errorf("value %d is out of range", number)
+		}
+		return binary.BigEndian.AppendUint32(nil, uint32(int32(number))), nil
+	default:
+		return binary.BigEndian.AppendUint64(nil, uint64(number)), nil
+	}
+}
+
+func encodeCopySmallInteger(kind copyKind, value any) ([]byte, error) {
+	number, ok := value.(int64)
+	if !ok {
+		return nil, fmt.Errorf("expects an int64, got %T", value)
+	}
+	switch kind {
+	case copyInt1:
+		if number < math.MinInt8 || number > math.MaxInt8 {
+			return nil, fmt.Errorf("value %d is out of range", number)
+		}
+		return []byte{byte(int8(number))}, nil
+	case copyUint1:
+		if number < 0 || number > math.MaxUint8 {
+			return nil, fmt.Errorf("value %d is out of range", number)
+		}
+		return []byte{byte(number)}, nil
+	case copyUint4:
+		if number < 0 || number > math.MaxUint32 {
+			return nil, fmt.Errorf("value %d is out of range", number)
+		}
+		return binary.BigEndian.AppendUint32(nil, uint32(number)), nil
+	default:
+		if number < 0 {
+			return nil, fmt.Errorf("value %d is out of range", number)
+		}
+		return binary.BigEndian.AppendUint64(nil, uint64(number)), nil
+	}
+}
+
+func encodeCopyFloat(kind copyKind, value any) ([]byte, error) {
+	number, ok := copyFloatValue(value)
+	if !ok {
+		return nil, fmt.Errorf("expects a float, got %T", value)
+	}
+	if kind == copyFloat8 {
+		return binary.BigEndian.AppendUint64(nil, math.Float64bits(number)), nil
+	}
+	converted := float32(number)
+	if !math.IsInf(number, 0) && math.IsInf(float64(converted), 0) {
+		return nil, fmt.Errorf("value %v is out of range", number)
+	}
+	return binary.BigEndian.AppendUint32(nil, math.Float32bits(converted)), nil
+}
+
+func encodeCopyBool(value any) ([]byte, error) {
+	flag, ok := value.(bool)
+	if !ok {
+		return nil, fmt.Errorf("expects a bool, got %T", value)
+	}
+	if flag {
+		return []byte{1}, nil
+	}
+	return []byte{0}, nil
+}
+
+func encodeCopyText(value any) ([]byte, error) {
+	if text, ok := value.(string); ok {
+		return []byte(text), nil
+	}
+	raw, ok := value.([]byte)
+	if !ok {
+		return nil, fmt.Errorf("expects a string or []byte, got %T", value)
+	}
+	return raw, nil
+}
+
+func encodeCopyTemporal(kind copyKind, value any, location *time.Location) ([]byte, error) {
+	moment, ok := value.(time.Time)
+	if !ok {
+		return nil, fmt.Errorf("expects a time.Time, got %T", value)
+	}
+	switch kind {
+	case copyDateDays:
+		return binary.BigEndian.AppendUint32(nil, uint32(int32(copyEpochDays(moment)))), nil
+	case copyDateMicros, copyTimestamptz:
+		return binary.BigEndian.AppendUint64(nil, uint64(copyMicros(moment.UTC()))), nil
+	case copyTimestamp:
+		wall := time.Date(moment.Year(), moment.Month(), moment.Day(),
+			moment.Hour(), moment.Minute(), moment.Second(), moment.Nanosecond(), time.UTC)
+		return binary.BigEndian.AppendUint64(nil, uint64(copyMicros(wall))), nil
+	case copyZonedTimestamp:
+		zone := time.UTC
+		if location != nil {
+			zone = location
+		}
+		wall := time.Date(moment.Year(), moment.Month(), moment.Day(),
+			moment.Hour(), moment.Minute(), moment.Second(), moment.Nanosecond(), zone)
+		return binary.BigEndian.AppendUint64(nil, uint64(copyMicros(wall.UTC()))), nil
+	case copyTimeTicks:
+		micros := (int64(moment.Hour())*int64(time.Hour) +
+			int64(moment.Minute())*int64(time.Minute) +
+			int64(moment.Second())*int64(time.Second) +
+			int64(moment.Nanosecond())) / int64(time.Microsecond)
+		return binary.BigEndian.AppendUint64(nil, uint64(micros*10)), nil
+	default:
+		micros := (int64(moment.Hour())*int64(time.Hour) +
+			int64(moment.Minute())*int64(time.Minute) +
+			int64(moment.Second())*int64(time.Second) +
+			int64(moment.Nanosecond())) / int64(time.Microsecond)
+		return binary.BigEndian.AppendUint64(nil, uint64(micros)), nil
+	}
 }
 
 // copyEpochDays counts whole days from the binary epoch.

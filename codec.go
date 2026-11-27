@@ -54,6 +54,10 @@ const (
 	pgTypeMacaddr     = "macaddr"
 	pgTypeMacaddr8    = "macaddr8"
 	pgTypeUnknown     = "unknown"
+
+	// modeTypeDatetime is the mode-specific datetime whose binary payload is a
+	// plain wall-clock stamp.
+	modeTypeDatetime = "datetime"
 )
 
 var (
@@ -106,23 +110,23 @@ type modeTypeSpec struct {
 
 var modeTypeSpecs = map[CompatibilityMode]map[string]modeTypeSpec{
 	ModeMySQL: {
-		"tinyint":   {1, modeCodecTinyint},
-		"uint4":     {4, modeCodecUint4},
-		"uint8":     {8, modeCodecUint8},
-		"datetime":  {8, modeCodecDatetime},
-		"binary":    {-1, modeCodecBytes},
-		"varbinary": {-1, modeCodecBytes},
+		"tinyint":        {1, modeCodecTinyint},
+		"uint4":          {4, modeCodecUint4},
+		"uint8":          {8, modeCodecUint8},
+		modeTypeDatetime: {8, modeCodecDatetime},
+		"binary":         {-1, modeCodecBytes},
+		"varbinary":      {-1, modeCodecBytes},
 	},
 	ModeSQLServer: {
-		"tinyint":       {1, modeCodecUTinyint},
-		"datetime":      {8, modeCodecDatetime},
-		"smalldatetime": {8, modeCodecDatetime},
-		"binary":        {-1, modeCodecBytes},
-		"varbinary":     {-1, modeCodecBytes},
-		"nchar":         {-1, modeCodecNString},
-		"nvarchar":      {-1, modeCodecNString},
-		"bit":           {1, modeCodecBoolBit},
-		pgTypeMoney:     {8, modeCodecMoney},
+		"tinyint":        {1, modeCodecUTinyint},
+		modeTypeDatetime: {8, modeCodecDatetime},
+		"smalldatetime":  {8, modeCodecDatetime},
+		"binary":         {-1, modeCodecBytes},
+		"varbinary":      {-1, modeCodecBytes},
+		"nchar":          {-1, modeCodecNString},
+		"nvarchar":       {-1, modeCodecNString},
+		"bit":            {1, modeCodecBoolBit},
+		pgTypeMoney:      {8, modeCodecMoney},
 	},
 }
 
@@ -259,8 +263,8 @@ func modeTextValue(codec modeCodec, name string, data []byte) (driver.Value, err
 }
 
 // modeBinaryValue decodes a verified sys-type binary payload. The datetime
-// layout is deliberately absent: the listeners encode a wall-clock datetime as
-// a session-timezone instant, so it stays raw bytes.
+// family stays out of the shared codec because its binary payload is adopted by
+// name (see binaryValue): the two names do not share one verified reading yet.
 func modeBinaryValue(codec modeCodec, data []byte) (driver.Value, bool) {
 	switch codec {
 	case modeCodecTinyint:
@@ -291,6 +295,19 @@ func modeBinaryValue(codec modeCodec, data []byte) (driver.Value, bool) {
 		}
 	}
 	return nil, false
+}
+
+// datetimeBinaryValue decodes the mode datetime binary payload, measured as the
+// same wall-clock microsecond stamp the text format carries.
+func datetimeBinaryValue(data []byte) (driver.Value, bool) {
+	if len(data) != 8 {
+		return nil, false
+	}
+	moment, ok := timestampFromMicros(int64(binary.BigEndian.Uint64(data)))
+	if !ok {
+		return nil, false
+	}
+	return moment, true
 }
 
 // moneyValue renders the SQLServer money scale (10^-4) as exact decimal text,
@@ -359,6 +376,9 @@ func scanType(mode CompatibilityMode, schema, name string, format int16) reflect
 		spec, ok := modeTypeSpecFor(mode, schema, name)
 		if !ok {
 			return opaqueScanType(format)
+		}
+		if name == modeTypeDatetime && format == 1 {
+			return reflect.TypeOf(time.Time{})
 		}
 		return modeScanType(spec.codec, format)
 	}
@@ -480,14 +500,16 @@ func textConversionError(name string, data []byte) error {
 
 // binaryLayoutKnown reports whether the driver implements this builtin's
 // binary layout. A false decode for a known layout is malformed input, not an
-// unsupported type that may fall back to opaque bytes. The compatibility-mode
-// datetime binary payload is session-timezone dependent (the live V009R001C010
-// listeners encode the wall-clock text as a UTC instant), so its layout stays
-// unverified and falls back to raw bytes.
+// unsupported type that may fall back to opaque bytes. A mode datetime has a
+// measured plain wall-clock layout; a mode smalldatetime keeps falling back to
+// raw bytes because its binary layout is not verified.
 func binaryLayoutKnown(mode CompatibilityMode, schema, name string) bool {
 	if schema == schemaSys {
 		spec, ok := modeTypeSpecFor(mode, schema, name)
-		return ok && spec.codec != modeCodecDatetime
+		if !ok {
+			return false
+		}
+		return name == modeTypeDatetime || spec.codec != modeCodecDatetime
 	}
 	if schema != schemaPGCatalog {
 		return false
@@ -553,6 +575,11 @@ func binaryValue(mode CompatibilityMode, schema, name string, data []byte) (driv
 		if !ok {
 			return nil, false
 		}
+		if name == modeTypeDatetime {
+			// The live probe measured the mode datetime binary payload as the
+			// plain wall-clock stamp, so it decodes without a zone shift.
+			return datetimeBinaryValue(data)
+		}
 		return modeBinaryValue(spec.codec, data)
 	}
 	if schema != schemaPGCatalog {
@@ -567,30 +594,10 @@ func binaryPGValue(name string, data []byte) (driver.Value, bool) {
 	switch name {
 	case pgTypeBool:
 		return boolBinaryValue(data)
-	case pgTypeTinyint:
-		if len(data) == 1 {
-			return int64(int8(data[0])), true
-		}
-	case pgTypeInt2:
-		if len(data) == 2 {
-			return int64(int16(binary.BigEndian.Uint16(data))), true
-		}
-	case pgTypeInt4, pgTypeOid, pgTypeXid, pgTypeCid:
-		if len(data) == 4 {
-			return int64(int32(binary.BigEndian.Uint32(data))), true
-		}
-	case pgTypeInt8:
-		if len(data) == 8 {
-			return int64(binary.BigEndian.Uint64(data)), true
-		}
-	case pgTypeFloat4:
-		if len(data) == 4 {
-			return float64(math.Float32frombits(binary.BigEndian.Uint32(data))), true
-		}
-	case pgTypeFloat8:
-		if len(data) == 8 {
-			return math.Float64frombits(binary.BigEndian.Uint64(data)), true
-		}
+	case pgTypeTinyint, pgTypeInt2, pgTypeInt4, pgTypeInt8, pgTypeOid, pgTypeXid, pgTypeCid:
+		return binaryIntegerValue(name, data)
+	case pgTypeFloat4, pgTypeFloat8:
+		return binaryFloatValue(name, data)
 	case pgTypeText, pgTypeVarchar, pgTypeBpchar, pgTypeChar, pgTypeName, pgTypeUnknown:
 		return string(data), true
 	case pgTypeBytea:
@@ -598,22 +605,11 @@ func binaryPGValue(name string, data []byte) (driver.Value, bool) {
 	case pgTypeJSON, pgTypeXML:
 		return string(data), true
 	case pgTypeJSONB:
-		// A jsonb payload carries a one-byte format version before the text.
-		if len(data) > 0 && data[0] == 1 {
-			return string(data[1:]), true
-		}
+		return jsonbBinaryValue(data)
 	case pgTypeDate:
-		if len(data) == 4 {
-			if moment, ok := dateFromDays(int32(binary.BigEndian.Uint32(data))); ok {
-				return moment, true
-			}
-		}
+		return binaryDateValue(data)
 	case pgTypeTimestamp, pgTypeTimestamptz:
-		if len(data) == 8 {
-			if moment, ok := timestampFromMicros(int64(binary.BigEndian.Uint64(data))); ok {
-				return moment, true
-			}
-		}
+		return binaryTimestampValue(data)
 	case pgTypeNumeric:
 		return numericValue(data)
 	case pgTypeTime, pgTypeTimetz, pgTypeInet, pgTypeCidr, pgTypeInterval, pgTypeBit, pgTypeVarbit:
@@ -622,6 +618,77 @@ func binaryPGValue(name string, data []byte) (driver.Value, bool) {
 		return uuidValue(data)
 	}
 	return nil, false
+}
+
+func binaryIntegerValue(name string, data []byte) (driver.Value, bool) {
+	switch name {
+	case pgTypeTinyint:
+		if len(data) == 1 {
+			return int64(int8(data[0])), true
+		}
+	case pgTypeInt2:
+		if len(data) == 2 {
+			return int64(int16(binary.BigEndian.Uint16(data))), true
+		}
+	case pgTypeInt4:
+		if len(data) == 4 {
+			return int64(int32(binary.BigEndian.Uint32(data))), true
+		}
+	case pgTypeInt8:
+		if len(data) == 8 {
+			return int64(binary.BigEndian.Uint64(data)), true
+		}
+	default:
+		// System identifiers are unsigned 32-bit values, so the top bit must
+		// not turn into a negative number as it would through int32.
+		if len(data) == 4 {
+			return int64(binary.BigEndian.Uint32(data)), true
+		}
+	}
+	return nil, false
+}
+
+func binaryFloatValue(name string, data []byte) (driver.Value, bool) {
+	if name == pgTypeFloat4 {
+		if len(data) == 4 {
+			return float64(math.Float32frombits(binary.BigEndian.Uint32(data))), true
+		}
+		return nil, false
+	}
+	if len(data) == 8 {
+		return math.Float64frombits(binary.BigEndian.Uint64(data)), true
+	}
+	return nil, false
+}
+
+func jsonbBinaryValue(data []byte) (driver.Value, bool) {
+	// A jsonb payload carries a one-byte format version before the text.
+	if len(data) > 0 && data[0] == 1 {
+		return string(data[1:]), true
+	}
+	return nil, false
+}
+
+func binaryDateValue(data []byte) (driver.Value, bool) {
+	if len(data) != 4 {
+		return nil, false
+	}
+	moment, ok := dateFromDays(int32(binary.BigEndian.Uint32(data)))
+	if !ok {
+		return nil, false
+	}
+	return moment, true
+}
+
+func binaryTimestampValue(data []byte) (driver.Value, bool) {
+	if len(data) != 8 {
+		return nil, false
+	}
+	moment, ok := timestampFromMicros(int64(binary.BigEndian.Uint64(data)))
+	if !ok {
+		return nil, false
+	}
+	return moment, true
 }
 
 // maxTemporalDays bounds binary date/timestamp conversion before integer

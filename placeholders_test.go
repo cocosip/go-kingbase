@@ -63,7 +63,7 @@ func TestPlanPlaceholdersTargets(t *testing.T) {
 	if len(plan.targets) != 2 {
 		t.Fatalf("targets = %v, want indexes 1 and 3", plan.targets)
 	}
-	if got := plan.targets[1]; got != (targetRef{schema: "pg_catalog", name: "int4"}) {
+	if got := plan.targets[1]; got != (targetRef{schema: "pg_catalog", name: pgTypeInt4}) {
 		t.Errorf("target 1 = %v", got)
 	}
 	if got := plan.targets[3]; got != (targetRef{schema: "pg_catalog", name: "bytea"}) {
@@ -90,7 +90,7 @@ func TestPlanPlaceholdersTargets(t *testing.T) {
 		t.Fatalf("planPlaceholders: %v", err)
 	}
 	if question.query != "SELECT $1::pg_catalog.int4" ||
-		question.targets[1] != (targetRef{schema: "pg_catalog", name: "int4"}) {
+		question.targets[1] != (targetRef{schema: "pg_catalog", name: pgTypeInt4}) {
 		t.Errorf("question plan = %q targets %v", question.query, question.targets)
 	}
 }

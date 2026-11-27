@@ -6,14 +6,16 @@ import (
 )
 
 // bitBinaryValue decodes PostgreSQL bit/varbit binary data (int32 bit count,
-// then ceil(bits/8) big-endian bytes) into the same 0/1 text contract.
+// then ceil(bits/8) big-endian bytes) into the same 0/1 text contract. The
+// length arithmetic widens to uint64 so a hostile count cannot wrap a 32-bit
+// sum into a small byte count.
 func bitBinaryValue(data []byte) (driver.Value, bool) {
 	if len(data) < 4 {
 		return nil, false
 	}
-	bits := binary.BigEndian.Uint32(data[:4])
-	byteCount := int64(bits+7) / 8
-	if byteCount > int64(len(data)-4) || int64(len(data)) != 4+byteCount {
+	bits := uint64(binary.BigEndian.Uint32(data[:4]))
+	byteCount := (bits + 7) / 8
+	if byteCount > uint64(len(data)-4) || uint64(len(data)) != 4+byteCount {
 		return nil, false
 	}
 	if remainder := bits % 8; remainder != 0 {
@@ -23,7 +25,7 @@ func bitBinaryValue(data []byte) (driver.Value, bool) {
 		}
 	}
 	out := make([]byte, 0, bits)
-	for index := uint32(0); index < bits; index++ {
+	for index := uint64(0); index < bits; index++ {
 		bit := (data[4+index/8] >> (7 - index%8)) & 1
 		out = append(out, '0'+bit)
 	}

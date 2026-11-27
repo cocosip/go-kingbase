@@ -16,6 +16,10 @@ import (
 // testTypeInt4 is the type name shared by the registry and codec tests.
 const testTypeInt4 = "int4"
 
+// testTypeUint4 is the MySQL-mode unsigned type name shared by the mode and
+// binary-COPY mapping tests.
+const testTypeUint4 = "uint4"
+
 // userCatalogRow builds one scripted pg_type row in the catalog column order.
 func userCatalogRow(oid uint32, schema, name string, kind byte, length int16, base uint32) [][]byte {
 	return [][]byte{

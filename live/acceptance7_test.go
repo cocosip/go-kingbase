@@ -5,6 +5,7 @@ package live_test
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -35,8 +36,10 @@ func TestLiveReadOnlyTransactionEnforcement(t *testing.T) {
 		t.Fatalf("Rollback: %v", err)
 	}
 	if insertErr == nil {
-		t.Logf("server accepted a write in READ ONLY; read-only enforcement is not a profile guarantee")
-	} else {
-		t.Logf("read-only write rejected as expected")
+		t.Fatal("a READ ONLY transaction accepted a write; read-only enforcement is not a profile guarantee")
+	}
+	var serverErr *kingbase.Error
+	if !errors.As(insertErr, &serverErr) || serverErr.Code != "25006" {
+		t.Fatalf("read-only write error = %v, want a server rejection with SQLSTATE 25006", insertErr)
 	}
 }

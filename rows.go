@@ -98,7 +98,7 @@ func typeDecoder(mode CompatibilityMode, schema, name string, format int16, loca
 			if binaryLayoutKnown(mode, schema, name) {
 				return nil, fmt.Errorf("%w: malformed %s binary value", ErrValueConversion, name)
 			}
-			// Unverified binary layouts (macaddr, xml, mode datetime, ...) stay
+			// Unverified binary layouts (macaddr, mode smalldatetime, ...) stay
 			// raw bytes; ponytail: add codecs when their wire layout is proven,
 			// and never guess a layout from the type name alone.
 			return append([]byte(nil), data...), nil
